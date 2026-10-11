@@ -21,6 +21,7 @@
 
 import type { PLCVariable } from '../../middleware/shared/ports/types'
 import { generateIecVariablesToString } from './generate-iec-variables-to-string'
+import { edgeQualifier, varBlockKey } from './PLC/var-block-qualifiers'
 import type { ParsedBlock, ParsedDeclaration, ParseResult, Span, TypeContext } from './PLC/variable-declarations'
 import {
   lineEndingOf,
@@ -140,8 +141,13 @@ function hasCrowdedLine(result: ParseResult, source: string): boolean {
   return false
 }
 
-const blockKey = (variable: PLCVariable): string => `${variable.class ?? 'global'}\u0000${variable.flag ?? ''}`
-const parsedBlockKey = (block: ParsedBlock): string => `${block.class ?? 'global'}\u0000${block.flag ?? ''}`
+// Class × flag × access: a new `VAR` never lands in a `VAR PROTECTED` block.
+const blockKey = (variable: PLCVariable): string => varBlockKey(variable)
+const parsedBlockKey = (block: ParsedBlock): string => varBlockKey(block)
+// A declaration is edited in place only within its block and with its edge
+// qualifier unchanged; anything else is re-rendered (`R_EDGE` sits after the
+// type, which the field edits do not touch).
+const matchKey = (variable: PLCVariable): string => `${blockKey(variable)}\u0000${variable.edge ?? ''}`
 
 /** The declaration's own indentation, so an inserted sibling lines up with it. */
 function indentOf(text: string, declaration: ParsedDeclaration): string {
@@ -177,7 +183,7 @@ function renderLeadingFor(variable: PLCVariable, indent: string, newline: string
 
 /** Render a declaration for a variable that has no line of its own yet. */
 function renderDeclaration(variable: PLCVariable, indent: string): string {
-  let line = `${indent}${variable.name} : ${variable.type.value}`
+  let line = `${indent}${variable.name} : ${variable.type.value}${edgeQualifier(variable.edge)}`
   if (variable.location) line += ` AT ${variable.location}`
   if (variable.initialValue) line += ` := ${variable.initialValue}`
   line += ';'
@@ -227,7 +233,7 @@ function matchDeclarations(
     claim(
       index,
       declarations.find(
-        (d) => !taken.has(d) && sameName(d.variable.name, variable.name) && blockKey(d.variable) === blockKey(variable),
+        (d) => !taken.has(d) && sameName(d.variable.name, variable.name) && matchKey(d.variable) === matchKey(variable),
       ),
     )
   })
@@ -248,7 +254,7 @@ function matchDeclarations(
     if (matched.has(index)) return
     claim(
       index,
-      leftoverDeclarations.find((d) => !taken.has(d) && blockKey(d.variable) === blockKey(variable)),
+      leftoverDeclarations.find((d) => !taken.has(d) && matchKey(d.variable) === matchKey(variable)),
     )
   })
 

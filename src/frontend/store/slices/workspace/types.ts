@@ -30,6 +30,7 @@ export type PlcFilters = {
 export type WorkspaceProjectTreeLeafType =
   | 'function'
   | 'function-block'
+  | 'interface'
   | 'program'
   | 'data-type'
   | 'global-variable-list'

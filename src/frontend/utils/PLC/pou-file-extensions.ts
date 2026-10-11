@@ -17,6 +17,7 @@ const POU_TYPE_TO_START_KEYWORD: Record<string, string> = {
   program: 'PROGRAM',
   function: 'FUNCTION',
   'function-block': 'FUNCTION_BLOCK',
+  interface: 'INTERFACE',
 }
 
 /**
@@ -26,6 +27,7 @@ const POU_TYPE_TO_FOLDER: Record<string, string> = {
   program: 'programs',
   function: 'functions',
   'function-block': 'function-blocks',
+  interface: 'interfaces',
 }
 
 /**
@@ -35,6 +37,7 @@ const POU_TYPE_TO_END_KEYWORD: Record<string, string> = {
   program: 'END_PROGRAM',
   function: 'END_FUNCTION',
   'function-block': 'END_FUNCTION_BLOCK',
+  interface: 'END_INTERFACE',
 }
 
 /**

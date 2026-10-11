@@ -15,6 +15,7 @@ import {
   WORD_LOCATION_REGEX,
 } from '../../../../utils/PLC/address-constants/types'
 import { getArrayTotalElements, isArrayVariable } from '../../../../utils/PLC/array-codegen-helpers'
+import { isFbInitList } from '../../../../utils/PLC/fb-instance-init'
 import type { ProjectResponse } from '../types'
 
 /**
@@ -554,7 +555,26 @@ const updateVariableValidation = (
       return response
     }
     if (dataToBeUpdated.type.definition === 'derived') {
-      response.data = { ...(response.data ? response.data : {}), location: '', initialValue: '', class: 'local' }
+      // A function block instance takes no location, and its only initial value
+      // is an initialisation list (IEC 61131-3 6.6.3.3, Table 41):
+      // `t : TON := (PT := T#5s);`. One the update itself carries is kept, as is
+      // the one the instance already has while the type stays the same block; a
+      // scalar left over from the previous type is dropped.
+      const sameBlock =
+        variableToUpdate.type.definition === 'derived' &&
+        variableToUpdate.type.value.toUpperCase() === dataToBeUpdated.type.value.toUpperCase()
+      const initialValue =
+        'initialValue' in dataToBeUpdated
+          ? dataToBeUpdated.initialValue
+          : sameBlock
+            ? variableToUpdate.initialValue
+            : ''
+      response.data = {
+        ...(response.data ? response.data : {}),
+        location: '',
+        initialValue: isFbInitList(initialValue) ? initialValue : '',
+        class: 'local',
+      }
     }
   }
 

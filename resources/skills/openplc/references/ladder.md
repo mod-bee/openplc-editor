@@ -134,7 +134,15 @@ Settled := holdOff.ENO;               (* ENO just mirrors EN *)
 Use it only when you mean "run this block while the rung is true". The editor
 turns it on by itself, and you cannot turn it off, for any block that has no
 inputs, no outputs, a first input that is not BOOL, or a first output that is
-not BOOL — `ADD` and most functions. `describe` reports it when it is on.
+not BOOL — `ADD` and most functions — and for **every block of an installed
+library** (IEC 61131-3 6.6.1.5): there the rung drives EN, every data pin is
+named in `inputs`, and while EN is FALSE the block is not called, ENO is FALSE
+and its outputs keep their last values. `describe` reports it when it is on, and
+`describe --libraries` marks such blocks `executionControl: true`.
+
+An input typed with an interface (`MOTOR : UT_I_MOTOR`) takes the NAME of an
+instance of a block implementing it, or extending one that does:
+`"inputs": { "MOTOR": "Motor1" }`. Edge inputs (`R_EDGE`) are drawn with `>`.
 
 Either way, read the ST afterwards and confirm the block's inputs are assigned
 and its outputs are read.

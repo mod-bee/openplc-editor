@@ -4,7 +4,7 @@ import type { TabsProps } from './types'
 const CreatePLCTextualObject = (
   name: string,
   language: 'il' | 'st' | 'python' | 'cpp',
-  pouType: 'program' | 'function' | 'function-block',
+  pouType: 'program' | 'function' | 'function-block' | 'interface',
 ): EditorModel => ({
   type: 'plc-textual',
   meta: {
@@ -24,7 +24,7 @@ const CreatePLCTextualObject = (
 const CreatePLCGraphicalObject = (
   name: string,
   language: 'ld' | 'sfc' | 'fbd',
-  pouType: 'program' | 'function' | 'function-block',
+  pouType: 'program' | 'function' | 'function-block' | 'interface',
 ): EditorModel => ({
   type: 'plc-graphical',
   meta: {
@@ -50,7 +50,7 @@ const CreatePLCGraphicalObject = (
 const CreateEditorModelObject = (
   name: string,
   language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp' | null,
-  pouType: 'program' | 'function' | 'function-block' | null,
+  pouType: 'program' | 'function' | 'function-block' | 'interface' | null,
   derivation?: 'enumerated' | 'structure' | 'array',
 ): EditorModel => {
   if (derivation) {
@@ -196,6 +196,8 @@ const CreateEditorObjectFromTab = (tab: TabsProps): EditorModel => {
       return CreateEditorModelObject(name, elementType.language, 'function')
     case 'function-block':
       return CreateEditorModelObject(name, elementType.language, 'function-block')
+    case 'interface':
+      return CreateEditorModelObject(name, elementType.language, 'interface')
     case 'data-type':
       return CreateEditorModelObject(name, null, null, elementType.derivation)
     case 'global-variable-list':

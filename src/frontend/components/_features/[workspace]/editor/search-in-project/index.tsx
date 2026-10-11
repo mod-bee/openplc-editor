@@ -284,7 +284,7 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
           Array<{
             name: string
             language: 'ld' | 'sfc' | 'fbd' | 'il' | 'st' | 'python' | 'cpp'
-            pouType: 'function' | 'function-block' | 'program'
+            pouType: 'function' | 'function-block' | 'program' | 'interface'
             body: string
             variable: string
           }>

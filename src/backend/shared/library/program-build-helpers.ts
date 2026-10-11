@@ -41,7 +41,9 @@ export function buildKnownPous(pous: PLCPou[]): KnownPou[] {
         ? ('PROGRAM' as const)
         : p.type === 'function'
           ? ('FUNCTION' as const)
-          : ('FUNCTION_BLOCK' as const),
+          : p.type === 'interface'
+            ? ('INTERFACE' as const)
+            : ('FUNCTION_BLOCK' as const),
     language: p.data.language as KnownPou['language'],
   }))
 }
@@ -94,7 +96,12 @@ export function enrichErrorWithPouContext(
   const pou = pous.find((p) => p.name.toLowerCase() === baseName.toLowerCase())
   if (!pou) return err
 
-  const enriched: StrucppCompileError = { ...err, pouName: pou.name, pouKind: pou.kind }
+  // STruC++ names three POU kinds; an INTERFACE error is routed by name alone.
+  const enriched: StrucppCompileError = {
+    ...err,
+    pouName: pou.name,
+    ...(pou.kind !== 'INTERFACE' ? { pouKind: pou.kind } : {}),
+  }
 
   // Case-insensitive filename lookup: strucpp may emit `cvavava.st`
   // (lowercase) while the splitter keyed the map by the project's

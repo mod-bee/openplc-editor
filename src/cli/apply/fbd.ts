@@ -26,16 +26,21 @@ const IMPLICIT_PINS = new Set(['EN', 'ENO'])
  * the pin is appended, typed like the last declared input. MUX is the odd one:
  * it numbers from zero (`K`, `IN0`, `IN1`), so its next pin is `IN2`. A pin that
  * is NOT a legal extension is an error, because the alternative is silence.
+ *
+ * Pins are matched without regard to case (IEC 61131-3 Ed.3 6.1.2: case is not
+ * significant in identifiers) and each reference is rewritten in place to the
+ * spelling the block declares, which is the handle id the graph is built on.
  */
 function resolvePins(pouName: string, nodes: FbdGraphNode[], body: SpecFbdBody): string[] {
   const errors: string[] = []
   const byLabel = new Map(nodes.map((node) => [node.label, node]))
 
   for (const connection of body.connections) {
-    for (const [ref, side] of [
-      [connection.from, 'source'],
-      [connection.to, 'target'],
+    for (const [end, side] of [
+      ['from', 'source'],
+      ['to', 'target'],
     ] as const) {
+      const ref = connection[end]
       const dot = ref.indexOf('.')
       if (dot < 0) continue
       const label = ref.slice(0, dot)
@@ -48,10 +53,17 @@ function resolvePins(pouName: string, nodes: FbdGraphNode[], body: SpecFbdBody):
         | undefined
       const pins = variant?.variables
       if (!pins) continue
-      if (IMPLICIT_PINS.has(pin) || pins.some((entry) => entry.name === pin)) continue
+      const upper = pin.toUpperCase()
+      const declared = IMPLICIT_PINS.has(upper) ? upper : pins.find((entry) => entry.name.toUpperCase() === upper)?.name
+      if (declared !== undefined) {
+        connection[end] = `${label}.${declared}`
+        continue
+      }
 
-      const grown = growExtensiblePin(variant, pin)
-      if (grown) continue
+      if (growExtensiblePin(variant, upper)) {
+        connection[end] = `${label}.${upper}`
+        continue
+      }
 
       const legal = pins.map((entry) => entry.name).join(', ')
       errors.push(
@@ -115,7 +127,11 @@ export function applyFbdBody(store: OpenPLCStore, pouName: string, body: SpecFbd
         pous: state.project.data.pous,
       })
       if (!built.ok) {
-        errors.push(`POU "${pouName}": block "${spec.call}" — ${built.reason.replace(/-/g, ' ')}.`)
+        errors.push(
+          built.reason === 'abstract'
+            ? `POU "${pouName}": block "${spec.call}" is ABSTRACT — a base for other blocks, never placed (IEC 61131-3 6.6.5.8.2).`
+            : `POU "${pouName}": block "${spec.call}" — ${built.reason.replace(/-/g, ' ')}.`,
+        )
         continue
       }
       // Cloned: the system branch of `buildBlockVariant` hands back the
@@ -151,11 +167,13 @@ export function applyFbdBody(store: OpenPLCStore, pouName: string, body: SpecFbd
 
   // Every pin a connection names must exist, or be one an extensible block can
   // grow. A wrong pin name is otherwise dropped in silence: the diagram looks
-  // wired and the transpiler emits the call without it.
-  errors.push(...resolvePins(pouName, nodes, body))
+  // wired and the transpiler emits the call without it. The connections are
+  // copied first, because `resolvePins` rewrites each pin to its declared case.
+  const connections = body.connections.map((connection) => ({ ...connection }))
+  errors.push(...resolvePins(pouName, nodes, { ...body, connections }))
   if (errors.length > 0) return errors
 
-  const graph = buildFbdGraph(nodes, body.connections)
+  const graph = buildFbdGraph(nodes, connections)
   if (graph.errors.length > 0) return graph.errors.map((error) => `POU "${pouName}": ${error}.`)
 
   // `addFBDFlow` adds nothing, so the built graph is what renders. A pin name

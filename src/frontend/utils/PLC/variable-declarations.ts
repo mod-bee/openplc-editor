@@ -85,6 +85,8 @@ export interface ParsedDeclaration {
 export interface ParsedBlock {
   class: PLCVariable['class']
   flag: PLCVariable['flag']
+  /** `VAR PUBLIC` / `PROTECTED` / `PRIVATE` (IEC 61131-3 6.6.5.3); absent = none. */
+  access?: PLCVariable['access']
   headerSpan: Span
   endVarSpan: Span
   declarations: ParsedDeclaration[]
@@ -525,9 +527,28 @@ const BLOCK_TO_CLASS: Record<string, PLCVariable['class']> = {
  * weaker guarantee both share. STruC++ folds it the same way, which is why
  * `isRetain` is true for both.
  */
-function blockFlag(block: { isConstant?: boolean; isRetain?: boolean }): PLCVariable['flag'] {
+function blockFlag(block: { isConstant?: boolean; isRetain?: boolean; isNonRetain?: boolean }): PLCVariable['flag'] {
   if (block.isConstant === true) return 'constant'
   if (block.isRetain === true) return 'retain'
+  // An explicit NON_RETAIN (6.5.6.2) differs from none: it holds inside an
+  // instance declared RETAIN.
+  if (block.isNonRetain === true) return 'non-retain'
+  return undefined
+}
+
+/** A function block `VAR` section's access specifier (6.6.5.3), as the model spells it. */
+function blockAccess(block: { access?: string }): PLCVariable['access'] {
+  const access = block.access?.toUpperCase()
+  if (access === 'PUBLIC') return 'public'
+  if (access === 'PROTECTED') return 'protected'
+  if (access === 'PRIVATE') return 'private'
+  return undefined
+}
+
+/** `R_EDGE` / `F_EDGE` on a declaration (6.6.3.2 item 13), as the model spells it. */
+function declarationEdge(declaration: { edge?: string }): PLCVariable['edge'] {
+  if (declaration.edge === 'R_EDGE') return 'rising'
+  if (declaration.edge === 'F_EDGE') return 'falling'
   return undefined
 }
 
@@ -543,6 +564,7 @@ interface StrucppDeclaration {
   initialValue?: { sourceSpan: StrucppSpan }
   address?: string
   addressSpan?: StrucppSpan
+  edge?: string
 }
 
 interface StrucppVarBlock {
@@ -550,6 +572,8 @@ interface StrucppVarBlock {
   blockType: string
   isConstant?: boolean
   isRetain?: boolean
+  isNonRetain?: boolean
+  access?: string
   declarations: StrucppDeclaration[]
 }
 
@@ -637,7 +661,17 @@ function readVarBlocks(ast: unknown): StrucppVarBlock[] | undefined {
 // Error refinement — two cases STruC++ reports accurately but unhelpfully
 // ---------------------------------------------------------------------------
 
-const BLOCK_QUALIFIERS = new Set(['CONSTANT', 'RETAIN', 'NON_RETAIN', 'PERSISTENT'])
+const BLOCK_QUALIFIERS = new Set([
+  'CONSTANT',
+  'RETAIN',
+  'NON_RETAIN',
+  'PERSISTENT',
+  // Access specifiers of a function block's VAR section (6.6.5.3).
+  'PUBLIC',
+  'PROTECTED',
+  'PRIVATE',
+  'INTERNAL',
+])
 
 /**
  * Replace a raw parser error with the one the user can act on.
@@ -688,7 +722,7 @@ function refineErrors(source: string, errors: ParseError[]): ParseError[] {
       return [
         at(
           index,
-          `Unknown variable block qualifier "${unknown}". Expected CONSTANT, RETAIN, NON_RETAIN or PERSISTENT.`,
+          `Unknown variable block qualifier "${unknown}". Expected CONSTANT, RETAIN, NON_RETAIN, PERSISTENT, PUBLIC, PROTECTED or PRIVATE.`,
         ),
       ]
     }
@@ -797,6 +831,7 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
   for (const block of varBlocks) {
     const blockClass = BLOCK_TO_CLASS[block.blockType.toUpperCase()] ?? 'local'
     const flag = blockFlag(block)
+    const access = blockAccess(block)
     const blockSpan = toSpan(starts, block.sourceSpan, wrapperLines)
 
     // Where the block's own keywords sit, worked out before the declarations
@@ -884,6 +919,8 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
           documentation,
           debug: false,
           ...(flag !== undefined ? { flag } : {}),
+          ...(access !== undefined ? { access } : {}),
+          ...(declarationEdge(declaration) !== undefined ? { edge: declarationEdge(declaration) } : {}),
           // The first name of `a, b : INT;` owns the comment above the line.
           ...(above && index === 0 ? { leadingComment: above.text } : {}),
         }
@@ -915,6 +952,7 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
     blocks.push({
       class: blockClass,
       flag,
+      ...(access !== undefined ? { access } : {}),
       headerSpan: { start: blockSpan.start, end: headerEnd },
       endVarSpan: { start: endVarStart, end: blockSpan.end },
       declarations,

@@ -12,14 +12,33 @@ export type PLCLanguage = 'IL' | 'ST' | 'LD' | 'FBD' | 'SFC'
 /** Extended languages supported by function blocks */
 export type PLCExtendedLanguage = PLCLanguage | 'python' | 'cpp'
 
-export type PouType = 'program' | 'function' | 'function-block'
+/**
+ * `interface` is an IEC 61131-3 INTERFACE (6.6.6): method prototypes only,
+ * no variables, never instantiated; a block IMPLEMENTS it and a variable or
+ * input of its type takes an instance of such a block.
+ */
+export type PouType = 'program' | 'function' | 'function-block' | 'interface'
 
 export type VariableClass = 'input' | 'output' | 'inOut' | 'external' | 'local' | 'temp' | 'global'
 
 export type VariableTypeDefinition = 'base-type' | 'user-data-type' | 'array' | 'derived'
 
-/** The **Flags** column; absent means plain `VAR`. */
-export type VariableFlag = 'constant' | 'retain'
+/**
+ * The **Flags** column; absent means plain `VAR`. `non-retain` is an explicit
+ * `NON_RETAIN` (IEC 61131-3 6.5.6.2): never retained, even inside an instance
+ * declared RETAIN.
+ */
+export type VariableFlag = 'constant' | 'retain' | 'non-retain'
+
+/**
+ * Access specifier of a function block's `VAR` section (IEC 61131-3 6.6.5.3,
+ * Table 48 via 6.6.5.2): `VAR PUBLIC`, `VAR PROTECTED` (reachable from a block
+ * that EXTENDS this one), `VAR PRIVATE`. Absent = plain `VAR`.
+ */
+export type VariableAccess = 'public' | 'protected' | 'private'
+
+/** `R_EDGE` / `F_EDGE` on a BOOL input (IEC 61131-3 6.6.3.2 item 13). */
+export type VariableEdge = 'rising' | 'falling'
 
 export interface PLCVariableType {
   definition: VariableTypeDefinition
@@ -48,6 +67,10 @@ export interface PLCVariable {
   debug?: boolean
   /** IEC block qualifier; absent = plain `VAR`. See {@link VariableFlag}. */
   flag?: VariableFlag
+  /** Access specifier of its `VAR` section; absent = none. See {@link VariableAccess}. */
+  access?: VariableAccess
+  /** Edge qualifier of a BOOL input; absent = level. See {@link VariableEdge}. */
+  edge?: VariableEdge
 }
 
 export interface PLCTask {
@@ -117,9 +140,20 @@ export interface PLCPou {
     /**
      * Base function block, from `FUNCTION_BLOCK X EXTENDS Y`; undefined when
      * the POU derives from nothing. On the interface because the clause changes
-     * the block's pins and methods, as `returnType` does for a FUNCTION.
+     * the block's pins and methods, as `returnType` does for a FUNCTION. On an
+     * `interface` POU: the interfaces it EXTENDS, comma-separated as written
+     * (`A, B`; IEC 61131-3 6.6.6.6).
      */
     extends?: string
+    /**
+     * Interfaces the function block names in IMPLEMENTS (IEC 61131-3 6.6.6.4);
+     * absent when it names none.
+     */
+    implements?: string[]
+    /** `FUNCTION_BLOCK ABSTRACT` (6.6.5.8.2): a base only, never instantiated. */
+    isAbstract?: boolean
+    /** `FUNCTION_BLOCK FINAL` (6.6.5.8.3): no block may EXTEND it. */
+    isFinal?: boolean
     variables: PLCVariable[]
   }
   body: PLCBody
@@ -168,6 +202,19 @@ export interface PLCFunction {
 export interface PLCFunctionBlock {
   language: PouLanguage
   name: string
+  variables: PLCVariable[]
+  body: PLCBody
+  documentation: string
+  variablesText?: string
+}
+
+/** An IEC 61131-3 INTERFACE (6.6.6): method prototypes as ST text in `body`, no variables. */
+export interface PLCInterface {
+  language: 'st'
+  name: string
+  /** The interfaces it EXTENDS, comma-separated as written (6.6.6.6). */
+  extends?: string
+  /** Always empty: an interface declares no variables. */
   variables: PLCVariable[]
   body: PLCBody
   documentation: string

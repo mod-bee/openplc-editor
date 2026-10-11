@@ -20,9 +20,12 @@ import type { Edge, Node } from '@xyflow/react'
 import { unresolvedHandles } from './handles'
 import type { SpecLadderBody, SpecLadderOutput } from './schema'
 
-export function applyLadderBody(store: OpenPLCStore, pouName: string, body: SpecLadderBody): string[] {
+export function applyLadderBody(store: OpenPLCStore, pouName: string, spec: SpecLadderBody): string[] {
   const errors: string[] = []
   const state = store.getState()
+  // A copy, because `toOutput` rewrites each block's pin names to the spelling
+  // the block declares; the caller's document is left as written.
+  const body = structuredClone(spec)
 
   // Mirrors the editor's own lookup (`ladder/utils/utils.ts`): the POU's own
   // variables, matched case-insensitively, and a contact or coil will not take a
@@ -35,16 +38,16 @@ export function applyLadderBody(store: OpenPLCStore, pouName: string, body: Spec
         (kind === 'block' || variable.type.definition !== 'derived'),
     )
 
-  const rungs = body.rungs.map((spec, index) => {
+  const rungs = body.rungs.map((rungSpec, index) => {
     const outputs: RungOutput[] = []
-    for (const output of spec.outputs) {
+    for (const output of rungSpec.outputs) {
       const built = toOutput(store, pouName, output, errors)
       if (built) outputs.push(built)
     }
     return buildLadderRung({
       rungId: `rung-${index}`,
-      comment: spec.comment,
-      logic: spec.logic as RungLogic | undefined,
+      comment: rungSpec.comment,
+      logic: rungSpec.logic as RungLogic | undefined,
       outputs,
       resolveVariable,
     })
@@ -85,7 +88,8 @@ export function applyLadderBody(store: OpenPLCStore, pouName: string, body: Spec
  * elements carry `data.block.handleId`, which is the pin's name, so the one to
  * name is found by that rather than by position.
  */
-function nameBlockPins(store: OpenPLCStore, 
+function nameBlockPins(
+  store: OpenPLCStore,
   pouName: string,
   body: SpecLadderBody,
   errors: string[],
@@ -187,7 +191,11 @@ function toOutput(store: OpenPLCStore, pouName: string, output: SpecLadderOutput
     pous: state.project.data.pous,
   })
   if (!built.ok) {
-    errors.push(`POU "${pouName}": block "${output.block.call}" — ${built.reason.replace('-', ' ')}.`)
+    errors.push(
+      built.reason === 'abstract'
+        ? `POU "${pouName}": block "${output.block.call}" is ABSTRACT — a base for other blocks, never placed (IEC 61131-3 6.6.5.8.2).`
+        : `POU "${pouName}": block "${output.block.call}" — ${built.reason.replace('-', ' ')}.`,
+    )
     return null
   }
   // Cloned for the same reason as in `apply/fbd.ts`: the library's `variables`
@@ -199,20 +207,31 @@ function toOutput(store: OpenPLCStore, pouName: string, output: SpecLadderOutput
   // An in-out pin — SoftMotion's `AXIS` — sits on the left with the inputs and is
   // named through `inputs`. It is not optional: the compiler refuses a call that
   // leaves one unassigned.
+  //
+  // Matched without regard to case (IEC 61131-3 Ed.3 6.1.2: case is not
+  // significant in identifiers), then rewritten to the declared spelling: the
+  // pin elements carry the declared name as their handle id.
   const accepts: Record<'input' | 'output', readonly string[]> = { input: ['input', 'inOut'], output: ['output'] }
-  for (const [side, pins] of [
-    ['input', output.block.inputs],
-    ['output', output.block.outputs],
-  ] as const) {
-    for (const pin of Object.keys(pins ?? {})) {
-      if (variant.variables.some((entry) => entry.name === pin && accepts[side].includes(entry.class ?? ''))) continue
-      const legal = variant.variables
-        .filter((entry) => accepts[side].includes(entry.class ?? ''))
-        .map((entry) => entry.name)
-        .join(', ')
-      errors.push(`POU "${pouName}": block "${variant.name}" has no ${side} pin "${pin}". Its ${side}s are: ${legal}.`)
-      return null
+  for (const side of ['input', 'output'] as const) {
+    const key = side === 'input' ? 'inputs' : 'outputs'
+    const pins = output.block[key]
+    if (!pins) continue
+    const declared = variant.variables.filter((entry) => accepts[side].includes(entry.class ?? ''))
+    const canonical = new Map<string, string>()
+    for (const [pin, source] of Object.entries(pins)) {
+      const match = declared.find((entry) => entry.name.toUpperCase() === pin.toUpperCase())
+      if (!match) {
+        const legal = declared.map((entry) => entry.name).join(', ')
+        errors.push(`POU "${pouName}": block "${variant.name}" has no ${side} pin "${pin}". Its ${side}s are: ${legal}.`)
+        return null
+      }
+      if (canonical.has(match.name)) {
+        errors.push(`POU "${pouName}": block "${variant.name}" ${side} pin "${match.name}" is named twice.`)
+        return null
+      }
+      canonical.set(match.name, source)
     }
+    output.block[key] = Object.fromEntries(canonical)
   }
 
   return {

@@ -62,8 +62,9 @@ const hydrateLibraries = () => {
   Promise.all([editorPorts.library.loadAll(), editorPorts.library.listInstalled()])
     .then(([archives, installed]) => {
       const actions = appStore.getState().libraryActions
-      actions.setSystemLibraries(stlibsToSystemLibraries(archives))
-      actions.setBundledLibraryNames(installed.filter((l) => l.bundled).map((l) => l.name))
+      const bundled = installed.filter((l) => l.bundled).map((l) => l.name)
+      actions.setSystemLibraries(stlibsToSystemLibraries(archives, bundled))
+      actions.setBundledLibraryNames(bundled)
     })
     .catch((err) => {
       console.error('Failed to load .stlib libraries:', err)

@@ -1035,6 +1035,31 @@ const createProjectSlice: StateCreator<ProjectSliceRoot, [], [], ProjectSlice> =
         }),
       )
     },
+    updatePouDeclaration: (name, clauses) => {
+      setState(
+        produce((slice: ProjectSlice) => {
+          const pou = slice.project.data.pous.find((p) => p.name === name)
+          if (!pou) return
+          const iface = (pou.interface ??= { variables: [] })
+          if ('extends' in clauses) {
+            if (clauses.extends) iface.extends = clauses.extends
+            else delete iface.extends
+          }
+          if ('implements' in clauses) {
+            if (clauses.implements && clauses.implements.length > 0) iface.implements = [...clauses.implements]
+            else delete iface.implements
+          }
+          if ('isAbstract' in clauses) {
+            if (clauses.isAbstract) iface.isAbstract = true
+            else delete iface.isAbstract
+          }
+          if ('isFinal' in clauses) {
+            if (clauses.isFinal) iface.isFinal = true
+            else delete iface.isFinal
+          }
+        }),
+      )
+    },
     updatePouReturnType: (name, returnType) => {
       setState(
         produce((slice: ProjectSlice) => {

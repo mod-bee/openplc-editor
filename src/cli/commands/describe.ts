@@ -13,12 +13,12 @@
  */
 
 import type { OpenPLCStore } from '@root/frontend/store'
-import type { SystemLibrary } from '@root/middleware/shared/ports/library-types'
+import type { SystemLibrary, SystemLibraryMethod } from '@root/middleware/shared/ports/library-types'
 import type { PLCPou, PLCVariable } from '@root/middleware/shared/ports/types'
 import { readRtosSettings } from '@root/middleware/shared/utils/rtos'
 
 import { boolFlag, type ParsedArgs, stringFlag } from '../args'
-import { describeDataType } from '../describe/data-types'
+import { describeDataType, describeVariableType } from '../describe/data-types'
 import { describeFbdBody } from '../describe/fbd'
 import { describeLadderBody } from '../describe/ladder'
 import { describeProtocols } from '../describe/protocol'
@@ -140,6 +140,19 @@ function describePou(
     language: pou.body.language,
   }
   if (pou.interface?.returnType) out.returnType = pou.interface.returnType
+  // The declaration's clauses, in the form `apply` takes them back.
+  if (pou.interface?.extends) {
+    out.extends =
+      pou.pouType === 'interface'
+        ? pou.interface.extends
+            .split(',')
+            .map((name) => name.trim())
+            .filter((name) => name !== '')
+        : pou.interface.extends
+  }
+  if (pou.interface?.implements?.length) out.implements = pou.interface.implements
+  if (pou.interface?.isAbstract) out.abstract = true
+  if (pou.interface?.isFinal) out.final = true
   if (pou.documentation) out.documentation = pou.documentation
   out.variables = (pou.interface?.variables ?? []).map(describeVariable)
 
@@ -174,6 +187,8 @@ function describeVariable(variable: PLCVariable): Record<string, unknown> {
     type: describeVariableType(variable.type),
   }
   if (variable.flag) out.flag = variable.flag
+  if (variable.access) out.access = variable.access
+  if (variable.edge) out.edge = variable.edge
   if (variable.location) out.location = variable.location
   if (variable.initialValue !== undefined && variable.initialValue !== null) out.initialValue = variable.initialValue
   if (variable.documentation) out.documentation = variable.documentation
@@ -181,22 +196,6 @@ function describeVariable(variable: PLCVariable): Record<string, unknown> {
   return out
 }
 
-/**
- * An array reads back as its ELEMENT type plus the bounds, which is what `apply`
- * takes. Reporting the store's rendered `value` ("ARRAY [0..3] OF INT") would
- * hand back a document that cannot be applied: `apply` derives that text from
- * `dimensions`, so it would end up nested inside itself on the next pass.
- */
-function describeVariableType(type: PLCVariable['type']): Record<string, unknown> {
-  if (type.definition !== 'array' || !type.data) {
-    return { definition: type.definition, value: type.value }
-  }
-  return {
-    definition: 'array',
-    value: type.data.baseType.value,
-    dimensions: type.data.dimensions.map((entry) => entry.dimension),
-  }
-}
 
 /** The catalogue an agent needs to place a block without guessing its pins. */
 function describeLibrary(library: SystemLibrary): Record<string, unknown> {
@@ -209,13 +208,48 @@ function describeLibrary(library: SystemLibrary): Record<string, unknown> {
       name: pou.name,
       type: pou.type,
       ...(pou.extensible ? { extensible: true } : {}),
+      // EN / ENO always on this block: the rung drives EN (IEC 61131-3 6.6.1.5).
+      ...(pou.executionControl ? { executionControl: true } : {}),
+      ...(pou.isAbstract ? { abstract: true } : {}),
+      ...(pou.extends ? { extends: pou.extends } : {}),
+      ...(pou.implements?.length ? { implements: pou.implements } : {}),
+      ...(pou.methods?.length ? { methods: pou.methods.map(describeMethod) } : {}),
       ...(pou.documentation ? { documentation: pou.documentation } : {}),
       pins: pou.variables.map((variable) => ({
         name: variable.name,
         class: variable.class,
         type: variable.type.value,
+        ...(variable.edge ? { edge: variable.edge } : {}),
       })),
     })),
+    // The types an interface-typed pin or variable takes (6.6.6): an instance
+    // of a block that implements it is wired to such a pin by its name.
+    ...(library.interfaces?.length
+      ? {
+          interfaces: library.interfaces.map((iface) => ({
+            name: iface.name,
+            ...(iface.extends?.length ? { extends: iface.extends } : {}),
+            methods: iface.methods.map(describeMethod),
+          })),
+        }
+      : {}),
+  }
+}
+
+/** A method prototype as `describe --libraries` shows it. */
+function describeMethod(method: SystemLibraryMethod): Record<string, unknown> {
+  return {
+    name: method.name,
+    ...(method.returnType ? { returnType: method.returnType } : {}),
+    ...(method.variables.length
+      ? {
+          parameters: method.variables.map((variable) => ({
+            name: variable.name,
+            class: variable.class,
+            type: variable.type.value,
+          })),
+        }
+      : {}),
   }
 }
 

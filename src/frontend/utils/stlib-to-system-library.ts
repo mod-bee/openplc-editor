@@ -36,9 +36,11 @@
  *   parameters become class `'inOut'` (camel-case the editor uses).
  */
 
-import type { StlibArchiveDTO } from '../../middleware/shared/ports/library-port'
+import type { StlibArchiveDTO, StlibMethodDTO } from '../../middleware/shared/ports/library-port'
 import type {
   SystemLibrary,
+  SystemLibraryInterface,
+  SystemLibraryMethod,
   SystemLibraryPou,
   SystemLibraryVariable,
 } from '../../middleware/shared/ports/library-types'
@@ -100,9 +102,30 @@ function classFromDirection(d: 'input' | 'output' | 'inout'): SystemLibraryVaria
   return d
 }
 
-export function stlibToSystemLibrary(archive: StlibArchiveDTO): SystemLibrary {
+/** A method prototype, its parameters as pins. */
+function toMethod(method: StlibMethodDTO): SystemLibraryMethod {
+  return {
+    name: method.name,
+    ...(method.returnType !== undefined ? { returnType: method.returnType } : {}),
+    variables: [
+      ...method.inputs.map((p) => ({ name: p.name, class: 'input' as const, type: typeRef(p.type) })),
+      ...method.outputs.map((p) => ({ name: p.name, class: 'output' as const, type: typeRef(p.type) })),
+      ...method.inouts.map((p) => ({ name: p.name, class: 'inOut' as const, type: typeRef(p.type) })),
+    ],
+  }
+}
+
+/**
+ * @param options.executionControl - give every block EN / ENO in Ladder and
+ *   FBD (`SystemLibraryPou.executionControl`); true for an installed library.
+ */
+export function stlibToSystemLibrary(
+  archive: StlibArchiveDTO,
+  options: { executionControl?: boolean } = {},
+): SystemLibrary {
   const m = archive.manifest
   const pous: SystemLibraryPou[] = []
+  const executionControl = options.executionControl === true ? { executionControl: true as const } : {}
 
   for (const fn of m.functions) {
     const variables: SystemLibraryVariable[] = [
@@ -124,6 +147,7 @@ export function stlibToSystemLibrary(archive: StlibArchiveDTO): SystemLibrary {
       documentation: fn.documentation ?? '',
       extensible: fn.variadic !== undefined,
       category: fn.category,
+      ...executionControl,
     })
   }
 
@@ -142,6 +166,8 @@ export function stlibToSystemLibrary(archive: StlibArchiveDTO): SystemLibrary {
           class: 'input' as const,
           type: typeRef(v.type),
           ...(initialValue !== undefined ? { initialValue } : {}),
+          // `R_EDGE` / `F_EDGE`: the pin is drawn with the edge marker.
+          ...(v.edge !== undefined ? { edge: v.edge } : {}),
         }
       }),
       ...fb.outputs.map((v) => ({
@@ -172,8 +198,21 @@ export function stlibToSystemLibrary(archive: StlibArchiveDTO): SystemLibrary {
       body: nativeLanguage ? (sourceByFile.get(fb.sourceFile ?? '') ?? '') : '',
       documentation: fb.documentation ?? '',
       category: fb.category,
+      ...executionControl,
+      ...(fb.extends !== undefined ? { extends: fb.extends } : {}),
+      ...(fb.implements !== undefined && fb.implements.length > 0 ? { implements: [...fb.implements] } : {}),
+      ...(fb.isAbstract === true ? { isAbstract: true as const } : {}),
+      ...(fb.methods !== undefined && fb.methods.length > 0 ? { methods: fb.methods.map(toMethod) } : {}),
     })
   }
+
+  const interfaces: SystemLibraryInterface[] = (m.interfaces ?? []).map((iface) => ({
+    name: iface.name,
+    ...(iface.extends !== undefined && iface.extends.length > 0 ? { extends: [...iface.extends] } : {}),
+    methods: iface.methods.map(toMethod),
+    documentation: iface.documentation ?? '',
+    ...(iface.category !== undefined ? { category: iface.category } : {}),
+  }))
 
   const result: SystemLibrary = {
     name: m.name,
@@ -184,9 +223,20 @@ export function stlibToSystemLibrary(archive: StlibArchiveDTO): SystemLibrary {
     pous,
   }
   if (m.displayName) result.displayName = m.displayName
+  if (interfaces.length > 0) result.interfaces = interfaces
   return result
 }
 
-export function stlibsToSystemLibraries(archives: StlibArchiveDTO[]): SystemLibrary[] {
-  return archives.map(stlibToSystemLibrary)
+/**
+ * @param bundledNames - the libraries that ship with the editor. Every other
+ *   library's blocks get EN / ENO (`SystemLibraryPou.executionControl`); when
+ *   omitted, none do.
+ */
+export function stlibsToSystemLibraries(archives: StlibArchiveDTO[], bundledNames?: Iterable<string>): SystemLibrary[] {
+  const bundled = bundledNames === undefined ? undefined : new Set(bundledNames)
+  return archives.map((archive) =>
+    stlibToSystemLibrary(archive, {
+      executionControl: bundled !== undefined && !bundled.has(archive.manifest.name),
+    }),
+  )
 }

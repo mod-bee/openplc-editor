@@ -66,6 +66,10 @@ interface IpcPou {
     returnType?: string
     /** Base function block, from `FUNCTION_BLOCK X EXTENDS Y`. */
     extends?: string
+    /** IMPLEMENTS list, ABSTRACT, FINAL (IEC 61131-3 6.6.6.4, 6.6.5.8). */
+    implements?: string[]
+    isAbstract?: boolean
+    isFinal?: boolean
     body: { language: string; value: unknown }
     documentation: string
     variablesText?: string
@@ -118,6 +122,9 @@ function mapIpcPouToPortPou(ipcPou: IpcPou): PLCPou {
     interface: {
       returnType: ipcPou.data.returnType,
       ...(ipcPou.data.extends ? { extends: ipcPou.data.extends } : {}),
+      ...(ipcPou.data.implements?.length ? { implements: ipcPou.data.implements } : {}),
+      ...(ipcPou.data.isAbstract ? { isAbstract: true } : {}),
+      ...(ipcPou.data.isFinal ? { isFinal: true } : {}),
       variables: ipcPou.data.variables as PLCVariable[],
     },
     body: ipcPou.data.body as PLCPou['body'],
@@ -137,6 +144,9 @@ function mapPortPouToIpcPou(portPou: PLCPou): IpcPou {
       variables: (portPou.interface?.variables ?? []) as unknown[],
       ...(portPou.interface?.returnType ? { returnType: portPou.interface.returnType } : {}),
       ...(portPou.interface?.extends ? { extends: portPou.interface.extends } : {}),
+      ...(portPou.interface?.implements?.length ? { implements: portPou.interface.implements } : {}),
+      ...(portPou.interface?.isAbstract ? { isAbstract: true } : {}),
+      ...(portPou.interface?.isFinal ? { isFinal: true } : {}),
       body: portPou.body as { language: string; value: unknown },
       documentation: portPou.documentation ?? '',
     },

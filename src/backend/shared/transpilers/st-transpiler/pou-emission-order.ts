@@ -55,6 +55,15 @@ export function buildPouEmissionOrder(pous: readonly TranspilePou[]): TranspileP
 function extractPouDeps(pou: TranspilePou, pouNames: ReadonlySet<string>): string[] {
   const deps = new Set<string>()
 
+  // The base it EXTENDS and the interfaces it IMPLEMENTS (an interface's own
+  // bases are a comma-separated EXTENDS): declared before it, as a type it
+  // names is.
+  const named = [...(pou.interface?.extends ?? '').split(','), ...(pou.interface?.implements ?? [])]
+  for (const raw of named) {
+    const name = raw.trim()
+    if (name !== '' && name !== pou.name && pouNames.has(name)) deps.add(name)
+  }
+
   // Variable references: a `derived` / `user-data-type` variable
   // whose type name matches another project POU is an FB instance
   // declaration — emit the FB definition first.

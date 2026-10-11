@@ -103,3 +103,48 @@ describe('applyLadderBody — the connection recorded on the block', () => {
     )
   })
 })
+
+// IEC 61131-3 Ed.3 6.1.2: case is not significant in identifiers.
+describe('applyLadderBody — a pin named in another case', () => {
+  it('is matched and stored under the spelling the block declares', () => {
+    const state = store.getState()
+    state.pouActions.create({ name: 'AnyCase', type: 'program', language: 'ld' } as never)
+
+    const spec = {
+      rungs: [
+        {
+          logic: { contact: { variable: 'A', variant: 'default' } },
+          outputs: [{ block: { call: TON, instance: 't1', inputs: { pt: 'Preset' }, outputs: { Et: 'Elapsed' } } }],
+        },
+      ],
+    } as SpecLadderBody
+    expect(applyLadderBody(store, 'AnyCase', spec)).toEqual([])
+
+    const flow = store.getState().ladderFlows.find((entry) => entry.name === 'AnyCase')
+    const nodes = flow?.rungs[0].nodes ?? []
+    const named = (pin: string) =>
+      (
+        nodes.find((node) => node.type === 'variable' && (node.data as { block?: { handleId?: string } }).block?.handleId === pin)
+          ?.data as { variable?: { name?: string } } | undefined
+      )?.variable?.name
+    expect(named('PT')).toBe('Preset')
+    expect(named('ET')).toBe('Elapsed')
+    // The caller's document is left as written.
+    expect(Object.keys((spec.rungs[0].outputs[0] as { block: { inputs: object } }).block.inputs)).toEqual(['pt'])
+  })
+
+  it('refuses one pin named twice in two cases', () => {
+    const state = store.getState()
+    state.pouActions.create({ name: 'Twice', type: 'program', language: 'ld' } as never)
+    const errors = applyLadderBody(store, 'Twice', {
+      rungs: [
+        {
+          logic: { contact: { variable: 'A', variant: 'default' } },
+          outputs: [{ block: { call: TON, instance: 't1', inputs: { PT: 'P1', pt: 'P2' } } }],
+        },
+      ],
+    } as SpecLadderBody)
+    expect(errors.join(' ')).toContain('input pin "PT" is named twice')
+  })
+})
+

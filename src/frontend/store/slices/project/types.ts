@@ -14,6 +14,7 @@ import type {
   PLCFunction,
   PLCFunctionBlock,
   PLCInstance,
+  PLCInterface,
   PLCProgram,
   PLCProjectData,
   PLCRemoteDevice,
@@ -60,6 +61,7 @@ export type PouDTO =
   | { type: 'program'; data: PLCProgram }
   | { type: 'function'; data: PLCFunction }
   | { type: 'function-block'; data: PLCFunctionBlock }
+  | { type: 'interface'; data: PLCInterface }
 
 export type DataTypeDTO = {
   data: PLCDataType
@@ -125,6 +127,16 @@ export type ProjectActions = {
   deletePou: (name: string) => void
   updatePouDocumentation: (name: string, documentation: string) => void
   updatePouReturnType: (name: string, returnType: string) => void
+  /**
+   * Set the POU-level clauses of a function block or an interface declaration
+   * (IEC 61131-3 6.6.5.5, 6.6.5.8, 6.6.6.4, 6.6.6.6): EXTENDS, IMPLEMENTS,
+   * ABSTRACT, FINAL. Each given key replaces the old value; `undefined`, an
+   * empty string or an empty list clears it.
+   */
+  updatePouDeclaration: (
+    name: string,
+    clauses: { extends?: string; implements?: string[]; isAbstract?: boolean; isFinal?: boolean },
+  ) => void
   /**
    * Store a POU's declaration text.
    *

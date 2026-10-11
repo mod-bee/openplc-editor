@@ -36,6 +36,8 @@ export interface BlockVariantVariable {
   name: string
   class?: string
   type: { definition: string; value: string }
+  /** `R_EDGE` / `F_EDGE` on a BOOL input (IEC 61131-3 6.6.3.2). */
+  edge?: 'R_EDGE' | 'F_EDGE'
 }
 
 /** The curated signature a placed block keeps. Deliberately not the library entry. */
@@ -45,13 +47,16 @@ export interface BlockVariantShape {
   variables: BlockVariantVariable[]
   documentation?: string
   extensible: boolean
+  /** EN / ENO always shown — see `SystemLibraryPou.executionControl`. */
+  executionControl?: true
 }
 
 export type BuildBlockVariantResult =
   | { ok: true; variant: BlockVariantShape }
   | {
       ok: false
-      reason: 'unknown-library' | 'unknown-pou' | 'malformed-ref'
+      /** `abstract`: an ABSTRACT block, never instantiated (IEC 61131-3 6.6.5.8.2). */
+      reason: 'unknown-library' | 'unknown-pou' | 'malformed-ref' | 'abstract'
       /**
        * Which half of the reference failed. The two editors report a failed
        * `system` lookup with a toast but drop a failed `user` lookup silently,
@@ -89,6 +94,9 @@ export function buildBlockVariant(input: BuildBlockVariantInput): BuildBlockVari
       .find((library) => library.name === blockLibrary)
       ?.pous.find((pou) => pou.name === pouName)
     if (!libraryPou) return { ok: false, reason: 'unknown-pou', libraryType: 'system', blockRef: input.blockRef }
+    if (libraryPou.isAbstract === true) {
+      return { ok: false, reason: 'abstract', libraryType: 'system', blockRef: input.blockRef }
+    }
 
     // Copy the signature, not the library entry. That entry also carries `body`
     // (the authored source, which for a native C/C++ or Python block is the
@@ -105,6 +113,7 @@ export function buildBlockVariant(input: BuildBlockVariantInput): BuildBlockVari
         variables: libraryPou.variables,
         documentation: libraryPou.documentation,
         extensible: libraryPou.extensible ?? false,
+        ...(libraryPou.executionControl === true ? { executionControl: true as const } : {}),
       },
     }
   }
@@ -115,12 +124,17 @@ export function buildBlockVariant(input: BuildBlockVariantInput): BuildBlockVari
     if (!library) return { ok: false, reason: 'unknown-library', libraryType: 'user', blockRef: input.blockRef }
     const pou = input.pous.find((entry) => entry.name === library.name)
     if (!pou) return { ok: false, reason: 'unknown-pou', libraryType: 'user', blockRef: input.blockRef }
+    if (pou.interface?.isAbstract === true) {
+      return { ok: false, reason: 'abstract', libraryType: 'user', blockRef: input.blockRef }
+    }
 
     const variables: BlockVariantVariable[] = (pou.interface?.variables ?? []).map((variable) => ({
       id: variable.id,
       name: variable.name,
       class: variable.class,
       type: { definition: variable.type.definition, value: variable.type.value.toUpperCase() },
+      // Drawn with the edge marker on the pin, as a library block's is.
+      ...(variable.edge !== undefined ? { edge: variable.edge === 'rising' ? 'R_EDGE' : 'F_EDGE' } : {}),
     }))
 
     // A function's return value is a pin on the diagram but not a declared

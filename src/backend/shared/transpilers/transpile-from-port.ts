@@ -99,6 +99,17 @@ function projectPou(pou: PLCPou): TranspilePou {
     interface: {
       variables,
       ...(pou.pouType === 'function' && pou.interface?.returnType ? { returnType: pou.interface.returnType } : {}),
+      // A derived block, an implementing block and an interface's bases reach
+      // STruC++ only through these: dropped, the block compiles with no base,
+      // its instances are not assignable to its interfaces.
+      ...((pou.pouType === 'function-block' || pou.pouType === 'interface') && pou.interface?.extends
+        ? { extends: pou.interface.extends }
+        : {}),
+      ...(pou.pouType === 'function-block' && pou.interface?.implements && pou.interface.implements.length > 0
+        ? { implements: pou.interface.implements }
+        : {}),
+      ...(pou.pouType === 'function-block' && pou.interface?.isAbstract ? { isAbstract: true } : {}),
+      ...(pou.pouType === 'function-block' && pou.interface?.isFinal ? { isFinal: true } : {}),
     },
     body: projectBody(pou.body),
   }
@@ -202,6 +213,9 @@ function projectVariable(v: PLCVariable): TranspileVariable {
       ? { initialValue: v.initialValue }
       : {}),
     ...(v.documentation ? { documentation: v.documentation } : {}),
+    ...(v.flag !== undefined ? { flag: v.flag } : {}),
+    ...(v.access !== undefined ? { access: v.access } : {}),
+    ...(v.edge !== undefined ? { edge: v.edge } : {}),
   }
 }
 

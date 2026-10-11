@@ -1,7 +1,8 @@
 import type { PLCPou } from '../../../middleware/shared/ports/types'
 import { generateIecVariablesToString } from '../generate-iec-variables-to-string'
 import { escapeCommentText } from './comment-text'
-import { getEndKeyword, getStartKeyword } from './pou-file-extensions'
+import { pouDeclarationLine } from './pou-declaration-line'
+import { getEndKeyword } from './pou-file-extensions'
 
 /** PLCPou extended with optional variablesText from code-mode editing */
 type SerializablePou = PLCPou & { variablesText?: string }
@@ -15,19 +16,20 @@ const formatDocumentation = (documentation: string | undefined): string => {
   return ''
 }
 
-const buildDeclaration = (pou: SerializablePou): string => {
-  const startKeyword = getStartKeyword(pou.pouType)
-  if (pou.pouType === 'function' && pou.interface?.returnType) {
-    return `${startKeyword} ${pou.name} : ${pou.interface.returnType}\n`
-  }
-  // The base must survive the round trip, or saving a derived POU un-derives it.
-  if (pou.interface?.extends) {
-    return `${startKeyword} ${pou.name} EXTENDS ${pou.interface.extends}\n`
-  }
-  return `${startKeyword} ${pou.name}\n`
-}
+// EXTENDS / IMPLEMENTS / ABSTRACT must survive the round trip, or saving a
+// derived POU un-derives it.
+/**
+ * A textual body as the file holds it: no leading or trailing whitespace. The reader takes the body back the same way, so what is written
+ * is what loads -- `describe` -> `apply` and load -> save no longer add or drop
+ * a blank line before END_xxx.
+ */
+export const trimBodyText = (text: string): string => text.trim()
+
+const buildDeclaration = (pou: SerializablePou): string => `${pouDeclarationLine(pou)}\n`
 
 const buildVariables = (pou: SerializablePou): string => {
+  // An INTERFACE has no VAR sections of its own (IEC 61131-3 6.6.6.1).
+  if (pou.pouType === 'interface') return pou.variablesText?.trim() ? pou.variablesText : ''
   if (pou.variablesText != null) return pou.variablesText
   const variables = pou.interface?.variables ?? []
   return generateIecVariablesToString(variables)
@@ -41,7 +43,7 @@ export const serializeTextualPouToString = (pou: SerializablePou): string => {
   let result = formatDocumentation(pou.documentation)
   result += buildDeclaration(pou)
   result += buildVariables(pou) + '\n\n'
-  result += pou.body.value + '\n\n'
+  result += trimBodyText(String(pou.body.value)) + '\n\n'
   result += getEndKeyword(pou.pouType)
 
   return result

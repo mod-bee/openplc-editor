@@ -93,6 +93,7 @@ type ProjectTreeBranchProps = ComponentPropsWithoutRef<'li'> & {
     | 'global-variable-list'
     | 'function'
     | 'function-block'
+    | 'interface'
     | 'program'
     | 'resource'
     | 'device'
@@ -109,6 +110,7 @@ const BranchSources = {
   'global-variable-list': { BranchIcon: GlobalVariableListIcon, label: 'Global Variables' },
   function: { BranchIcon: FunctionIcon, label: 'Functions' },
   'function-block': { BranchIcon: FunctionBlockIcon, label: 'Function Blocks' },
+  interface: { BranchIcon: FunctionBlockIcon, label: 'Interfaces' },
   program: { BranchIcon: ProgramIcon, label: 'Programs' },
   resource: { BranchIcon: ResourceIcon, label: 'Resource' },
   device: { BranchIcon: DeviceIcon, label: 'Device' },

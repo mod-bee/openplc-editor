@@ -1,4 +1,11 @@
-import { builtinFunctions, getLiteralType, isLegalIdentifier, sanitizeVariableInput } from '../keywords'
+import {
+  builtinFunctions,
+  getLiteralType,
+  isLegalElementName,
+  isLegalEnumValue,
+  isLegalIdentifier,
+  sanitizeVariableInput,
+} from '../keywords'
 
 describe('getLiteralType', () => {
   it('returns undefined for non-literal strings', () => {
@@ -131,10 +138,24 @@ describe('isLegalIdentifier', () => {
     expect(reason).toBe('is a reserved word')
   })
 
-  it('returns false for a builtin function name', () => {
-    const [legal, reason] = isLegalIdentifier('ABS')
-    expect(legal).toBe(false)
-    expect(reason).toBe('is a reserved word')
+  it('accepts a standard function name: 6.1.3 refuses keywords only (Limit, Max)', () => {
+    expect(isLegalIdentifier('limit')).toEqual([true, ''])
+    expect(isLegalIdentifier('ABS')).toEqual([true, ''])
+  })
+
+  it('accepts SET and GET: not IEC keywords (RS input SET, 6.6.3.5.2)', () => {
+    expect(isLegalIdentifier('set')).toEqual([true, ''])
+    expect(isLegalIdentifier('Set')).toEqual([true, ''])
+    expect(isLegalIdentifier('get')).toEqual([true, ''])
+  })
+
+  it('still refuses the IEC keywords TIME, FOR, BY and ON', () => {
+    for (const word of ['time', 'for', 'by', 'on']) expect(isLegalIdentifier(word)).toEqual([false, 'is a reserved word'])
+  })
+
+  it('refuses END_SET and END_GET, which the compiler lexes as keywords', () => {
+    expect(isLegalIdentifier('end_set')[0]).toBe(false)
+    expect(isLegalIdentifier('END_GET')[0]).toBe(false)
   })
 
   it('accepts Now: IEC 61131-3 Ed.3 has no NOW keyword or standard function', () => {
@@ -257,5 +278,28 @@ describe('sanitizeVariableInput', () => {
     sanitizeVariableInput(el)
     // 1 -> _1, - -> _, space -> _, @ removed
     expect(el.value).toBe('_1a_b_cd')
+  })
+})
+
+describe('isLegalElementName', () => {
+  it('refuses a standard function name for a POU or data type', () => {
+    expect(isLegalElementName('ABS')).toEqual([false, 'is the name of a standard function'])
+    expect(isLegalElementName('Limit')).toEqual([false, 'is the name of a standard function'])
+  })
+
+  it('refuses SET and GET', () => {
+    expect(isLegalElementName('set')).toEqual([false, 'is a reserved word'])
+  })
+
+  it('accepts an ordinary name and refuses a keyword', () => {
+    expect(isLegalElementName('UT_STARTS_SET')).toEqual([true, ''])
+    expect(isLegalElementName('program')).toEqual([false, 'is a reserved word'])
+  })
+})
+
+describe('isLegalEnumValue', () => {
+  it('refuses SET and GET but accepts a standard function name', () => {
+    expect(isLegalEnumValue('Set')).toEqual([false, 'is a reserved word'])
+    expect(isLegalEnumValue('limit')).toEqual([true, ''])
   })
 })

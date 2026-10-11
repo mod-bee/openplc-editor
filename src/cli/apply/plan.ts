@@ -19,8 +19,9 @@
 
 import type { OpenPLCStore } from '@root/frontend/store'
 import { elementNameCollision } from '@root/frontend/store/slices/shared/name-collision'
-import { isLegalIdentifier } from '@root/frontend/utils/keywords'
+import { isLegalElementName, isLegalEnumValue, isLegalIdentifier } from '@root/frontend/utils/keywords'
 import { normalizeEnumBaseType, validateEnumeratedDataType } from '@root/frontend/utils/PLC/enum-named-values'
+import { checkFbInitList, resolveFbInitMembers } from '@root/frontend/utils/PLC/fb-instance-init'
 import { baseTypeEnum } from '@root/middleware/shared/ports/plc-schemas'
 import type { PLCDataType, PLCVariable } from '@root/middleware/shared/ports/types'
 import { RTOS_SETTINGS_SECTION } from '@root/middleware/shared/utils/rtos'
@@ -285,15 +286,17 @@ function toDataType(spec: SpecDataType): PLCDataType {
  */
 function checkDataTypeNames(wanted: SpecDataType): string[] {
   const problems: string[] = []
-  const check = (name: string, what: string) => {
-    const [legal, reason] = isLegalIdentifier(name)
+  const check = (name: string, what: string, rule: (name: string) => [boolean, string]) => {
+    const [legal, reason] = rule(name)
     if (!legal) problems.push(`data type "${wanted.name}": ${what} "${name}" ${reason}.`)
   }
 
-  check(wanted.name, 'the name')
-  if (wanted.derivation === 'structure') for (const member of wanted.variables) check(member.name, 'field')
+  check(wanted.name, 'the name', isLegalElementName)
+  if (wanted.derivation === 'structure') {
+    for (const member of wanted.variables) check(member.name, 'field', isLegalIdentifier)
+  }
   if (wanted.derivation === 'enumerated') {
-    for (const value of wanted.values) check(typeof value === 'string' ? value : value.name, 'value')
+    for (const value of wanted.values) check(typeof value === 'string' ? value : value.name, 'value', isLegalEnumValue)
     // Base type, values in range and distinct, initial value: the table's rules.
     const data = toDataType(wanted)
     if (data.derivation === 'enumerated') {
@@ -341,8 +344,22 @@ function applyPous(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[
       continue
     }
 
+    const declarationErrors = checkPouDeclaration(wanted)
+    if (declarationErrors.length > 0) {
+      errors.push(...declarationErrors)
+      continue
+    }
+
     const state: StoreState = store.getState()
     const existing = state.project.data.pous.find((pou) => pou.name === wanted.name)
+
+    if (existing && existing.pouType !== wanted.kind) {
+      errors.push(
+        `POU "${wanted.name}" is a ${existing.pouType} and the spec declares a ${wanted.kind}. ` +
+          'Remove the POU and declare a new one.',
+      )
+      continue
+    }
 
     if (!existing) {
       // `pouActions.create`, not `projectActions.createPou`: only the shared
@@ -378,10 +395,67 @@ function applyPous(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[
     if (wanted.kind === 'function' && wanted.returnType) {
       store.getState().projectActions.updatePouReturnType(wanted.name, wanted.returnType)
     }
+    // The declaration's clauses (IEC 61131-3 6.6.5.5, 6.6.5.8, 6.6.6.4,
+    // 6.6.6.6). A spec is a declaration: a clause it leaves out is cleared.
+    if (wanted.kind === 'function-block' || wanted.kind === 'interface') {
+      const base = Array.isArray(wanted.extends) ? wanted.extends.join(', ') : wanted.extends
+      store.getState().projectActions.updatePouDeclaration(wanted.name, {
+        extends: base,
+        implements: wanted.implements,
+        isAbstract: wanted.abstract === true,
+        isFinal: wanted.final === true,
+      })
+    }
     if (wanted.documentation !== undefined) {
       store.getState().projectActions.updatePouDocumentation(wanted.name, wanted.documentation)
     }
   }
+}
+
+/**
+ * The clauses a POU's kind allows (IEC 61131-3 Annex A): IMPLEMENTS, ABSTRACT
+ * and FINAL on a function block; EXTENDS on a function block (one base) or an
+ * interface (a list); an interface in ST with no variables (6.6.6.1); an
+ * access specifier on a block's `VAR` only (6.6.5.3); an edge qualifier on a
+ * BOOL input only (6.6.3.2 item 13).
+ */
+function checkPouDeclaration(wanted: SpecPou): string[] {
+  const errors: string[] = []
+  const at = `POU "${wanted.name}"`
+  const isBlock = wanted.kind === 'function-block'
+  if (!isBlock && (wanted.implements || wanted.abstract || wanted.final)) {
+    errors.push(`${at}: implements, abstract and final apply to a function-block only.`)
+  }
+  if (wanted.extends !== undefined && !isBlock && wanted.kind !== 'interface') {
+    errors.push(`${at}: extends applies to a function-block or an interface only.`)
+  }
+  if (isBlock && Array.isArray(wanted.extends)) {
+    errors.push(`${at}: a function block EXTENDS one block — give a name, not a list.`)
+  }
+  if (wanted.abstract === true && wanted.final === true) {
+    errors.push(`${at}: a function block cannot be both abstract and final.`)
+  }
+  if (wanted.kind === 'interface') {
+    if (wanted.language !== 'st') {
+      errors.push(`${at}: an interface is written in ST (its method prototypes); the spec asks for ${wanted.language}.`)
+    }
+    if ((wanted.variables ?? []).length > 0) {
+      errors.push(`${at}: an interface declares no variables (IEC 61131-3 6.6.6.1) — only method prototypes.`)
+    }
+  }
+  for (const variable of wanted.variables ?? []) {
+    const cls = variable.class ?? 'local'
+    if (variable.access !== undefined && (!isBlock || cls !== 'local')) {
+      errors.push(`${at}: variable "${variable.name}": access applies to a function block's local (VAR) only.`)
+    }
+    if (variable.edge !== undefined) {
+      const isBool = variable.type.definition === 'base-type' && variable.type.value.toUpperCase() === 'BOOL'
+      if (cls !== 'input' || !isBool) {
+        errors.push(`${at}: variable "${variable.name}": edge applies to a BOOL input only.`)
+      }
+    }
+  }
+  return errors
 }
 
 /** Second pass: every POU exists and has its variables, so a block resolves. */
@@ -521,6 +595,8 @@ function toVariableUpdate(spec: SpecVariable, fallbackClass: 'local' | 'global')
   return {
     ...toVariable(spec, fallbackClass),
     flag: spec.flag,
+    access: spec.access,
+    edge: spec.edge,
     initialValue: spec.initialValue,
   } as unknown as PLCVariable
 }
@@ -536,6 +612,8 @@ function toVariable(spec: SpecVariable, fallbackClass: 'local' | 'global'): PLCV
     ...(spec.initialValue !== undefined ? { initialValue: spec.initialValue } : {}),
     ...(spec.debug !== undefined ? { debug: spec.debug } : {}),
     ...(spec.flag !== undefined ? { flag: spec.flag } : {}),
+    ...(spec.access !== undefined ? { access: spec.access } : {}),
+    ...(spec.edge !== undefined ? { edge: spec.edge } : {}),
   } as unknown as PLCVariable
 }
 
@@ -588,32 +666,27 @@ function applyRtos(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[
 }
 
 /**
- * A function-block instance cannot carry an address or an initial value.
+ * A function-block instance cannot carry an address, and its initial value can
+ * only be an initialisation list naming the block's inputs, outputs or public
+ * variables (IEC 61131-3 6.6.3.3, Table 41): `t : TON := (PT := T#5s);`.
  *
- * The editor enforces this on its own edit path -- `updateVariableValidation`
- * clears both for a `derived` variable -- but nothing enforced it on create, so
- * a spec could ask for `t0 : TON` at `%QX0.0` with an initial value, `apply`
- * would report success, and the emitted ST was
- * `t0 AT %QX0.0 : TON := SOMETHING;`, which does not compile.
- *
- * It also made `apply` disagree with itself: the first run kept the fields, a
- * second run took the update path and silently dropped them, so re-applying one
- * spec produced two different projects.
+ * Nothing used to check either on create, so a spec could ask for `t0 : TON`
+ * at `%QX0.0` with an initial value, `apply` would report success, and the
+ * emitted ST was `t0 AT %QX0.0 : TON := SOMETHING;`, which does not compile.
  *
  * `derived` is an FB INSTANCE. A structure or enumeration is `user-data-type`
  * and keeps both fields -- confusing the two is what surfaces here.
  */
-function checkVariableShape(pou: string, wanted: SpecVariable): string[] {
+function checkVariableShape(store: OpenPLCStore, pou: string | null, wanted: SpecVariable): string[] {
   if (wanted.type.definition !== 'derived') return []
   const problems: string[] = []
-  const where = `variable "${pou}.${wanted.name}" is an instance of ${wanted.type.value}`
+  const where = `${pou === null ? 'global variable' : 'variable'} "${pou === null ? '' : `${pou}.`}${wanted.name}" is an instance of ${wanted.type.value}`
   if (wanted.initialValue !== undefined && wanted.initialValue !== null && wanted.initialValue !== '') {
-    problems.push(
-      `${where}, so it cannot take an initial value. Drop it, or declare the variable ` +
-        `"user-data-type" if ${wanted.type.value} is a structure or an enumeration.`,
-    )
+    const state = store.getState()
+    const members = resolveFbInitMembers(wanted.type.value, state.project.data.pous, state.libraries.system)
+    problems.push(...checkFbInitList(where, wanted.type.value, wanted.initialValue, members))
   }
-  if (wanted.location !== undefined && wanted.location !== '') {
+  if (pou !== null && wanted.location !== undefined && wanted.location !== '') {
     problems.push(`${where}, so it cannot be located at ${wanted.location}. Drop the location.`)
   }
   return problems
@@ -622,7 +695,7 @@ function checkVariableShape(pou: string, wanted: SpecVariable): string[] {
 function applyVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[], errors: string[]): void {
   for (const pou of spec.pous ?? []) {
     for (const wanted of pou.variables ?? []) {
-      const shape = checkVariableShape(pou.name, wanted)
+      const shape = checkVariableShape(store, pou.name, wanted)
       if (shape.length > 0) {
         errors.push(...shape)
         continue
@@ -682,6 +755,12 @@ function applyVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedCh
 
 function applyGlobalVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[], errors: string[]): void {
   for (const wanted of spec.globalVariables ?? []) {
+    const shape = checkVariableShape(store, null, wanted)
+    if (shape.length > 0) {
+      errors.push(...shape)
+      continue
+    }
+
     const state: StoreState = store.getState()
     const globals = state.project.data.configurations.resource.globalVariables ?? []
     // Case-insensitive, as IEC names are: a case-only change renames in place.

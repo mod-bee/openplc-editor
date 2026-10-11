@@ -69,7 +69,19 @@ const variableSchema = z
      * switched on to mean anything. One field because the two are mutually
      * exclusive; STruC++ rejects the combination.
      */
-    flag: z.enum(['constant', 'retain']).optional(),
+    flag: z.enum(['constant', 'retain', 'non-retain']).optional(),
+    /**
+     * Access specifier of a function block's `VAR` section (IEC 61131-3
+     * 6.6.5.3): `protected` is `VAR PROTECTED`, reachable from a block that
+     * EXTENDS this one. Absent is a plain `VAR`. Locals only.
+     */
+    access: z.enum(['public', 'protected', 'private']).optional(),
+    /**
+     * `R_EDGE` / `F_EDGE` on a BOOL input of a function block (IEC 61131-3
+     * 6.6.3.2 item 13): the body sees TRUE only on the scan the input rose /
+     * fell. Inputs only.
+     */
+    edge: z.enum(['rising', 'falling']).optional(),
   })
   .strict()
 
@@ -124,7 +136,9 @@ const ladderOutputSchema = z.union([
            * Defaults to false, which is how a timer or counter is drawn — power
            * drives `IN` and leaves on `Q`. With EN/ENO the rung only gates the
            * call and `IN` is never driven, so the block does nothing. Forced on
-           * for a block whose first input or output is not BOOL.
+           * for a block whose first input or output is not BOOL, and for every
+           * block of an installed (not bundled) library (IEC 61131-3 6.6.1.5):
+           * the rung drives EN and a data pin is never fed by the rung.
            */
           executionControl: z.boolean().optional(),
         })
@@ -195,10 +209,26 @@ const textBodySchema = z.object({ text: z.string() }).strict()
 const pouSchema = z
   .object({
     name: z.string().min(1),
-    kind: z.enum(['program', 'function', 'function-block']),
+    /**
+     * `interface` is an IEC 61131-3 INTERFACE (6.6.6): `st` only, no
+     * variables, its method prototypes (`METHOD M : T … END_METHOD`) as the
+     * body text.
+     */
+    kind: z.enum(['program', 'function', 'function-block', 'interface']),
     language: bodyLanguageSchema,
     /** `function` only. */
     returnType: z.string().optional(),
+    /**
+     * `function-block`: the block it EXTENDS (6.6.5.5). `interface`: the
+     * interfaces it EXTENDS (6.6.6.6), a name or a list.
+     */
+    extends: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
+    /** `function-block` only: the interfaces it IMPLEMENTS (6.6.6.4). */
+    implements: z.array(z.string().min(1)).min(1).optional(),
+    /** `function-block` only: `FUNCTION_BLOCK ABSTRACT` (6.6.5.8.2) — a base, never instantiated. */
+    abstract: z.boolean().optional(),
+    /** `function-block` only: `FUNCTION_BLOCK FINAL` (6.6.5.8.3) — nothing may EXTEND it. */
+    final: z.boolean().optional(),
     documentation: z.string().optional(),
     variables: z.array(variableSchema).optional(),
     body: z.union([textBodySchema, ladderBodySchema, fbdBodySchema]).optional(),

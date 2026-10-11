@@ -38,6 +38,7 @@ import type { PLCPou, PLCVariable } from '../../../middleware/shared/ports/types
 import { resolveLocation } from '../../../middleware/shared/utils/iec-address/registry'
 import { generateIecVariablesToString } from '../generate-iec-variables-to-string'
 import { resolveLocationsInText } from '../variable-text-edits'
+import { pouDeclarationLine } from './pou-declaration-line'
 import { getEndKeyword, getStartKeyword } from './pou-file-extensions'
 
 const OPAQUE_BODY_PLACEHOLDER = '; (* graphical body — opaque to LSP *)'
@@ -85,17 +86,11 @@ function resolveVariablesTextLocations(pou: PLCPou, aliasIndex: ReadonlyMap<stri
   return resolveLocationsInText(text, (location) => resolveLocation(location, aliasIndex))
 }
 
+// The LSP needs the base and the interfaces too: without them a derived block
+// appears to have only its own pins and methods, and its instances cannot be
+// assigned to an interface it implements.
 function buildDeclarationLine(pou: PLCPou): string {
-  const startKeyword = getStartKeyword(pou.pouType)
-  if (pou.pouType === 'function' && pou.interface?.returnType) {
-    return `${startKeyword} ${pou.name} : ${pou.interface.returnType}`
-  }
-  // The LSP needs the base too: without it a derived block appears to have only
-  // its own pins and methods, so every inherited one reads as undefined.
-  if (pou.interface?.extends) {
-    return `${startKeyword} ${pou.name} EXTENDS ${pou.interface.extends}`
-  }
-  return `${startKeyword} ${pou.name}`
+  return pouDeclarationLine(pou)
 }
 
 /**

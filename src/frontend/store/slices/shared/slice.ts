@@ -10,7 +10,7 @@ import { buildTypeContext, parseIecStringToVariables } from '../../../utils/gene
 import { generateIecVariablesToString } from '../../../utils/generate-iec-variables-to-string'
 import { hasLegacyInOutOutputHandle } from '../../../utils/graphical/in-out-pin-rules'
 import { syncNodesWithVariables, syncNodesWithVariablesFBD } from '../../../utils/graphical/sync-nodes-with-variables'
-import { isLegalIdentifier } from '../../../utils/keywords'
+import { isLegalElementName } from '../../../utils/keywords'
 import { newUuid } from '../../../utils/new-uuid'
 import { findGlobalVariableListReferences } from '../../../utils/PLC/global-variable-list-references'
 import {
@@ -70,7 +70,7 @@ function deleteElement(
 }
 
 function validateElementName(name: string): { ok: true } | { ok: false; message: string } {
-  const [legal, reason] = isLegalIdentifier(name)
+  const [legal, reason] = isLegalElementName(name)
   return legal ? { ok: true } : { ok: false, message: `'${name}' ${reason}` }
 }
 
@@ -234,8 +234,9 @@ const createSharedSlice: StateCreator<SharedRootState, [], [], SharedSlice> = (s
       state.tabsActions.setSelectedTab(name)
       state.editorActions.setEditor(editorModel)
 
-      // Programs are instantiated by the Resource, never called from another POU, so they are not library blocks.
-      if (type !== 'program') {
+      // Programs are instantiated by the Resource, never called from another POU, so they are not library blocks;
+      // an interface is a type, not a block.
+      if (type === 'function' || type === 'function-block') {
         state.libraryActions.addLibrary(name, type)
       }
 
@@ -319,7 +320,8 @@ const createSharedSlice: StateCreator<SharedRootState, [], [], SharedSlice> = (s
       state.fileActions.addFile({ name: newName, type: sourcePou.pouType, filePath: newName, isNew: true })
 
       // Without the user-library entry the copy exists in the project but can't be placed or completed.
-      if (sourcePou.pouType !== 'program') {
+      // An interface is a type, not a block: nothing to place.
+      if (sourcePou.pouType === 'function' || sourcePou.pouType === 'function-block') {
         state.libraryActions.addLibrary(newName, sourcePou.pouType)
       }
 
@@ -1123,7 +1125,8 @@ const createSharedSlice: StateCreator<SharedRootState, [], [], SharedSlice> = (s
       }
 
       pous.forEach((pou) => {
-        if (pou.pouType !== 'program') {
+        // An interface is a type, not a block: nothing to place.
+        if (pou.pouType === 'function' || pou.pouType === 'function-block') {
           getState().libraryActions.addLibrary(pou.name, pou.pouType)
         }
       })

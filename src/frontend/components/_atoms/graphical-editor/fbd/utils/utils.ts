@@ -252,8 +252,11 @@ export const getBlockSize = (
   }
 }
 
-export const getBlockVariantAndExecutionControl = (variantLib: BlockVariant, executionControl: boolean) => {
+export const getBlockVariantAndExecutionControl = (variantLib: BlockVariant, requested: boolean) => {
   const variant = { ...variantLib }
+  // A block that always carries EN / ENO (an installed library's, IEC 61131-3
+  // 6.6.1.5) has them whatever was asked for.
+  const executionControl = requested || (variantLib as { executionControl?: boolean }).executionControl === true
 
   if (executionControl) {
     const existingEN = variant.variables.find((variable) => variable.name === 'EN')

@@ -22,7 +22,7 @@ import {
   parseTextualPouFromString,
 } from '@root/frontend/utils/PLC/pou-text-parser'
 import { serializePouToText } from '@root/frontend/utils/PLC/pou-text-serializer'
-import { projectDefaultFilesMapSchema, projectPouDirectories } from '@root/types/IPC/project-service'
+import { projectDefaultFilesMapSchema, projectPouReadDirectories } from '@root/types/IPC/project-service'
 import { IProjectServiceReadFilesResponse } from '@root/types/IPC/project-service/read-project'
 import { promises, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, dirname, extname, join, sep } from 'path'
@@ -160,6 +160,8 @@ function detectPouTypeFromPath(filePath: string): string {
     return 'function-block'
   } else if (normalizedPath.includes('/functions/')) {
     return 'function'
+  } else if (normalizedPath.includes('/interfaces/')) {
+    return 'interface'
   }
   throw new Error(`Cannot determine POU type from path: ${filePath}`)
 }
@@ -343,7 +345,14 @@ function readAndParsePouFile(filePath: string, fileName: string): PLCPou {
     const portPou = pou as unknown as {
       name: string
       pouType: string
-      interface?: { returnType?: string; extends?: string; variables: unknown[] }
+      interface?: {
+        returnType?: string
+        extends?: string
+        implements?: string[]
+        isAbstract?: boolean
+        isFinal?: boolean
+        variables: unknown[]
+      }
       body: { language: string; value: unknown }
       documentation?: string
     }
@@ -356,9 +365,13 @@ function readAndParsePouFile(filePath: string, fileName: string): PLCPou {
         ...(portPou.pouType === 'function' ? { returnType: portPou.interface?.returnType ?? '' } : {}),
         // Only a function block may extend another. This flattening names each
         // field explicitly, so anything unlisted is dropped.
-        ...(portPou.pouType === 'function-block' && portPou.interface?.extends
+        // An interface's bases too (IEC 61131-3 6.6.6.6).
+        ...((portPou.pouType === 'function-block' || portPou.pouType === 'interface') && portPou.interface?.extends
           ? { extends: portPou.interface.extends }
           : {}),
+        ...(portPou.interface?.implements?.length ? { implements: portPou.interface.implements } : {}),
+        ...(portPou.interface?.isAbstract ? { isAbstract: true } : {}),
+        ...(portPou.interface?.isFinal ? { isFinal: true } : {}),
         body: portPou.body,
         documentation: portPou.documentation ?? '',
       },
@@ -473,7 +486,7 @@ export async function readProjectFiles(basePath: string): Promise<IProjectServic
    * Use a map to track POUs by name and prefer text-based files over JSON.
    */
   const pouNameMap = new Map<string, { key: string; isTextBased: boolean }>()
-  for (const pouDirectory of projectPouDirectories) {
+  for (const pouDirectory of projectPouReadDirectories) {
     const pouDirPath = join(basePath, pouDirectory)
     if (fileOrDirectoryExists(pouDirPath)) {
       readDirectoryRecursive(pouDirPath, pouDirectory, pouFiles, pouNameMap)

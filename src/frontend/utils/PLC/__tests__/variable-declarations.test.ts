@@ -233,8 +233,10 @@ describe('blocks, classes and qualifiers', () => {
     expect(variablesOf(`${header}\n  a : INT := 1;\nEND_VAR`)[0].flag).toBe(expectedFlag)
   })
 
-  it('leaves NON_RETAIN unflagged, since it names the default', () => {
-    expect(variablesOf('VAR NON_RETAIN\n  a : INT;\nEND_VAR')[0].flag).toBeUndefined()
+  // An explicit NON_RETAIN is kept: unlike a plain VAR it holds even inside an
+  // instance declared RETAIN (IEC 61131-3 6.5.6.2), so it is not the default.
+  it('flags an explicit NON_RETAIN', () => {
+    expect(variablesOf('VAR NON_RETAIN\n  a : INT;\nEND_VAR')[0].flag).toBe('non-retain')
   })
 
   it('accepts lowercase keywords', () => {
@@ -322,7 +324,7 @@ describe('errors a user can act on', () => {
     // line — the one line in the block with nothing wrong with it.
     const [error] = parseVariableDeclarations('VAR FOO\n  a : INT;\nEND_VAR', context).errors
     expect(error.message).toBe(
-      'Unknown variable block qualifier "FOO". Expected CONSTANT, RETAIN, NON_RETAIN or PERSISTENT.',
+      'Unknown variable block qualifier "FOO". Expected CONSTANT, RETAIN, NON_RETAIN, PERSISTENT, PUBLIC, PROTECTED or PRIVATE.',
     )
     expect(error.line).toBe(1)
   })

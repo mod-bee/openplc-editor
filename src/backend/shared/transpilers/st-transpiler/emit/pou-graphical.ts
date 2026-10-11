@@ -14,11 +14,13 @@ import { type BlockInfos, blockInfosFromVariant, isRecord } from '../helpers/blo
 import type { ProgramChunk } from '../helpers/program'
 import { computePouName } from '../helpers/text-helpers'
 import { varTypeNames } from '../helpers/type-text'
+import { edgeSuffix, varBlockBucketKey, varBlockQualifier } from '../helpers/var-block'
 import type { TranspilePou, TranspileProject, TranspileVariable, TranspileVariableClass } from '../types'
 import type { TypeContext } from '../walker/connection-types'
 import { emitFbdBody } from '../walker/fbd'
 import type { SyntheticVar } from '../walker/ld'
 import { emitLdBody } from '../walker/ld'
+import { pouModifier, pushOopClauses } from './pou-textual'
 import { declaredTypeName, getTypeAsText } from './type-text'
 import { computeValue } from './value'
 
@@ -28,6 +30,8 @@ interface InterfaceEntry {
   located?: boolean
   /** Block qualifier for this group; absent = plain `VAR`. */
   flag?: TranspileVariable['flag']
+  /** Access specifier of the group's `VAR` section; absent = none. */
+  access?: TranspileVariable['access']
 }
 
 /* ─────────────────────────── public entry ───────────────────────────────── */
@@ -58,18 +62,22 @@ export function generateGraphicalPou(pou: TranspilePou, project: TranspileProjec
   // emitted the body bytes + any synthetic vars.
   const program: ProgramChunk[] = []
   program.push([`${kindKeyword} `, []])
+  const modifier = pouModifier(pou)
+  if (modifier) program.push([modifier, [tagName, 'modifier']])
   program.push([pou.name, [tagName, 'name']])
   if (pou.pouType === 'function') {
     const returnType = (pou.interface.returnType ?? 'BOOL').toUpperCase()
     program.push([' : ', []])
     program.push([returnType, [tagName, 'return']])
   }
+  // EXTENDS / IMPLEMENTS of a Ladder or FBD block, as for a textual one.
+  pushOopClauses(program, pou, tagName)
   program.push(['\n', []])
 
   const iface = computeInterface(pou.interface?.variables ?? [], emitted.syntheticVars)
   for (const entry of iface) {
     const variableType = locationCategory(entry.keyword)
-    program.push([`  ${entry.keyword}${flagKeyword(entry.flag)}`, []])
+    program.push([`  ${entry.keyword}${varBlockQualifier(entry.flag, entry.access)}`, []])
     program.push(['\n', []])
     entry.vars.forEach((v, varNumber) => {
       program.push(['    ', []])
@@ -83,6 +91,8 @@ export function generateGraphicalPou(pou: TranspilePou, project: TranspileProjec
       const typeText = getTypeAsText(v)
       program.push([': ', []])
       program.push([typeText, [tagName, variableType, varNumber, 'type']])
+      const edge = edgeSuffix(v)
+      if (edge) program.push([edge, [tagName, variableType, varNumber, 'edge']])
       if (v.initialValue !== undefined && v.initialValue !== '') {
         const declared = declaredTypeName(v)
         program.push([' := ', []])
@@ -266,9 +276,6 @@ function buildTypeContext(pou: TranspilePou, project: TranspileProject): TypeCon
 }
 
 /** `CONSTANT` / `RETAIN` suffix for a var-block header; empty for a plain VAR. */
-function flagKeyword(flag: TranspileVariable['flag']): string {
-  return flag === 'constant' ? ' CONSTANT' : flag === 'retain' ? ' RETAIN' : ''
-}
 
 function computeInterface(variables: TranspileVariable[], syntheticVars: SyntheticVar[]): InterfaceEntry[] {
   const classToKeyword: Record<TranspileVariableClass, string> = {
@@ -282,18 +289,31 @@ function computeInterface(variables: TranspileVariable[], syntheticVars: Synthet
   // Group by keyword × flag, preserving IR insertion order. The flag belongs to
   // the var BLOCK in IEC, so variables of one class with different qualifiers
   // cannot share a `…END_VAR` pair.
-  const grouped = new Map<string, { keyword: string; flag?: TranspileVariable['flag']; vars: TranspileVariable[] }>()
+  const grouped = new Map<
+    string,
+    {
+      keyword: string
+      flag?: TranspileVariable['flag']
+      access?: TranspileVariable['access']
+      vars: TranspileVariable[]
+    }
+  >()
   for (const v of variables) {
     const keyword = classToKeyword[v.class ?? 'local'] ?? varTypeNames.localVars
-    const key = `${keyword}\u0000${v.flag ?? ''}`
-    const bucket = grouped.get(key) ?? { keyword, ...(v.flag !== undefined ? { flag: v.flag } : {}), vars: [] }
+    const key = varBlockBucketKey(keyword, v)
+    const bucket = grouped.get(key) ?? {
+      keyword,
+      ...(v.flag !== undefined ? { flag: v.flag } : {}),
+      ...(v.access !== undefined ? { access: v.access } : {}),
+      vars: [],
+    }
     bucket.vars.push(v)
     grouped.set(key, bucket)
   }
   // python splits each varlist into an unlocated block then a located one (DIV-03)
   const out: InterfaceEntry[] = []
-  for (const { keyword, flag, vars } of grouped.values()) {
-    const flagPart = flag !== undefined ? { flag } : {}
+  for (const { keyword, flag, access, vars } of grouped.values()) {
+    const flagPart = { ...(flag !== undefined ? { flag } : {}), ...(access !== undefined ? { access } : {}) }
     const unlocated = vars.filter((v) => !v.location)
     const located = vars.filter((v) => v.location)
     if (unlocated.length > 0) out.push({ keyword, vars: unlocated, ...flagPart })
@@ -312,7 +332,13 @@ function computeInterface(variables: TranspileVariable[], syntheticVars: Synthet
     })
     const last = out[out.length - 1]
     // python reuses the trailing block only when it is a plain unlocated VAR (DIV-16)
-    if (last !== undefined && last.keyword === varTypeNames.localVars && !last.located && last.flag === undefined) {
+    if (
+      last !== undefined &&
+      last.keyword === varTypeNames.localVars &&
+      !last.located &&
+      last.flag === undefined &&
+      last.access === undefined
+    ) {
       last.vars.push(...synth)
     } else {
       out.push({ keyword: varTypeNames.localVars, vars: synth })

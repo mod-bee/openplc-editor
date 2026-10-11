@@ -46,6 +46,8 @@ export function buildLibraryTree(
 
   const accept = filter ?? (() => true)
   for (const pou of library.pous) {
+    // An ABSTRACT block is a base for others, never placed (IEC 61131-3 6.6.5.8.2).
+    if (pou.isAbstract === true) continue
     if (!accept(pou)) continue
     const folder = ensureFolder(pou.category ?? '', folderCache)
     folder.children.push({ kind: 'pou', pou, libraryName: library.name })

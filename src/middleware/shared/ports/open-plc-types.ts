@@ -100,7 +100,7 @@ export interface PLCProjectData {
   debugVariables?: Record<string, unknown>
   deletedPous?: Array<{
     name: string
-    type: 'program' | 'function' | 'function-block'
+    type: 'program' | 'function' | 'function-block' | 'interface'
     language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp'
   }>
   deletedServers?: Array<{ name: string; protocol: string }>

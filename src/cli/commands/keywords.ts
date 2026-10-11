@@ -11,7 +11,7 @@
  * cannot drift.
  */
 
-import { reservedWords } from '@root/frontend/utils/keywords'
+import { elementOnlyReservedWords, reservedWords } from '@root/frontend/utils/keywords'
 
 import { boolFlag, type ParsedArgs } from '../args'
 import type { CliResult, Reporter } from '../output'
@@ -20,6 +20,11 @@ export function runKeywords(args: ParsedArgs, reporter: Reporter): CliResult {
   // Deduplicated: the two source lists overlap on a few names, and a caller
   // diffing against this should not see one twice.
   const words = [...new Set(reservedWords)].sort((a, b) => a.localeCompare(b))
+  // Refused for a POU, data type or variable list only (standard function
+  // names, SET, GET); a variable, field or pin may take them.
+  const elementWords = [...new Set(elementOnlyReservedWords)]
+    .filter((word) => !words.includes(word))
+    .sort((a, b) => a.localeCompare(b))
 
   // A name is also refused for its SHAPE, and a caller checking a candidate
   // needs both rules or it will pass something the command would refuse.
@@ -28,19 +33,30 @@ export function runKeywords(args: ParsedArgs, reporter: Reporter): CliResult {
     'may contain only letters, digits and underscores',
     'must not be a literal (TRUE, FALSE, T#1s, 16#FF, …)',
     'must not be one of the reserved words below, in any case',
+    'a POU, data type or variable list must not be one of elementNames either; an enumeration value not SET or GET',
   ]
 
   if (boolFlag(args, 'names-only')) {
-    return reporter.success({ ok: true, keywords: words }, () => words.join('\n'))
+    return reporter.success({ ok: true, keywords: words, elementNames: elementWords }, () => words.join('\n'))
   }
 
-  return reporter.success({ ok: true, rules, keywords: words }, () =>
+  return reporter.success({ ok: true, rules, keywords: words, elementNames: elementWords }, () =>
     [
-      `An identifier — a POU, variable, data type, enumeration value or task:`,
+      `An identifier — a POU, variable, field, pin, data type, enumeration value or task:`,
       ...rules.map((rule) => `  - ${rule}`),
       '',
       `${words.length} reserved words:`,
       ...chunk(words, 6).map(
+        (row) =>
+          '  ' +
+          row
+            .map((word) => word.padEnd(20))
+            .join('')
+            .trimEnd(),
+      ),
+      '',
+      `${elementWords.length} more words a POU, data type or variable list may not take:`,
+      ...chunk(elementWords, 6).map(
         (row) =>
           '  ' +
           row

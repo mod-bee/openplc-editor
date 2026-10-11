@@ -141,7 +141,14 @@ function projectPou(pou: SchemaPou): TranspilePou {
       ...(pou.type === 'function' ? { returnType: stringifyReturnType(pou.data.returnType) } : {}),
       // Carried across, or the compile path emits the derived block with no
       // base. Narrowed on `pou.type`: only that variant of the union carries it.
-      ...(pou.type === 'function-block' && pou.data.extends ? { extends: pou.data.extends } : {}),
+      ...((pou.type === 'function-block' || pou.type === 'interface') && pou.data.extends
+        ? { extends: pou.data.extends }
+        : {}),
+      ...(pou.type === 'function-block' && pou.data.implements && pou.data.implements.length > 0
+        ? { implements: pou.data.implements }
+        : {}),
+      ...(pou.type === 'function-block' && pou.data.isAbstract ? { isAbstract: true } : {}),
+      ...(pou.type === 'function-block' && pou.data.isFinal ? { isFinal: true } : {}),
     },
     body: projectBody(pou.data.body),
   }
@@ -234,6 +241,8 @@ function projectVariable(v: SchemaVariable): TranspileVariable {
       : {}),
     ...(v.documentation !== undefined && v.documentation !== '' ? { documentation: v.documentation } : {}),
     ...(v.flag !== undefined ? { flag: v.flag } : {}),
+    ...(v.access !== undefined ? { access: v.access } : {}),
+    ...(v.edge !== undefined ? { edge: v.edge } : {}),
   }
 }
 

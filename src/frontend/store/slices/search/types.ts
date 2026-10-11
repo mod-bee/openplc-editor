@@ -7,7 +7,7 @@ export type Project = {
       Array<{
         name: string
         language: 'ld' | 'sfc' | 'fbd' | 'il' | 'st' | 'python' | 'cpp'
-        pouType: 'program' | 'function' | 'function-block'
+        pouType: 'program' | 'function' | 'function-block' | 'interface'
         body: string
         variable: string | null
       }>

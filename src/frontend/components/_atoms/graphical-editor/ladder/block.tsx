@@ -21,6 +21,7 @@ import { HighlightedTextArea } from '../../highlighted-textarea'
 import { InputWithRef } from '../../input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../tooltip'
 import { BlockOutputDebugBadges } from '../block-output-debug-badges'
+import { EdgePinMarker, pinEdge } from '../edge-pin-marker'
 import { InOutPinMarker } from '../in-out-pin-marker'
 import { BlockVariant as newBlockVariant } from '../types/block'
 import {
@@ -399,6 +400,7 @@ export const BlockNodeElement = <T extends object>({
           (handle?.relPosition?.y ?? DEFAULT_BLOCK_CONNECTOR_Y + index * DEFAULT_BLOCK_CONNECTOR_Y_OFFSET) - 10
         return (
           <div key={index} className='absolute text-xs' style={{ top, left: 6 }}>
+            <EdgePinMarker edge={pinEdge(blockVariables, connector)} />
             {connector}
             {inOutConnectors.has(connector) && <InOutPinMarker />}
           </div>

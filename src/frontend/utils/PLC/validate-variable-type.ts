@@ -77,6 +77,22 @@ const isAddressPointerPair = (a: string, b: string): boolean => {
   return (isPointer(a) && isAddressWord(b)) || (isAddressWord(a) && isPointer(b))
 }
 
+/**
+ * Whether a value of type `source` may be given where `target` is expected
+ * through the object-oriented relations of IEC 61131-3 (an instance of a block
+ * implementing an interface for that interface, a derived instance for its
+ * base — 6.6.5.5, 6.6.6.5.1). Installed by the store, which knows the project
+ * and its libraries; absent, only identical types match.
+ */
+export type OopTypeAssignability = (source: string, target: string) => boolean
+
+let oopAssignability: OopTypeAssignability | undefined
+
+/** Install (or with no argument remove) the object-oriented relations the validator consults. */
+export const setOopTypeAssignability = (assignability?: OopTypeAssignability): void => {
+  oopAssignability = assignability
+}
+
 export const validateVariableType = (
   selectedType: string,
   expectedType: string,
@@ -107,6 +123,12 @@ export const validateVariableType = (
       isValid: validTypes.includes(upperSelectedType),
       error: validTypes.includes(upperSelectedType) ? undefined : `Expected one of: ${validTypes.join(', ')}`,
     }
+  }
+
+  // An instance where an interface it implements, or a base it extends, is
+  // expected (IEC 61131-3 6.6.6.5.1, 6.6.5.5).
+  if (upperSelectedType !== upperExpectedType && oopAssignability?.(selectedType, expectedType) === true) {
+    return { isValid: true, error: undefined }
   }
 
   // Handle specific types

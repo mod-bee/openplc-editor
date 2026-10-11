@@ -114,6 +114,12 @@ const BaseLibraryPouSchema = z.object({
   body: z.string(),
   documentation: z.string(),
   extensible: z.boolean().optional(),
+  /**
+   * The block always shows EN / ENO in Ladder and FBD (IEC 61131-3 6.6.1.5,
+   * Table 18): rung power drives EN and leaves by ENO, never through a data
+   * pin. Set on the blocks of an installed (not bundled) library.
+   */
+  executionControl: z.literal(true).optional(),
 })
 
 export { BaseLibraryPouSchema, BaseLibraryVariableSchema, baseTypeEnum, baseTypeSchema, genericTypeSchema }

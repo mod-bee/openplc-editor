@@ -53,9 +53,19 @@ const IMPLICIT = new Set(['EN', 'ENO'])
  */
 function splitPous(st: string): PouBody[] {
   const bodies: PouBody[] = []
-  const pattern = /\b(FUNCTION_BLOCK|PROGRAM|FUNCTION)\s+(\w+)([\s\S]*?)\bEND_\1\b/g
+  // `FUNCTION_BLOCK ABSTRACT X` / `FINAL X` (IEC 61131-3 6.6.5.8): the
+  // modifier is not the name.
+  const pattern = /\b(FUNCTION_BLOCK|PROGRAM|FUNCTION)\s+(?:(?:ABSTRACT|FINAL)\s+)?(\w+)([\s\S]*?)\bEND_\1\b/g
   for (const match of st.matchAll(pattern)) {
-    bodies.push({ name: match[2], statements: stripDeclarations(match[3]) })
+    // Each METHOD is a body of its own (6.6.5.4): its result variable and its
+    // locals are its scope, so an assignment in one method and one in another
+    // or in the block's body are not the same variable driven twice.
+    const methods =
+      /\bMETHOD\b(?:\s+(?:PUBLIC|PRIVATE|PROTECTED|INTERNAL|FINAL|ABSTRACT|OVERRIDE))*\s+(\w+)([\s\S]*?)\bEND_METHOD\b/g
+    for (const method of match[3].matchAll(methods)) {
+      bodies.push({ name: `${match[2]}.${method[1]}`, statements: stripDeclarations(method[2]) })
+    }
+    bodies.push({ name: match[2], statements: stripDeclarations(match[3].replace(methods, '')) })
   }
   return bodies
 }
@@ -118,7 +128,7 @@ function pinsOf(
   blockType: string,
   systemLibraries: readonly SystemLibrary[],
   pous: readonly PLCPou[],
-): { inputs: string[]; outputs: string[]; defaulted: Set<string> } | null {
+): { inputs: string[]; outputs: string[]; defaulted: Set<string>; executionControl?: boolean } | null {
   // An input declared with a default (`CONNECT : BOOL := TRUE`) may be left
   // unwired on purpose, so it is collected to be told apart.
   const hasDefault = (initialValue: unknown) =>
@@ -147,6 +157,7 @@ function pinsOf(
           .filter((v) => v.class === 'input' && hasDefault(v.initialValue))
           .map((v) => v.name.toUpperCase()),
       ),
+      ...(block.executionControl === true ? { executionControl: true } : {}),
     }
   }
   return null
@@ -357,7 +368,16 @@ export function lintProgram(input: LintInput): LintFinding[] {
       // A first input with a declared default is meant to work unwired
       // (`ENABLE := TRUE`, `CONNECT := TRUE`); only one with none is the trap.
       const primaryDefaulted = primary !== undefined && pins.defaulted.has(primary.toUpperCase())
-      if (primary && !assigned.has(primary.toUpperCase()) && !memberAssigned && !primaryDefaulted) {
+      // Not for a block that always carries EN / ENO (an installed library's,
+      // IEC 61131-3 6.6.1.5): the rung drives EN, and its first input is an
+      // ordinary data pin that may well be left to a method or a default.
+      if (
+        primary &&
+        pins.executionControl !== true &&
+        !assigned.has(primary.toUpperCase()) &&
+        !memberAssigned &&
+        !primaryDefaulted
+      ) {
         const gated = assigned.has('EN') ? ' The rung is wired to EN/ENO, which only gates the call.' : ''
         findings.push({
           severity: 'error',

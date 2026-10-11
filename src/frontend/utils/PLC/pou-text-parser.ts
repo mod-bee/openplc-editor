@@ -2,6 +2,7 @@ import type { PLCPou, PLCVariable, PouType } from '../../../middleware/shared/po
 import { parseIecStringToVariables } from '../generate-iec-string-to-variables'
 import { unescapeCommentText } from './comment-text'
 import { getLanguageFromExtension } from './pou-file-extensions'
+import { trimBodyText } from './pou-text-serializer'
 
 /**
  * A POU file's documentation: its leading comment, with the escaping the
@@ -139,12 +140,14 @@ export const POU_TYPE_KEYWORDS: Record<string, string> = {
   program: 'PROGRAM',
   function: 'FUNCTION',
   'function-block': 'FUNCTION_BLOCK',
+  interface: 'INTERFACE',
 }
 
 export const POU_END_KEYWORDS: Record<string, string> = {
   program: 'END_PROGRAM',
   function: 'END_FUNCTION',
   'function-block': 'END_FUNCTION_BLOCK',
+  interface: 'END_INTERFACE',
 }
 
 export interface PouHeaderMatch {
@@ -153,15 +156,125 @@ export interface PouHeaderMatch {
   name: string
   /** Present for a FUNCTION, which declares what it returns. */
   returnType?: string
+  /**
+   * `EXTENDS`: a function block's base, or an interface's bases as written
+   * (`A, B`; IEC 61131-3 6.6.6.6).
+   */
+  extends?: string
+  /** A function block's `IMPLEMENTS` list (6.6.6.4). */
+  implements?: string[]
+  /** `FUNCTION_BLOCK ABSTRACT` (6.6.5.8.2). */
+  isAbstract?: boolean
+  /** `FUNCTION_BLOCK FINAL` (6.6.5.8.3). */
+  isFinal?: boolean
 }
 
-/** `PROGRAM Main` / `FUNCTION Add : INT` at the head of `content`. */
+const NAME_LIST = '[\\w.]+(?:\\s*,\\s*[\\w.]+)*'
+
+/**
+ * The declaration at the head of `content` (IEC 61131-3 Annex A): `PROGRAM
+ * Main`, `FUNCTION Add : INT`, `FUNCTION_BLOCK [ABSTRACT | FINAL] Pump
+ * [EXTENDS Base] [IMPLEMENTS I1, I2]`, `INTERFACE I [EXTENDS A, B]`.
+ *
+ * One matcher for every reader, so a clause the model carries is never dropped
+ * by one of them: anything between the name and the first VAR block that the
+ * pattern does not take falls outside the header and is lost.
+ */
 export const matchPouHeader = (content: string, pouType: string): PouHeaderMatch | undefined => {
   const keyword = POU_TYPE_KEYWORDS[pouType]
   if (!keyword) return undefined
-  const match = content.match(new RegExp(`^\\s*(${keyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+))?`, 'i'))
+  if (pouType === 'interface') {
+    const match = content.match(new RegExp(`^\\s*INTERFACE\\s+(\\w+)(?:\\s+EXTENDS\\s+(${NAME_LIST}))?`, 'i'))
+    if (!match) return undefined
+    return {
+      text: match[0],
+      name: match[1],
+      ...(match[2]
+        ? {
+            extends: match[2]
+              .split(',')
+              .map((n) => n.trim())
+              .join(', '),
+          }
+        : {}),
+    }
+  }
+  if (pouType === 'function-block') {
+    const match = content.match(
+      new RegExp(
+        `^\\s*FUNCTION_BLOCK\\s+(?:(ABSTRACT|FINAL)\\s+)?(\\w+)(?:\\s+EXTENDS\\s+([\\w.]+))?(?:\\s+IMPLEMENTS\\s+(${NAME_LIST}))?`,
+        'i',
+      ),
+    )
+    if (!match) return undefined
+    const modifier = match[1]?.toUpperCase()
+    return {
+      text: match[0],
+      name: match[2],
+      ...(match[3] ? { extends: match[3] } : {}),
+      ...(match[4] ? { implements: match[4].split(',').map((n) => n.trim()) } : {}),
+      ...(modifier === 'ABSTRACT' ? { isAbstract: true } : {}),
+      ...(modifier === 'FINAL' ? { isFinal: true } : {}),
+    }
+  }
+  // A FUNCTION's return type keeps its declared length (`STRING(48)`, or the
+  // `STRING[48]` form): dropped, the header text ended before it and the
+  // function came back returning a plain STRING.
+  const match = content.match(
+    new RegExp(`^\\s*(${keyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+(?:\\s*(?:\\(\\s*\\w+\\s*\\)|\\[\\s*\\w+\\s*\\]))?))?`, 'i'),
+  )
   if (!match) return undefined
-  return { text: match[0], name: match[1 + 1], ...(match[3] ? { returnType: match[3] } : {}) }
+  return { text: match[0], name: match[2], ...(match[3] ? { returnType: match[3] } : {}) }
+}
+
+/** The header's POU-level clauses, as the model's `interface` carries them. */
+export const headerInterfaceFields = (
+  header: PouHeaderMatch,
+): Pick<NonNullable<PLCPou['interface']>, 'extends' | 'implements' | 'isAbstract' | 'isFinal'> => ({
+  ...(header.extends ? { extends: header.extends } : {}),
+  ...(header.implements && header.implements.length > 0 ? { implements: header.implements } : {}),
+  ...(header.isAbstract ? { isAbstract: true } : {}),
+  ...(header.isFinal ? { isFinal: true } : {}),
+})
+
+/**
+ * Where the first METHOD of a function block starts (IEC 61131-3 Annex A
+ * `FB_Decl`: the methods follow the VAR sections and precede the body), or -1.
+ *
+ * A method has VAR sections of its own, so the block's declarations end before
+ * it: the methods stay with the body text, ahead of the body's statements, the
+ * order the standard writes them in. Comments and string literals are skipped,
+ * so a `METHOD` in a comment is not one.
+ */
+export const findFirstMethodIndex = (content: string, fromIndex: number): number => {
+  let i = fromIndex
+  while (i < content.length) {
+    const c = content[i]
+    if (c === '(' && content[i + 1] === '*') {
+      const end = content.indexOf('*)', i + 2)
+      if (end === -1) return -1
+      i = end + 2
+      continue
+    }
+    if (c === '/' && content[i + 1] === '/') {
+      const end = content.indexOf('\n', i)
+      if (end === -1) return -1
+      i = end + 1
+      continue
+    }
+    if (c === "'" || c === '"') {
+      const end = content.indexOf(c, i + 1)
+      if (end === -1) return -1
+      i = end + 1
+      continue
+    }
+    if ((c === 'M' || c === 'm') && (i === 0 || !/\w/.test(content[i - 1]))) {
+      const word = content.slice(i, i + 6)
+      if (word.toUpperCase() === 'METHOD' && !/\w/.test(content[i + 6] ?? '')) return i
+    }
+    i++
+  }
+  return -1
 }
 
 /**
@@ -178,16 +291,22 @@ export const matchPouHeader = (content: string, pouType: string): PouHeaderMatch
 export const extractVariablesSection = (
   content: string,
   bodyStartIndex: number,
-  options: { boundAtGraphicalBody?: boolean } = {},
+  options: { boundAtGraphicalBody?: boolean; methods?: boolean } = {},
 ): { text: string; bodyStartIndex: number } => {
+  // A function block's methods carry VAR sections of their own: the block's
+  // declarations end at the first one (see findFirstMethodIndex).
+  const methodStart = options.methods === true ? findFirstMethodIndex(content, bodyStartIndex) : -1
   const varStartIndex = content.search(/\b(VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_EXTERNAL|VAR_TEMP|VAR_GLOBAL|VAR)\b/i)
-  if (varStartIndex === -1) return { text: '', bodyStartIndex }
+  if (varStartIndex === -1 || (methodStart !== -1 && varStartIndex > methodStart)) {
+    return { text: '', bodyStartIndex }
+  }
 
   const graphicalBodyStart = options.boundAtGraphicalBody ? findGraphicalBodyStartIndex(content, varStartIndex) : -1
+  const stopAt = [graphicalBodyStart, methodStart].filter((index) => index !== -1)
   const lastEndVarIndex = findLastEndVarIndex(
     content,
     varStartIndex,
-    graphicalBodyStart === -1 ? undefined : graphicalBodyStart,
+    stopAt.length === 0 ? undefined : Math.min(...stopAt),
   )
   if (lastEndVarIndex === -1) return { text: '', bodyStartIndex }
 
@@ -211,28 +330,25 @@ export const parseTextualPouFromString = (content: string, language: string, typ
       throw new Error(formatParseError(`Unsupported POU type: ${type}`))
     }
 
-    // Captures the EXTENDS clause: anything between the POU name and the first
-    // VAR block fell outside `declarationMatch[0]` and was dropped, so a derived
-    // block reached the compiler with no base.
-    const declarationRegex = new RegExp(
-      `^\\s*(${typeKeyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+))?(?:\\s+EXTENDS\\s+(\\w+))?`,
-      'i',
-    )
-    const declarationMatch = remainingContent.match(declarationRegex)
+    // One header matcher for every reader (matchPouHeader): a clause it does
+    // not take — EXTENDS, IMPLEMENTS, ABSTRACT — falls outside the header and
+    // is dropped, so the block reaches the compiler without it.
+    const header = matchPouHeader(remainingContent, type)
 
-    if (!declarationMatch) {
+    if (!header) {
       throw new Error(formatParseError(`Could not find ${typeKeyword} declaration`))
     }
 
-    const pouName = declarationMatch[2]
-    const returnType = declarationMatch[3] // Only present for functions
-    const baseBlock = declarationMatch[4] // Only present with EXTENDS
+    const pouName = header.name
+    const returnType = header.returnType // Only present for functions
 
     if (type === 'function' && !returnType) {
       throw new Error(formatParseError(`Function ${pouName} must have a return type`))
     }
 
-    const section = extractVariablesSection(remainingContent, declarationMatch[0].length)
+    const section = extractVariablesSection(remainingContent, header.text.length, {
+      methods: type === 'function-block' || type === 'interface',
+    })
     const variablesString = section.text
     const bodyStartIndex = section.bodyStartIndex
 
@@ -248,7 +364,7 @@ export const parseTextualPouFromString = (content: string, language: string, typ
       throw new Error(formatParseError(`Could not find ${endKeyword}`))
     }
 
-    const bodyContent = remainingContent.slice(bodyStartIndex, bodyStartIndex + endMatch).trim()
+    const bodyContent = trimBodyText(remainingContent.slice(bodyStartIndex, bodyStartIndex + endMatch))
 
     // returnType is guaranteed non-empty for functions (validated above)
     /* istanbul ignore next -- defensive: returnType fallback is unreachable for functions */
@@ -259,7 +375,7 @@ export const parseTextualPouFromString = (content: string, language: string, typ
       pouType: type as PouType,
       interface: {
         ...(type === 'function' ? { returnType: resolvedReturnType } : {}),
-        ...(baseBlock ? { extends: baseBlock } : {}),
+        ...headerInterfaceFields(header),
         variables,
       },
       body: {
@@ -299,28 +415,25 @@ export const parseHybridPouFromString = (content: string, language: string, type
       throw new Error(formatParseError(`Unsupported POU type: ${type}`))
     }
 
-    // Captures the EXTENDS clause: anything between the POU name and the first
-    // VAR block fell outside `declarationMatch[0]` and was dropped, so a derived
-    // block reached the compiler with no base.
-    const declarationRegex = new RegExp(
-      `^\\s*(${typeKeyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+))?(?:\\s+EXTENDS\\s+(\\w+))?`,
-      'i',
-    )
-    const declarationMatch = remainingContent.match(declarationRegex)
+    // One header matcher for every reader (matchPouHeader): a clause it does
+    // not take — EXTENDS, IMPLEMENTS, ABSTRACT — falls outside the header and
+    // is dropped, so the block reaches the compiler without it.
+    const header = matchPouHeader(remainingContent, type)
 
-    if (!declarationMatch) {
+    if (!header) {
       throw new Error(formatParseError(`Could not find ${typeKeyword} declaration`))
     }
 
-    const pouName = declarationMatch[2]
-    const returnType = declarationMatch[3] // Only present for functions
-    const baseBlock = declarationMatch[4] // Only present with EXTENDS
+    const pouName = header.name
+    const returnType = header.returnType // Only present for functions
 
     if (type === 'function' && !returnType) {
       throw new Error(formatParseError(`Function ${pouName} must have a return type`))
     }
 
-    const section = extractVariablesSection(remainingContent, declarationMatch[0].length)
+    const section = extractVariablesSection(remainingContent, header.text.length, {
+      methods: type === 'function-block' || type === 'interface',
+    })
     const variablesString = section.text
     const bodyStartIndex = section.bodyStartIndex
 
@@ -346,7 +459,7 @@ export const parseHybridPouFromString = (content: string, language: string, type
       pouType: type as PouType,
       interface: {
         ...(type === 'function' ? { returnType: resolvedReturnType } : {}),
-        ...(baseBlock ? { extends: baseBlock } : {}),
+        ...headerInterfaceFields(header),
         variables,
       },
       body: {
@@ -387,28 +500,23 @@ export const parseGraphicalPouFromString = (content: string, language: string, t
       throw new Error(formatParseError(`Unsupported POU type: ${type}`))
     }
 
-    // Captures the EXTENDS clause: anything between the POU name and the first
-    // VAR block fell outside `declarationMatch[0]` and was dropped, so a derived
-    // block reached the compiler with no base.
-    const declarationRegex = new RegExp(
-      `^\\s*(${typeKeyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+))?(?:\\s+EXTENDS\\s+(\\w+))?`,
-      'i',
-    )
-    const declarationMatch = remainingContent.match(declarationRegex)
+    // One header matcher for every reader (matchPouHeader): a clause it does
+    // not take — EXTENDS, IMPLEMENTS, ABSTRACT — falls outside the header and
+    // is dropped, so the block reaches the compiler without it.
+    const header = matchPouHeader(remainingContent, type)
 
-    if (!declarationMatch) {
+    if (!header) {
       throw new Error(formatParseError(`Could not find ${typeKeyword} declaration`))
     }
 
-    const pouName = declarationMatch[2]
-    const returnType = declarationMatch[3]
-    const baseBlock = declarationMatch[4] // Only present with EXTENDS
+    const pouName = header.name
+    const returnType = header.returnType
 
     if (type === 'function' && !returnType) {
       throw new Error(formatParseError(`Function ${pouName} must have a return type`))
     }
 
-    const section = extractVariablesSection(remainingContent, declarationMatch[0].length, {
+    const section = extractVariablesSection(remainingContent, header.text.length, {
       boundAtGraphicalBody: true,
     })
     const variablesString = section.text
@@ -465,7 +573,7 @@ export const parseGraphicalPouFromString = (content: string, language: string, t
       pouType: type as PouType,
       interface: {
         ...(type === 'function' ? { returnType: resolvedReturnType } : {}),
-        ...(baseBlock ? { extends: baseBlock } : {}),
+        ...headerInterfaceFields(header),
         variables,
       },
       body: {

@@ -26,6 +26,12 @@ export interface SystemLibraryVariable {
   location?: string
   initialValue?: unknown
   documentation?: string
+  /**
+   * `R_EDGE` / `F_EDGE` on a BOOL input (IEC 61131-3 6.6.3.2 item 13): the
+   * block acts on the input's rising / falling edge. Drawn with the edge
+   * marker on the pin.
+   */
+  edge?: 'R_EDGE' | 'F_EDGE'
 }
 
 export interface SystemLibraryPou {
@@ -57,6 +63,46 @@ export interface SystemLibraryPou {
    * field — see strucpp's library-manifest contract.
    */
   category?: string
+  /**
+   * The block always shows EN / ENO in Ladder and FBD (IEC 61131-3 6.6.1.5,
+   * Table 18; decision 50): the rung drives EN and continues from ENO, and a
+   * data pin is never fed by the rung. Set on every block of an installed
+   * library. The bundled IEC blocks keep the classic form in which the rung
+   * runs through their first BOOL input and output (8.2.6 b), so a TON's IN
+   * still takes the rung.
+   */
+  executionControl?: true
+  /** The block it EXTENDS (IEC 61131-3 6.6.5.5); its pins already include the base's. */
+  extends?: string
+  /** The interfaces it names in IMPLEMENTS (6.6.6.4); its bases' are theirs. */
+  implements?: string[]
+  /** An ABSTRACT block (6.6.5.8.2): a base for others, never placed or declared. */
+  isAbstract?: true
+  /** Its PUBLIC methods, own and inherited (6.6.5.4.4). */
+  methods?: SystemLibraryMethod[]
+}
+
+/** A method prototype of a library block or interface (IEC 61131-3 6.6.5.4). */
+export interface SystemLibraryMethod {
+  name: string
+  /** Absent for a method that returns nothing. */
+  returnType?: string
+  variables: SystemLibraryVariable[]
+}
+
+/**
+ * A library INTERFACE (IEC 61131-3 6.6.6): a type a variable or an input pin
+ * can have, taking an instance of any block that implements it. Never placed
+ * as a block.
+ */
+export interface SystemLibraryInterface {
+  name: string
+  /** The interfaces it EXTENDS (6.6.6.6). */
+  extends?: string[]
+  /** Its own method prototypes. */
+  methods: SystemLibraryMethod[]
+  documentation: string
+  category?: string
 }
 
 export interface SystemLibrary {
@@ -73,6 +119,8 @@ export interface SystemLibrary {
   stPath: string
   cPath: string
   pous: SystemLibraryPou[]
+  /** The library's interfaces; absent when it declares none. */
+  interfaces?: SystemLibraryInterface[]
 }
 
 export interface UserLibrary {

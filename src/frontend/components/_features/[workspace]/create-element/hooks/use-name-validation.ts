@@ -1,4 +1,4 @@
-import { isLegalIdentifier } from '../../../../../utils/keywords'
+import { isLegalElementName } from '../../../../../utils/keywords'
 
 /**
  * Custom validation function for POU and data type names.
@@ -19,7 +19,7 @@ export const validatePouOrDataTypeName = (value: string): true | string => {
   }
 
   // Check against IEC 61131-3 rules
-  const [isValid, reason] = isLegalIdentifier(value)
+  const [isValid, reason] = isLegalElementName(value)
   if (!isValid) {
     return `Invalid name: ${reason}`
   }

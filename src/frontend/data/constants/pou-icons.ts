@@ -9,6 +9,8 @@ import { ResourceIcon } from '../../assets/icons/project/Resource'
 export const PouIcon = {
   function: FunctionIcon,
   'function-block': FunctionBlockIcon,
+  // An INTERFACE (IEC 61131-3 6.6.6) is a block's plug: shown with the block icon.
+  interface: FunctionBlockIcon,
   program: ProgramIcon,
   resource: ResourceIcon,
   'data-type': DataTypeIcon,

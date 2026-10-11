@@ -1,4 +1,11 @@
 import type { PLCVariable } from '../../middleware/shared/ports/types'
+import {
+  edgeQualifier,
+  ORDERED_ACCESS,
+  ORDERED_FLAGS,
+  varBlockKey,
+  varBlockQualifier,
+} from './PLC/var-block-qualifiers'
 import { parseVariableDeclarations, renderLeadingComment } from './PLC/variable-declarations'
 
 const classToVarBlock: Record<string, string> = {
@@ -35,7 +42,7 @@ export const generateIecVariablesToString = (variables: PLCVariable[]): string =
   // qualifier, which is what made a CONSTANT unrepresentable in this view.
   const groupedVariables = variables.reduce(
     (acc, variable) => {
-      const key = `${(variable.class ?? 'global').toLowerCase()}\u0000${variable.flag ?? ''}`
+      const key = varBlockKey(variable)
 
       if (!acc[key]) {
         acc[key] = []
@@ -50,48 +57,54 @@ export const generateIecVariablesToString = (variables: PLCVariable[]): string =
   const orderedGroups = ['global', 'external', 'input', 'output', 'inout', 'local', 'temp']
   // Plain block first, then the qualified ones — stable output regardless of
   // the order the variables happen to sit in.
-  const orderedFlags: Array<PLCVariable['flag']> = [undefined, 'constant', 'retain']
+  const blockKeys = orderedGroups.flatMap((groupName) =>
+    ORDERED_FLAGS.flatMap((flag) =>
+      ORDERED_ACCESS.map((access) => ({
+        groupName,
+        flag,
+        access,
+        key: varBlockKey({ class: groupName as PLCVariable['class'], flag, access }),
+      })),
+    ),
+  )
 
-  orderedGroups.forEach((groupName) => {
-    orderedFlags.forEach((flag) => {
-      const groupKey = `${groupName}\u0000${flag ?? ''}`
-      if (groupedVariables[groupKey]) {
-        const blockHeader = classToVarBlock[groupName]
-        const qualifier = flag === 'constant' ? ' CONSTANT' : flag === 'retain' ? ' RETAIN' : ''
-        textualDeclaration += `${VAR_BLOCK_INDENT}${blockHeader}${qualifier}\n`
+  blockKeys.forEach(({ groupName, flag, access, key: groupKey }) => {
+    if (groupedVariables[groupKey]) {
+      const blockHeader = classToVarBlock[groupName]
+      const qualifier = varBlockQualifier(flag, access)
+      textualDeclaration += `${VAR_BLOCK_INDENT}${blockHeader}${qualifier}\n`
 
-        groupedVariables[groupKey].forEach((v) => {
-          if (v.leadingComment?.trim()) {
-            textualDeclaration += renderLeadingComment(v.leadingComment, VAR_DECL_INDENT, '\n')
+      groupedVariables[groupKey].forEach((v) => {
+        if (v.leadingComment?.trim()) {
+          textualDeclaration += renderLeadingComment(v.leadingComment, VAR_DECL_INDENT, '\n')
+        }
+        let line = `${VAR_DECL_INDENT}${v.name} : ${v.type.value}${edgeQualifier(v.edge)}`
+
+        if (v.location) {
+          line += ` AT ${v.location}`
+        }
+
+        if (v.initialValue) {
+          line += ` := ${v.initialValue}`
+        }
+
+        line += ';'
+
+        if (v.documentation) {
+          const singleLineDoc = v.documentation.replace(/(\r\n|\n|\r)/gm, ' ').trim()
+          if (singleLineDoc) {
+            line += ` (* ${singleLineDoc} *)`
           }
-          let line = `${VAR_DECL_INDENT}${v.name} : ${v.type.value}`
+        }
 
-          if (v.location) {
-            line += ` AT ${v.location}`
-          }
+        textualDeclaration += line + '\n'
+      })
 
-          if (v.initialValue) {
-            line += ` := ${v.initialValue}`
-          }
-
-          line += ';'
-
-          if (v.documentation) {
-            const singleLineDoc = v.documentation.replace(/(\r\n|\n|\r)/gm, ' ').trim()
-            if (singleLineDoc) {
-              line += ` (* ${singleLineDoc} *)`
-            }
-          }
-
-          textualDeclaration += line + '\n'
-        })
-
-        // the legacy generator emits consecutive var-class blocks back-to-back with no
-        // blank line between them — `  END_VAR\n  VAR_INPUT\n...`.  Drop
-        // the prior `END_VAR\n\n` that left a separator behind.
-        textualDeclaration += `${VAR_BLOCK_INDENT}END_VAR\n`
-      }
-    })
+      // the legacy generator emits consecutive var-class blocks back-to-back with no
+      // blank line between them — `  END_VAR\n  VAR_INPUT\n...`.  Drop
+      // the prior `END_VAR\n\n` that left a separator behind.
+      textualDeclaration += `${VAR_BLOCK_INDENT}END_VAR\n`
+    }
   })
 
   return textualDeclaration.trimEnd()
@@ -123,7 +136,7 @@ export function getIecVariableLineMap(variables: PLCVariable[]): Map<string, { l
   // first qualified block.
   const groupedVariables = variables.reduce(
     (acc, variable) => {
-      const key = `${(variable.class ?? 'global').toLowerCase()}\u0000${variable.flag ?? ''}`
+      const key = varBlockKey(variable)
       if (!acc[key]) acc[key] = []
       acc[key].push(variable)
       return acc
@@ -132,8 +145,6 @@ export function getIecVariableLineMap(variables: PLCVariable[]): Map<string, { l
   )
 
   const orderedGroups = ['global', 'external', 'input', 'output', 'inout', 'local', 'temp']
-  const orderedFlags: Array<PLCVariable['flag']> = [undefined, 'constant', 'retain']
-
   // Variable names start at column `VAR_DECL_INDENT.length + 1`
   // (4 spaces + Monaco's 1-indexed column).
   const varNameColumn = VAR_DECL_INDENT.length + 1
@@ -143,15 +154,17 @@ export function getIecVariableLineMap(variables: PLCVariable[]): Map<string, { l
   // declaration counts as a line, END_VAR counts as a line.
   let currentLine = 1
   for (const groupName of orderedGroups) {
-    for (const flag of orderedFlags) {
-      const group = groupedVariables[`${groupName}\u0000${flag ?? ''}`]
-      if (!group) continue
-      currentLine++ // skip the VAR_xxx header line
-      for (const v of group) {
-        map.set(v.name, { line: currentLine, column: varNameColumn })
-        currentLine++ // advance past the declaration
+    for (const flag of ORDERED_FLAGS) {
+      for (const access of ORDERED_ACCESS) {
+        const group = groupedVariables[varBlockKey({ class: groupName as PLCVariable['class'], flag, access })]
+        if (!group) continue
+        currentLine++ // skip the VAR_xxx header line
+        for (const v of group) {
+          map.set(v.name, { line: currentLine, column: varNameColumn })
+          currentLine++ // advance past the declaration
+        }
+        currentLine++ // skip the END_VAR line
       }
-      currentLine++ // skip the END_VAR line
     }
   }
 

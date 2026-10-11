@@ -58,7 +58,7 @@ const SelectableTypeCell = ({
   const {
     editor,
     project: {
-      data: { dataTypes },
+      data: { dataTypes, pous: projectPous },
     },
     ladderFlowActions: { updateNodes },
     fbdFlowActions: { updateNodes: updateFBDNodes },
@@ -80,12 +80,17 @@ const SelectableTypeCell = ({
   const LibraryTypes = [
     {
       definition: 'system',
-      values: sliceLibraries.system.flatMap((library) =>
-        (library.pous ?? [])
+      values: sliceLibraries.system.flatMap((library) => [
+        ...(library.pous ?? [])
           .filter((pou) => pou?.type === 'function-block')
+          // An ABSTRACT block is never instantiated (IEC 61131-3 6.6.5.8.2).
+          .filter((pou) => pou.isAbstract !== true)
           .filter(hasStringName)
           .map((pou) => pou.name.toUpperCase()),
-      ),
+        // A library INTERFACE is a variable type too: the variable holds a
+        // reference to an instance implementing it (6.6.6.5).
+        ...(library.interfaces ?? []).filter(hasStringName).map((iface) => iface.name.toUpperCase()),
+      ]),
     },
     {
       definition: 'user',
@@ -100,8 +105,16 @@ const SelectableTypeCell = ({
               .filter(hasStringName)
               .map((pou) => pou.name.toUpperCase())
           }
-          return userLibrary.type === 'function-block' ? [userLibrary.name.toUpperCase()] : []
-        }),
+          if (userLibrary.type !== 'function-block') return []
+          const own = projectPous.find((pou) => pou.name === userLibrary.name)
+          return own?.interface?.isAbstract === true ? [] : [userLibrary.name.toUpperCase()]
+        })
+        // The project's own interfaces, likewise a variable type.
+        .concat(
+          projectPous
+            .filter((pou) => pou.pouType === 'interface' && pou.name !== editor.meta.name)
+            .map((pou) => pou.name.toUpperCase()),
+        ),
     },
   ]
 
@@ -435,7 +448,7 @@ const SelectableTypeCell = ({
 
 const SelectableClassCell = ({
   getValue,
-  row: { index },
+  row: { index, original },
   column: { id },
   table,
   selected = true,
@@ -487,10 +500,21 @@ const SelectableClassCell = ({
     setCellValue(currentValue)
   }, [currentValue])
 
+  // What the declaration says beyond the class, read from its text: the VAR
+  // section's access specifier (`VAR PROTECTED`, IEC 61131-3 6.6.5.3) and an
+  // input's edge qualifier (`R_EDGE`, 6.6.3.2). Shown, not edited here — they
+  // are kept in the declaration text, which the table patches in place.
+  const declared = original as { access?: string; edge?: string } | undefined
+  const qualifiers = [
+    declared?.access,
+    declared?.edge === 'rising' ? 'R_EDGE' : declared?.edge === 'falling' ? 'F_EDGE' : undefined,
+  ].filter((q): q is string => q !== undefined)
+  const classLabel = qualifiers.length > 0 ? `${String(cellValue)} (${qualifiers.join(', ')})` : (cellValue as string)
+
   return (
     <Select value={cellValue as string} onValueChange={(value) => onValueChange(value)} disabled={isDebuggerVisible}>
       <SelectTrigger
-        placeholder={cellValue as string}
+        placeholder={classLabel}
         className={cn(
           'flex h-full w-full justify-center p-2 font-caption text-cp-sm font-medium text-neutral-850 outline-none dark:text-neutral-300',
           {
@@ -576,6 +600,8 @@ const VARIABLE_FLAGS: Array<{ value: string; label: string; a11yLabel: string }>
   { value: NO_FLAG, label: '', a11yLabel: 'No flag' },
   { value: 'constant', label: 'Constant', a11yLabel: 'Constant' },
   { value: 'retain', label: 'Retain', a11yLabel: 'Retain' },
+  // An explicit NON_RETAIN (IEC 61131-3 6.5.6.2): stays out of a RETAIN instance.
+  { value: 'non-retain', label: 'Non-retain', a11yLabel: 'Non-retain' },
 ]
 
 const SelectableFlagCell = ({

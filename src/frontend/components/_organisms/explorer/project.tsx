@@ -303,6 +303,32 @@ const Project = () => {
               ))}
           </ProjectTreeBranch>
 
+          {/* Project Interfaces tree branch (IEC 61131-3 INTERFACEs) — only in a
+              project that has one, so an ordinary project's tree is unchanged. */}
+          {pous?.some((pou) => pou.pouType === 'interface') && (
+            <ProjectTreeBranch branchTarget='interface'>
+              {pous
+                ?.filter((pou) => pou.pouType === 'interface')
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((pou) => (
+                  <ProjectTreeLeaf
+                    key={pou.name}
+                    leafLang={pou.body.language as PouLeafLang}
+                    leafType='interface'
+                    label={pou.name}
+                    highlightQuery={searchQuery}
+                    onClick={() =>
+                      handleCreateTab({
+                        name: pou.name,
+                        path: `/data/pous/interface/${pou.name}`,
+                        elementType: { type: 'interface', language: pou.body.language as PouLeafLang },
+                      })
+                    }
+                  />
+                ))}
+            </ProjectTreeBranch>
+          )}
+
           {/* Project Programs tree branch — hidden in library projects
               (libraries have no programs). */}
           {projectCaps.hasPrograms && (

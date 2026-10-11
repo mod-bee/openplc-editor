@@ -168,7 +168,11 @@ const PLCVariableSchema = z.object({
    * because CONSTANT and RETAIN are mutually exclusive — the invalid pair is
    * unrepresentable instead of merely rejected.
    */
-  flag: z.enum(['constant', 'retain']).optional(),
+  flag: z.enum(['constant', 'retain', 'non-retain']).optional(),
+  /** Access specifier of the function block `VAR` section (IEC 61131-3 6.6.5.3): `VAR PROTECTED` … */
+  access: z.enum(['public', 'protected', 'private']).optional(),
+  /** `R_EDGE` / `F_EDGE` on a BOOL input (IEC 61131-3 6.6.3.2 item 13). */
+  edge: z.enum(['rising', 'falling']).optional(),
 })
 
 type PLCVariable = z.infer<typeof PLCVariableSchema>
@@ -261,6 +265,12 @@ const PLCFunctionBlockSchema = z.object({
    * PROGRAM schema.
    */
   extends: z.string().optional(),
+  /** Interfaces named in IMPLEMENTS (IEC 61131-3 6.6.6.4). */
+  implements: z.array(z.string()).optional(),
+  /** `FUNCTION_BLOCK ABSTRACT` (6.6.5.8.2). */
+  isAbstract: z.boolean().optional(),
+  /** `FUNCTION_BLOCK FINAL` (6.6.5.8.3). */
+  isFinal: z.boolean().optional(),
   /** Array of variable - will be implemented */
   variables: z.array(PLCVariableSchema),
   body: bodySchema,
@@ -270,6 +280,24 @@ const PLCFunctionBlockSchema = z.object({
 })
 
 type PLCFunctionBlock = z.infer<typeof PLCFunctionBlockSchema>
+
+/**
+ * An IEC 61131-3 INTERFACE (6.6.6): its method prototypes, as ST text, in
+ * `body`; no variables of its own.
+ */
+const PLCInterfaceSchema = z.object({
+  language: z.literal('st'),
+  name: z.string(),
+  /** The interfaces it EXTENDS, comma-separated as written (6.6.6.6). */
+  extends: z.string().optional(),
+  /** Always empty: an interface declares no variables. */
+  variables: z.array(PLCVariableSchema),
+  body: bodySchema,
+  documentation: z.string(),
+  variablesText: z.string().optional(),
+})
+
+type PLCInterface = z.infer<typeof PLCInterfaceSchema>
 
 const PLCPouSchema = z.discriminatedUnion('type', [
   z.object({
@@ -283,6 +311,10 @@ const PLCPouSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('function-block'),
     data: PLCFunctionBlockSchema,
+  }),
+  z.object({
+    type: z.literal('interface'),
+    data: PLCInterfaceSchema,
   }),
 ])
 type PLCPou = z.infer<typeof PLCPouSchema>
@@ -1014,6 +1046,7 @@ export {
   PLCGlobalVariableListSchema,
   PLCGlobalVariableSchema,
   PLCInstanceSchema,
+  PLCInterfaceSchema,
   PLCPouSchema,
   PLCProgramSchema,
   PLCProjectDataSchema,
@@ -1077,6 +1110,7 @@ export type {
   PLCFunctionBlock,
   PLCGlobalVariable,
   PLCInstance,
+  PLCInterface,
   PLCPou,
   PLCProgram,
   PLCProject,

@@ -9,6 +9,7 @@ export type TabsProps = {
     | { type: 'program'; language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp' }
     | { type: 'function'; language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp' }
     | { type: 'function-block'; language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp' }
+    | { type: 'interface'; language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp' }
     | { type: 'data-type'; derivation: 'enumerated' | 'structure' | 'array' }
     | { type: 'global-variable-list' }
     | { type: 'resource' }

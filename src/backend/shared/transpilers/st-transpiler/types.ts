@@ -18,7 +18,8 @@ export interface TranspileProject {
 
 /* ─────────────────────────── pou ────────────────────────────────────────── */
 
-export type TranspilePouKind = 'program' | 'function' | 'function-block'
+/** `interface`: an IEC 61131-3 INTERFACE (6.6.6), its method prototypes in the ST body. */
+export type TranspilePouKind = 'program' | 'function' | 'function-block' | 'interface'
 export type TranspileBodyLanguage = 'st' | 'il' | 'ld' | 'fbd' | 'sfc' | 'python' | 'cpp'
 
 export interface TranspilePou {
@@ -33,8 +34,16 @@ export interface TranspilePou {
 export interface TranspilePouInterface {
   /** Only set on `function` POUs. */
   returnType?: string
-  /** Base function block, from `FUNCTION_BLOCK X EXTENDS Y`. */
+  /**
+   * Base function block, from `FUNCTION_BLOCK X EXTENDS Y`; on an interface,
+   * the interfaces it EXTENDS, comma-separated.
+   */
   extends?: string
+  /** `IMPLEMENTS` list of a function block (IEC 61131-3 6.6.6.4). */
+  implements?: string[]
+  /** `FUNCTION_BLOCK ABSTRACT` / `FINAL` (6.6.5.8). */
+  isAbstract?: boolean
+  isFinal?: boolean
   variables: TranspileVariable[]
 }
 
@@ -74,10 +83,14 @@ export interface TranspileVariable {
    * this is a bucketing key for `computeInterface`'s emission, not a per-line annotation.
    */
   flag?: TranspileVariableFlag
+  /** Access specifier of a function block `VAR` section (6.6.5.3); also a bucketing key. */
+  access?: 'public' | 'protected' | 'private'
+  /** `R_EDGE` / `F_EDGE` on a BOOL input (6.6.3.2 item 13). */
+  edge?: 'rising' | 'falling'
 }
 
 /** Mirrors `VariableFlag` in middleware/shared/ports/types.ts. */
-export type TranspileVariableFlag = 'constant' | 'retain'
+export type TranspileVariableFlag = 'constant' | 'retain' | 'non-retain'
 
 /* ──────────────────────────── variable type ─────────────────────────────── */
 

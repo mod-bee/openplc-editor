@@ -59,10 +59,10 @@ const Breadcrumbs = () => {
   }
 
   const getPouTypeOrDataTypeOrResource = ():
-    | ['program' | 'function' | 'function-block' | 'resource' | 'data-type' | 'global-variable-list']
+    | ['program' | 'function' | 'function-block' | 'interface' | 'resource' | 'data-type' | 'global-variable-list']
     | null => {
     if ('pouType' in meta) {
-      return [meta.pouType] as ['program' | 'function' | 'function-block']
+      return [meta.pouType] as ['program' | 'function' | 'function-block' | 'interface']
     }
     if (dataTypes.find((datatype) => datatype.name === meta.name)) {
       return ['data-type']

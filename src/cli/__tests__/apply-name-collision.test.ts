@@ -107,9 +107,8 @@ describe('a variable that is a function-block instance', () => {
   // `derived` is an FB INSTANCE; a structure or enumeration is
   // `user-data-type`. Confusing the two used to produce
   // `t0 AT %QX0.0 : TON := SOMETHING;`, which apply reported as a success and
-  // the compiler could not parse. It also made apply disagree with itself: the
-  // create path kept both fields and the update path silently dropped them, so
-  // applying one spec twice gave two different projects.
+  // the compiler could not parse. An initialisation list is the one initial
+  // value an instance takes; `apply-fb-instance-init.test.ts` covers it.
   const instanceSpec = (extra: Record<string, unknown>) => ({
     pous: [
       {
@@ -124,9 +123,9 @@ describe('a variable that is a function-block instance', () => {
     ],
   })
 
-  it('refuses an initial value on it', async () => {
+  it('refuses an initial value that is not an initialisation list', async () => {
     const result = await apply(instanceSpec({ initialValue: 'SOMETHING' }) as Partial<ApplySpec>)
-    expect(result.errors.some((error) => error.includes('cannot take an initial value'))).toBe(true)
+    expect(result.errors.some((error) => error.includes('must be a parenthesized list'))).toBe(true)
   })
 
   it('refuses a location on it', async () => {

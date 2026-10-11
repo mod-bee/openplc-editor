@@ -51,6 +51,15 @@ export type CatalogQueryResult =
  * in the future are simply ignored until something here opts in to
  * them.
  */
+/** A method prototype as a `.stlib` manifest carries it. */
+export interface StlibMethodDTO {
+  name: string
+  returnType?: string
+  inputs: Array<{ name: string; type: string }>
+  outputs: Array<{ name: string; type: string }>
+  inouts: Array<{ name: string; type: string }>
+}
+
 export interface StlibArchiveDTO {
   manifest: {
     name: string
@@ -70,7 +79,7 @@ export interface StlibArchiveDTO {
     }>
     functionBlocks: Array<{
       name: string
-      inputs: Array<{ name: string; type: string }>
+      inputs: Array<{ name: string; type: string; edge?: 'R_EDGE' | 'F_EDGE' }>
       outputs: Array<{ name: string; type: string }>
       inouts: Array<{ name: string; type: string }>
       documentation?: string
@@ -88,6 +97,22 @@ export interface StlibArchiveDTO {
        *  `implementation`; the file name need not match the block
        *  name, so it is carried explicitly rather than guessed. */
       sourceFile?: string
+      /** The block it EXTENDS; its pins already include the base's. */
+      extends?: string
+      /** An ABSTRACT block: never instantiated. */
+      isAbstract?: true
+      /** The interfaces it names in IMPLEMENTS. */
+      implements?: string[]
+      /** Its PUBLIC methods, own and inherited. */
+      methods?: StlibMethodDTO[]
+    }>
+    /** The library's interfaces (IEC 61131-3 6.6.6); absent in an archive built before they were exported. */
+    interfaces?: Array<{
+      name: string
+      extends?: string[]
+      methods: StlibMethodDTO[]
+      documentation?: string
+      category?: string
     }>
     types: Array<{
       name: string

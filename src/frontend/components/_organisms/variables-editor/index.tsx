@@ -1072,6 +1072,18 @@ const VariablesEditor = ({ name: propName, isActive: _isActive = true }: Variabl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.cursorPosition?.target, editor.cursorPosition?.lineNumber, editor.cursorPosition?.column])
 
+  // An INTERFACE declares no variables (IEC 61131-3 6.6.6.1): its method
+  // prototypes are its whole text, edited below. A table here could only
+  // write a VAR section the interface may not have.
+  if ('pouType' in editor.meta && editor.meta.pouType === 'interface') {
+    return (
+      <div className='flex h-full w-full items-center justify-center px-4 text-center font-caption text-xs text-neutral-500 dark:text-neutral-400'>
+        An interface declares no variables. Its method prototypes are in the editor below; a function block offers them
+        by naming the interface in IMPLEMENTS.
+      </div>
+    )
+  }
+
   return (
     <>
       {confirmRenameBlocksOpen && renameImpactData && (

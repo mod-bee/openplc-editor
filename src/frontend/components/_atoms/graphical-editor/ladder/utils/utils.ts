@@ -209,7 +209,10 @@ export const getBlockVariantAndExecutionControl = (variantLib: BlockVariant, exe
     type: variable.type,
   }))
 
+  // A block that always carries EN / ENO (an installed library's, IEC 61131-3
+  // 6.6.1.5) takes the rung on EN, never on its first BOOL data pin.
   const mustHaveExecutionControlEnabled =
+    (variantLib as { executionControl?: boolean }).executionControl === true ||
     inputConnectors.length === 0 ||
     !validateVariableType('BOOL', inputConnectors[0].type.value.toUpperCase()).isValid ||
     outputConnectors.length === 0 ||

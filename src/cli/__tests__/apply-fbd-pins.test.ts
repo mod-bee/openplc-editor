@@ -21,10 +21,11 @@ import type { SystemLibrary } from '@root/middleware/shared/ports/library-types'
  * evidence here, because the bug this file exists for accepted a pin and then
  * failed to add it. The grown pin list is the thing to assert on.
  */
-const handed: { nodes: unknown[] } = { nodes: [] }
+const handed: { nodes: unknown[]; connections: unknown[] } = { nodes: [], connections: [] }
 jest.mock('@root/frontend/store/slices/fbd/utils/build-graph', () => ({
-  buildFbdGraph: (nodes: unknown[]) => {
+  buildFbdGraph: (nodes: unknown[], connections: unknown[]) => {
     handed.nodes = nodes
+    handed.connections = connections
     return { nodes: [], edges: [], brokenCycles: [], errors: [] }
   },
 }))
@@ -124,5 +125,24 @@ describe('a block that is not extensible', () => {
 
   it('accepts EN and ENO, which the editor adds itself', () => {
     expect(errorsFor('system/iec-std-functions/SEL', 'EN')).toEqual([])
+  })
+})
+
+// IEC 61131-3 Ed.3 6.1.2: case is not significant in identifiers.
+describe('a pin named in another case', () => {
+  it('is matched, and handed on in the spelling the block declares', () => {
+    const body = wire('system/iec-std-functions/SEL', 'in0')
+    expect(applyFbdBody(store, 'Main', body)).toEqual([])
+    expect(handed.connections).toEqual([{ from: 'src', to: 'blk.IN0' }])
+    // The caller's document is left as written.
+    expect(body.connections[0].to).toBe('blk.in0')
+  })
+
+  it('grows an extensible block from a lower-case IN<n>', () => {
+    expect(grownPins('system/iec-std-functions/ADD', 'in3')).toEqual(['IN1', 'IN2', 'IN3'])
+  })
+
+  it('accepts en, which the editor adds itself', () => {
+    expect(errorsFor('system/iec-std-functions/SEL', 'en')).toEqual([])
   })
 })

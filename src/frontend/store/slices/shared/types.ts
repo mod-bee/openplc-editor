@@ -68,7 +68,7 @@ export type PouHistory = {
 
 export type PouActions = {
   create: (args: {
-    type: 'program' | 'function' | 'function-block'
+    type: 'program' | 'function' | 'function-block' | 'interface'
     name: string
     language: 'il' | 'st' | 'ld' | 'sfc' | 'fbd' | 'python' | 'cpp'
   }) => SharedResponse

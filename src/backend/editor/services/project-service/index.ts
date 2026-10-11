@@ -312,7 +312,7 @@ class ProjectService {
         'devices/pin-mapping.json',
       )
 
-      const pouDirs = ['pous/functions', 'pous/function-blocks', 'pous/programs']
+      const pouDirs = ['pous/functions', 'pous/function-blocks', 'pous/programs', 'pous/interfaces']
       const pouFiles: Array<{ relativePath: string; content: string }> = []
       for (const pouDir of pouDirs) {
         const files = await readDirRecursive(join(projectPath, ...pouDir.split('/')), pouDir)

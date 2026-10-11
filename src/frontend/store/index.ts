@@ -6,6 +6,8 @@ import { createStore } from 'zustand/vanilla'
 enableMapSet()
 
 import type { AIFeatureConfig } from '../../middleware/shared/ports/types'
+import { buildOopTypeIndex, isOopAssignable } from '../utils/PLC/oop-types'
+import { setOopTypeAssignability } from '../utils/PLC/validate-variable-type'
 import type { AISlice } from './slices/ai'
 import { createAISliceFactory } from './slices/ai'
 import type { ConsoleSlice } from './slices/console'
@@ -69,13 +71,14 @@ export type RootState = AISlice &
  * Configuration for store initialization.
  * Allows the composition root to inject platform-specific initial state.
  */
+
 export interface StoreConfig {
   /** AI feature configuration from platform environment */
   ai?: AIFeatureConfig
 }
 
 export function createOpenPLCStore(config: StoreConfig = {}) {
-  return createStore<RootState>()(
+  const store = createStore<RootState>()(
     subscribeWithSelector((...a) => ({
       ...createAISliceFactory(config.ai)(...a),
       ...createConsoleSlice(...a),
@@ -98,6 +101,14 @@ export function createOpenPLCStore(config: StoreConfig = {}) {
       ...createWorkspaceSlice(...a),
     })),
   )
+  // The pin / variable type checks accept an implementing or derived instance
+  // where an interface or a base block is expected (IEC 61131-3 6.6.6.5.1),
+  // judged against this store's project and libraries as they are now.
+  setOopTypeAssignability((source, target) => {
+    const state = store.getState()
+    return isOopAssignable(buildOopTypeIndex(state.project.data.pous, state.libraries.system), source, target)
+  })
+  return store
 }
 
 export type OpenPLCStore = ReturnType<typeof createOpenPLCStore>

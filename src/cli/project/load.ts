@@ -93,13 +93,12 @@ function hydrateLibraries(store: OpenPLCStore): string[] {
   try {
     const libraries = new LibraryManagerModule()
     const actions = store.getState().libraryActions
-    actions.setSystemLibraries(stlibsToSystemLibraries(libraries.loadAll()))
-    actions.setBundledLibraryNames(
-      libraries
-        .listInstalled()
-        .filter((library) => library.bundled)
-        .map((library) => library.name),
-    )
+    const bundled = libraries
+      .listInstalled()
+      .filter((library) => library.bundled)
+      .map((library) => library.name)
+    actions.setSystemLibraries(stlibsToSystemLibraries(libraries.loadAll(), bundled))
+    actions.setBundledLibraryNames(bundled)
     return []
   } catch (err) {
     return [`warning: could not read the installed libraries: ${err instanceof Error ? err.message : String(err)}`]

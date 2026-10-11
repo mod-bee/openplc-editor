@@ -60,12 +60,38 @@ describe('a data type whose name is not a legal identifier', () => {
       {
         derivation: 'structure',
         name: 'BadField',
-        variables: [{ name: 'Label', type: { definition: 'base-type', value: 'STRING' } }],
+        variables: [{ name: 'For', type: { definition: 'base-type', value: 'STRING' } }],
       },
     ])
 
-    expect(result.errors.join(' ')).toContain('"Label" is a reserved word')
+    expect(result.errors.join(' ')).toContain('"For" is a reserved word')
     expect(dataTypesIn().some((type) => type.name === 'BadField')).toBe(false)
+  })
+
+  // IEC 61131-3 Ed.3 6.1.3 refuses keywords only. SET is not one (the RS input
+  // of 6.6.3.5.2) and LIMIT is a standard function name, not a keyword.
+  it('accepts the field names set and limit', async () => {
+    const result = await apply([
+      {
+        derivation: 'structure',
+        name: 'UT_STARTS_SET',
+        variables: [
+          { name: 'set', type: { definition: 'base-type', value: 'BOOL' } },
+          { name: 'limit', type: { definition: 'base-type', value: 'UINT' } },
+        ],
+      },
+    ])
+
+    expect(result.errors).toEqual([])
+    expect(dataTypesIn().some((type) => type.name === 'UT_STARTS_SET')).toBe(true)
+  })
+
+  it('refuses a standard function name for the data type itself', async () => {
+    const result = await apply([
+      { derivation: 'structure', name: 'Limit', variables: [{ name: 'a', type: { definition: 'base-type', value: 'INT' } }] },
+    ])
+
+    expect(result.errors.join(' ')).toContain('"Limit" is the name of a standard function')
   })
 
   it('refuses a reserved enumerated value', async () => {
@@ -147,6 +173,26 @@ describe('a data type with named values (IEC 61131-3 Ed.3 6.4.4.3)', () => {
     // Applying what describe produced changes nothing.
     expect((await apply([described])).errors).toEqual([])
     expect(dataTypesIn().find((type) => type.name === 'UT_STATUS')).toEqual(stored)
+  })
+
+  it('round-trips a structure member\'s initial value and an array member\'s bounds', async () => {
+    const spec = {
+      derivation: 'structure',
+      name: 'UT_AO_DATA',
+      variables: [
+        { name: 'cmdMode', type: { definition: 'base-type', value: 'INT' }, initialValue: '-1', documentation: 'Hand/Auto' },
+        { name: 'trend', type: { definition: 'array', value: 'INT', dimensions: ['0..2'] } },
+        { name: 'plain', type: { definition: 'base-type', value: 'BOOL' } },
+      ],
+    }
+    expect((await apply([spec])).errors).toEqual([])
+    const stored = dataTypesIn().find((type) => type.name === 'UT_AO_DATA')
+    const described = describeDataType(stored!)
+    expect(described).toEqual(spec)
+
+    // Applying what describe produced changes nothing.
+    expect((await apply([described])).errors).toEqual([])
+    expect(dataTypesIn().find((type) => type.name === 'UT_AO_DATA')).toEqual(stored)
   })
 
   it('leaves a plain enumeration exactly as before', async () => {

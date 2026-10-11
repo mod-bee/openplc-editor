@@ -24,7 +24,7 @@ export interface KnownPou {
   /** POU name as the user knows it.  Strucpp uppercases internally; we
    *  match case-insensitively against the transpiler output. */
   name: string
-  kind: 'PROGRAM' | 'FUNCTION' | 'FUNCTION_BLOCK'
+  kind: 'PROGRAM' | 'FUNCTION' | 'FUNCTION_BLOCK' | 'INTERFACE'
   /**
    * Source language for the POU.  Used to pick the right file
    *  extension when emitting per-POU files: `.il` for Instruction
@@ -72,7 +72,9 @@ function findPouHeader(lines: string[], start: number, pou: KnownPou): number {
   // Anchor to start-of-line so an indented `function_block manual_override`
   // inside a comment string never matches.  Word boundary at the end so
   // `Manual` doesn't match `Manual_Override`.
-  const re = new RegExp(`^${pou.kind}\\s+${escapeRegex(pou.name)}\\b`, 'i')
+  // A function block may carry ABSTRACT or FINAL before its name (IEC 61131-3 6.6.5.8).
+  const modifier = pou.kind === 'FUNCTION_BLOCK' ? '(?:(?:ABSTRACT|FINAL)\\s+)?' : ''
+  const re = new RegExp(`^${pou.kind}\\s+${modifier}${escapeRegex(pou.name)}\\b`, 'i')
   for (let i = start; i < lines.length; i++) {
     if (re.test(lines[i])) return i
   }
@@ -88,7 +90,7 @@ function findPouEnd(lines: string[], headerLine: number, kind: KnownPou['kind'])
   const endRe = new RegExp(`^END_${kind}\\b`, 'i')
   // Bail out if a new top-level keyword appears before the closing
   // keyword — implies a malformed file or a POU we didn't expect.
-  const otherStartRe = /^(PROGRAM|FUNCTION|FUNCTION_BLOCK|TYPE|CONFIGURATION|VAR_GLOBAL)\b/i
+  const otherStartRe = /^(PROGRAM|FUNCTION|FUNCTION_BLOCK|INTERFACE|TYPE|CONFIGURATION|VAR_GLOBAL)\b/i
   for (let i = headerLine + 1; i < lines.length; i++) {
     if (endRe.test(lines[i])) return i
     if (otherStartRe.test(lines[i])) return -1

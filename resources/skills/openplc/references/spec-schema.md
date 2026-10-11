@@ -34,7 +34,7 @@ folder, so `apply` refuses a `device` section (and any `servers` or
 | `communicationPort` | Serial port, for a board flashed over USB.                                                                                                                                                                                                                                                                                  |
 | `runtimeIpAddress`  | Address of a runtime target.                                                                                                                                                                                                                                                                                                |
 | `persistentStorage` | `{ enabled, path?, flushSeconds? }` — where `retain` variables are kept. See below.                                                                                                                                                                                                                                         |
-| `rtos`              | `{ enabled }` — RTOS mode on a board whose core has an RTOS (ESP32, STM32 but the smallest, Pico, Mbed, Uno Q, Uno R4, SAMD): each task a thread of its own. On by default there; `false` builds the single scan loop. Refused for a board without one. See tasks[] below.                                                                 |
+| `rtos`              | `{ enabled }` — RTOS mode on a board whose core has an RTOS (ESP32, STM32 but the smallest, Pico, Mbed, Uno Q, Uno R4, SAMD): each task a thread of its own. On by default there; `false` builds the single scan loop. Refused for a board without one. See tasks[] below.                                                  |
 
 ### device.persistentStorage
 
@@ -42,10 +42,10 @@ Delivered to the device as `retain.conf` with the program. Off by default, and a
 project that leaves it off uploads no `retain.conf` at all — so a variable
 flagged `retain` retains nothing until this is switched on.
 
-| Field          | Notes                                                                                                                                                                                        |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enabled`      | Required.                                                                                                                                                                                    |
-| `path`         | Absolute path ON THE DEVICE. Empty or absent means the runtime's own default.                                                                                                                |
+| Field          | Notes                                                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`      | Required.                                                                                                                                                                                                                                                       |
+| `path`         | Absolute path ON THE DEVICE. Empty or absent means the runtime's own default.                                                                                                                                                                                   |
 | `flushSeconds` | 1-3600. A change is saved at once; further changes within this period are saved when it ends. Default: 10 on runtime v4, 60 on ESP32, 600 on other Arduino boards. Lower loses less of a constantly changing value on a power cut and works the storage harder. |
 
 ## libraries
@@ -89,9 +89,13 @@ within sections the document declares.
 | Field           | Notes                                                                                      |
 | --------------- | ------------------------------------------------------------------------------------------ |
 | `name`          | Checked against every other element AND every installed library block.                     |
-| `kind`          | `program` \| `function` \| `function-block`                                                |
+| `kind`          | `program` \| `function` \| `function-block` \| `interface`                                 |
 | `language`      | `st` \| `il` \| `ld` \| `fbd` \| `python` \| `cpp`. Fixed once the POU exists — see below. |
 | `returnType`    | Functions only.                                                                            |
+| `extends`       | Function block: the block it EXTENDS. Interface: a list of the interfaces it EXTENDS.      |
+| `implements`    | Function blocks only: the interfaces it IMPLEMENTS, a list.                                |
+| `abstract`      | Function blocks only: `FUNCTION_BLOCK ABSTRACT` — a base, never placed or declared.        |
+| `final`         | Function blocks only: `FUNCTION_BLOCK FINAL` — no block may extend it.                     |
 | `documentation` | Optional.                                                                                  |
 | `variables[]`   | See below.                                                                                 |
 | `body`          | Shape depends on `language`.                                                               |
@@ -103,7 +107,27 @@ within sections the document declares.
 | `program`        | `st`, `il`, `ld`, `fbd`          | Top-level. Bound to a task by an `instance`. Keeps state between scans. May carry I/O `location`s. |
 | `function`       | `st`, `il`, `ld`, `fbd`          | Stateless — locals are a fresh frame per call. Needs `returnType`.                                 |
 | `function-block` | those four, plus `python`, `cpp` | Stateful. Instantiated as a variable with `definition: "derived"`.                                 |
+| `interface`      | `st`                             | IEC INTERFACE: no variables; the body text is its `METHOD … END_METHOD` prototypes.                |
 
+### Interfaces, methods and inheritance (IEC 61131-3 6.6.5, 6.6.6)
+
+An `interface` POU holds method prototypes only. A function block offers it by
+naming it in `implements`, and its methods go in its ST body **ahead of the
+statements**, in the order the standard writes them:
+
+```json
+{ "name": "I_Motor", "kind": "interface", "language": "st", "extends": ["I_Status"],
+  "body": { "text": "METHOD IsRunning : BOOL\nEND_METHOD\n" } }
+{ "name": "Motor", "kind": "function-block", "language": "st", "implements": ["I_Motor"],
+  "variables": [{ "name": "Start", "class": "input", "edge": "rising",
+                  "type": { "definition": "base-type", "value": "BOOL" } },
+                { "name": "running", "access": "protected", "type": { "definition": "base-type", "value": "BOOL" } }],
+  "body": { "text": "METHOD PUBLIC IsRunning : BOOL\n  IsRunning := running;\nEND_METHOD\n\nIF Start THEN running := TRUE; END_IF;\n" } }
+```
+
+A variable or an input pin typed with an interface takes an instance of any
+block implementing it (or of one extending such a block): wire the instance's
+name to the pin. Interfaces are never in-outs (6.6.6.2). Methods are ST only.
 `python` and `cpp` POUs are Function Blocks; the editor offers no other kind for
 them. `apply` does not currently refuse `program` or `function` there, but
 nothing in the editor produces one.
@@ -134,16 +158,18 @@ one (`--prune` removes a POU the document stops mentioning).
 
 ## variables[]
 
-| Field                           | Notes                                                                                                                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                          | May be auto-renamed if taken — read the change list.                                                                                                                                                |
-| `class`                         | `input` \| `output` \| `inOut` \| `local` \| `temp` \| `external` \| `global`. Optional; defaults to `local` on a POU, `global` on the resource.                                                    |
-| `type`                          | `{ "definition": ..., "value": ... }`                                                                                                                                                               |
-| `location`                      | An alias name or a literal IEC address (`%IX0.0`).                                                                                                                                                  |
-| `initialValue`, `documentation` | Optional.                                                                                                                                                                                           |
-| `leadingComment`                | Optional. The comment on its own lines directly above the declaration (`documentation` is the one after it on the same line). Deleted with the variable, moved with it. Absent leaves it alone; `""` removes it. |
-| `debug`                         | Optional. Ticks the variable into the EDITOR's debugger chart. `debug read` does not need it — the CLI reads anything in the debug map.                                                             |
-| `flag`                          | `constant` \| `retain`. The variables table's **Flags** column. Absent is a plain `VAR` (IEC `NON_RETAIN`). Mutually exclusive, hence one field. `retain` needs `device.persistentStorage.enabled`. |
+| Field                           | Notes                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                          | May be auto-renamed if taken — read the change list.                                                                                                                                                                                                                                     |
+| `class`                         | `input` \| `output` \| `inOut` \| `local` \| `temp` \| `external` \| `global`. Optional; defaults to `local` on a POU, `global` on the resource.                                                                                                                                         |
+| `type`                          | `{ "definition": ..., "value": ... }`                                                                                                                                                                                                                                                    |
+| `location`                      | An alias name or a literal IEC address (`%IX0.0`).                                                                                                                                                                                                                                       |
+| `initialValue`, `documentation` | Optional.                                                                                                                                                                                                                                                                                |
+| `leadingComment`                | Optional. The comment on its own lines directly above the declaration (`documentation` is the one after it on the same line). Deleted with the variable, moved with it. Absent leaves it alone; `""` removes it.                                                                         |
+| `debug`                         | Optional. Ticks the variable into the EDITOR's debugger chart. `debug read` does not need it — the CLI reads anything in the debug map.                                                                                                                                                  |
+| `flag`                          | `constant` \| `retain` \| `non-retain`. The variables table's **Flags** column. Absent is a plain `VAR`. `non-retain` is an explicit `NON_RETAIN`: kept out even of an instance declared RETAIN. Mutually exclusive, hence one field. `retain` needs `device.persistentStorage.enabled`. |
+| `access`                        | `public` \| `protected` \| `private`: a function block's `VAR PUBLIC` / `VAR PROTECTED` / `VAR PRIVATE` section. `local` variables only.                                                                                                                                                 |
+| `edge`                          | `rising` \| `falling`: `R_EDGE` / `F_EDGE` on a BOOL `input` of a function block — the body sees TRUE only on the scan the input changed.                                                                                                                                                |
 
 ### Choosing a class
 
@@ -180,7 +206,17 @@ The alternative is an array **data type** (below) used as a variable's
 `user-data-type` — worth it when several variables share the shape.
 
 A function block instance is an ordinary variable with `definition: "derived"`
-and the block's name as its `value`.
+and the block's name as its `value`. It takes no `location`. Its `initialValue`,
+if any, is an initialisation list naming the block's inputs, outputs or `PUBLIC`
+variables (IEC 61131-3 6.6.3.3); anything it leaves out keeps the block's own
+default:
+
+```json
+{ "name": "Dwell", "type": { "definition": "derived", "value": "TON" }, "initialValue": "(PT := T#5s)" }
+```
+
+`apply` refuses a name the block does not declare, a `VAR_IN_OUT`, an internal
+(non-`PUBLIC`) variable, and any value that is not such a list.
 
 ## dataTypes[]
 
@@ -214,9 +250,13 @@ value to any name as `{ "name", "value" }`. A name without a value is one more
 than the name before it (the first is 0).
 
 ```json
-{ "name": "Status", "derivation": "enumerated", "baseType": "USINT",
-  "values": [ { "name": "IDLE", "value": 0 }, "RUN", { "name": "FAULT", "value": "16#20" } ],
-  "initialValue": "IDLE" }
+{
+  "name": "Status",
+  "derivation": "enumerated",
+  "baseType": "USINT",
+  "values": [{ "name": "IDLE", "value": 0 }, "RUN", { "name": "FAULT", "value": "16#20" }],
+  "initialValue": "IDLE"
+}
 ```
 
 It is stored in the base type's width (`USINT` is one byte), and its values are
@@ -248,12 +288,12 @@ dangling reference rather than letting it surface as a compile error later.
 mode, the default; the Board Settings switch, or `device.rtos`, turns it off).
 The boards, and how many tasks each has room for:
 
-| Boards | Tasks at most |
-|---|---|
-| every ESP32, Nano 33 BLE, Nano RP2040 Connect, Giga, Uno Q, Ventuno Q, Pico / Pico W / Pico 2 / Pico 2 W | 8 |
-| STM32, all but the F1 and the Cortex-M0/M0+ families (Blackpill, Nucleo) | 4 |
-| Zero, MKR WiFi 1010, MKR Zero, Nano 33 IoT | 2 |
-| Uno R4 Minima / WiFi | 1 |
+| Boards                                                                                                   | Tasks at most |
+| -------------------------------------------------------------------------------------------------------- | ------------- |
+| every ESP32, Nano 33 BLE, Nano RP2040 Connect, Giga, Uno Q, Ventuno Q, Pico / Pico W / Pico 2 / Pico 2 W | 8             |
+| STM32, all but the F1 and the Cortex-M0/M0+ families (Blackpill, Nucleo)                                 | 4             |
+| Zero, MKR WiFi 1010, MKR Zero, Nano 33 IoT                                                               | 2             |
+| Uno R4 Minima / WiFi                                                                                     | 1             |
 
 That changes four things:
 

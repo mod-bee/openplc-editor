@@ -331,6 +331,15 @@ function restampNodes(
         continue
       }
 
+      // The edge marker follows the library: an input that became R_EDGE is
+      // drawn with `>` (IEC 61131-3 6.6.3.2), one that stopped being is not.
+      const pin = variable as { edge?: string }
+      if (pin.edge !== libVar.edge) {
+        if (libVar.edge !== undefined) pin.edge = libVar.edge
+        else delete pin.edge
+        modified = true
+      }
+
       if (variable.class !== libVar.class) {
         const from = variable.class
         if (blockParameterSide(variable) === blockParameterSide(libVar)) {

@@ -7,6 +7,7 @@ import { parseDataTypeFromText } from '../../../frontend/utils/PLC/data-type-dec
 import {
   detectLanguageFromExtension,
   extractVariablesSection,
+  headerInterfaceFields,
   isGraphicalBodyShape,
   matchPouHeader,
   parseGraphicalPouFromString,
@@ -123,6 +124,7 @@ function detectPouTypeFromPath(relativePath: string): string {
   const normalized = relativePath.replace(/\\/g, '/')
   if (normalized.includes('/programs/')) return 'program'
   if (normalized.includes('/function-blocks/')) return 'function-block'
+  if (normalized.includes('/interfaces/')) return 'interface'
   if (normalized.includes('/functions/')) return 'function'
   throw new Error(`Cannot determine POU type from path: ${relativePath}`)
 }
@@ -190,10 +192,12 @@ function createFallbackPou(content: string, language: string, pouType: string, p
   const header = matchPouHeader(remainingContent, pouType)
   const section = extractVariablesSection(remainingContent, header ? header.text.length : 0, {
     boundAtGraphicalBody: language === 'ld' || language === 'fbd',
+    methods: pouType === 'function-block' || pouType === 'interface',
   })
   // An empty block, not an empty string: this text is what the code view opens
-  // on, and it has to be something the user can add a declaration to.
-  const variablesText = section.text === '' ? 'VAR\nEND_VAR' : section.text
+  // on, and it has to be something the user can add a declaration to. Not for
+  // an INTERFACE, which declares no variables (IEC 61131-3 6.6.6.1).
+  const variablesText = section.text === '' && pouType !== 'interface' ? 'VAR\nEND_VAR' : section.text
   const bodyStartIndex = section.bodyStartIndex
 
   // 2. Extract body content
@@ -244,6 +248,7 @@ function createFallbackPou(content: string, language: string, pouType: string, p
     pouType: pouType as PLCPou['pouType'],
     interface: {
       ...(pouType === 'function' ? { returnType: 'BOOL' } : {}),
+      ...(header ? headerInterfaceFields(header) : {}),
       variables: [],
     },
     body: {

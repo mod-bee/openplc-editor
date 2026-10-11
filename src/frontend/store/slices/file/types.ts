@@ -1,6 +1,7 @@
 export type FileSliceType =
   | 'function'
   | 'function-block'
+  | 'interface'
   | 'program'
   | 'data-type'
   | 'global-variable-list'

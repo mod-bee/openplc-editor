@@ -55,6 +55,9 @@ export interface IpcProjectData {
       variables: unknown[]
       returnType?: string
       extends?: string
+      implements?: string[]
+      isAbstract?: boolean
+      isFinal?: boolean
       body: { language: string; value: unknown }
       documentation: string
     }
@@ -77,6 +80,9 @@ function portPouToIpcPou(pou: PLCPou) {
       // Restated field by field, so anything unnamed is dropped — `extends`
       // included, and the derived block then reaches the compiler with no base.
       ...(pou.interface?.extends ? { extends: pou.interface.extends } : {}),
+      ...(pou.interface?.implements?.length ? { implements: pou.interface.implements } : {}),
+      ...(pou.interface?.isAbstract ? { isAbstract: true } : {}),
+      ...(pou.interface?.isFinal ? { isFinal: true } : {}),
       body: pou.body as { language: string; value: unknown },
       documentation: pou.documentation ?? '',
     },

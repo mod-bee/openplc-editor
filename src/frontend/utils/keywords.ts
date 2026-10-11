@@ -22,11 +22,25 @@ const literals = [
   { pattern: /^'.*'$/, types: ['STRING'] },
 ]
 
+/**
+ * The words no name may take, in any case (IEC 61131-3 Ed.3 6.1.3: keywords
+ * "shall not be used for any other purpose, for example, variable names").
+ *
+ * Ed.3 has no keyword annex; its keywords are the terminal words of the Annex A
+ * grammar. This list is those, the generic type names of 6.4.2 (Figure 5), the
+ * standard function block names (also type names, so an instance may not share
+ * one), and the extra words STruC++ lexes as keywords wherever they appear
+ * (PROPERTY, POINTER, PERSISTENT, VAR_INST, END_GET, END_SET, …) -- a name
+ * spelled like one of those does not parse.
+ *
+ * Not here: CODESYS words STruC++ reads as ordinary names (BEGIN, END, CONST,
+ * ENUM, UNION, GOTO, LABEL, STATIC, VIRTUAL, VOID, AND_THEN, OR_ELSE,
+ * VAR_STAT), and SET / GET, which are not IEC keywords at all -- the standard
+ * names an RS input SET (6.6.3.5.2, Table 44). See `contextualWords`.
+ */
 const keywords = [
   // Structural declarations
   'PROGRAM',
-  'BEGIN',
-  'END',
   'END_PROGRAM',
   'FUNCTION',
   'END_FUNCTION',
@@ -61,21 +75,15 @@ const keywords = [
   'VAR_ACCESS',
   'VAR_EXTERNAL',
   'VAR_INST',
-  'VAR_STAT',
   'VAR_CONFIG',
   'END_VAR',
 
   // Data structures
   'STRUCT',
   'END_STRUCT',
-  'UNION',
-  'END_UNION',
   'ARRAY',
-  'ENUM',
-  'END_ENUM',
   'PROPERTY',
   'END_PROPERTY',
-  'CONST',
   'RETAIN',
   'PERSISTENT',
   'NON_RETAIN',
@@ -102,8 +110,6 @@ const keywords = [
   'EXIT',
   'RETURN',
   'CONTINUE',
-  'GOTO',
-  'LABEL',
 
   // Primitive types
   'BOOL',
@@ -156,8 +162,6 @@ const keywords = [
   'ABSTRACT',
   'FINAL',
   'OVERRIDE',
-  'VIRTUAL',
-  'STATIC',
   'EXTENDS',
   'IMPLEMENTS',
   'THIS',
@@ -167,7 +171,6 @@ const keywords = [
   'TRUE',
   'FALSE',
   'NULL',
-  'VOID',
 
   // Logical operators as words
   'AND',
@@ -175,8 +178,6 @@ const keywords = [
   'NOT',
   'XOR',
   'MOD',
-  'AND_THEN',
-  'OR_ELSE',
 
   // Actions and steps (SFC)
   'ACTION',
@@ -195,8 +196,9 @@ const keywords = [
   'AT',
   'CONSTANT',
   'OVERLAP',
-  'GET',
-  'SET',
+  // STruC++ property accessor blocks: lexed as keywords everywhere.
+  'END_GET',
+  'END_SET',
 
   // Standard function blocks
   'TON',
@@ -311,13 +313,28 @@ export const builtinFunctions = [
 ]
 
 /**
- * Every name an identifier may not take: the language's keywords and the
- * standard functions. Exported so `openplc-cli keywords` can publish exactly
- * what `apply` enforces, rather than a second list written down beside it.
+ * SET and GET: not IEC keywords (Ed.3 6.6.3.5.2, Table 44 names an RS input
+ * SET). STruC++ reads them as ordinary names in declarations, member access and
+ * parameter lists, but its enumeration-value, type and POU name rules take only
+ * a plain identifier, so there they still do not parse.
  */
-export const reservedWords: readonly string[] = [...keywords, ...builtinFunctions]
+const contextualWords = ['SET', 'GET']
 
-const protectedWords = reservedWords
+/**
+ * Every name nothing may take: the keywords. Exported so `openplc-cli keywords`
+ * can publish exactly what `apply` enforces, rather than a second list written
+ * down beside it.
+ */
+export const reservedWords: readonly string[] = [...keywords]
+
+/**
+ * Names a POU, data type or variable list may not take on top of
+ * `reservedWords`: the standard functions (Annex A `Std_Func_Name`), which are
+ * names of POUs already declared rather than keywords, and SET / GET. A
+ * variable, structure field or pin may use them (`limit`, `set`): it lives in
+ * its own scope, and 6.1.2 / 6.1.3 refuse only keywords there.
+ */
+export const elementOnlyReservedWords: readonly string[] = [...contextualWords, ...builtinFunctions]
 
 export function getLiteralType(name: string): string[] | undefined {
   const result = literals.find((x) => x.pattern.test(name))
@@ -330,10 +347,31 @@ function isLiteral(name: string): boolean {
   return getLiteralType(name) !== undefined
 }
 
+/**
+ * May a variable, structure field, pin or instance take this name?
+ * IEC 61131-3 Ed.3 6.1.2 (shape) and 6.1.3 (no keyword, in any case).
+ */
 export function isLegalIdentifier(name: string): [boolean, string] {
   if (isLiteral(name)) return [false, 'is a literal']
-  if (protectedWords.includes(name.toUpperCase())) return [false, 'is a reserved word']
+  if (reservedWords.includes(name.toUpperCase())) return [false, 'is a reserved word']
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return [false, 'contains illegal characters']
+  return [true, '']
+}
+
+/** May a POU, data type or variable list take this name? Also not a standard function, SET or GET. */
+export function isLegalElementName(name: string): [boolean, string] {
+  const [legal, reason] = isLegalIdentifier(name)
+  if (!legal) return [legal, reason]
+  if (contextualWords.includes(name.toUpperCase())) return [false, 'is a reserved word']
+  if (builtinFunctions.includes(name.toUpperCase())) return [false, 'is the name of a standard function']
+  return [true, '']
+}
+
+/** May an enumeration value take this name? Also not SET or GET (see `contextualWords`). */
+export function isLegalEnumValue(name: string): [boolean, string] {
+  const [legal, reason] = isLegalIdentifier(name)
+  if (!legal) return [legal, reason]
+  if (contextualWords.includes(name.toUpperCase())) return [false, 'is a reserved word']
   return [true, '']
 }
 

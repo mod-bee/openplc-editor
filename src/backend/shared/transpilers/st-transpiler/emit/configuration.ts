@@ -171,7 +171,7 @@ function emitGlobalVarList(
 
 /** Qualifier suffix for a var block. Mirrors `flagKeyword` in pou-textual.ts. */
 function flagKeyword(flag: TranspileVariable['flag']): string {
-  return flag === 'constant' ? ' CONSTANT' : flag === 'retain' ? ' RETAIN' : ''
+  return flag === 'constant' ? ' CONSTANT' : flag === 'retain' ? ' RETAIN' : flag === 'non-retain' ? ' NON_RETAIN' : ''
 }
 
 /**

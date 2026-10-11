@@ -12,6 +12,11 @@ export type ProjectDefaultFilesMapKeys = keyof typeof projectDefaultFilesMapSche
 export type ProjectDefaultFilesMapValues = (typeof projectDefaultFilesMapSchema)[ProjectDefaultFilesMapKeys]
 
 export const projectPouDirectories = ['pous/functions', 'pous/function-blocks', 'pous/programs'] as const
+/**
+ * Every folder a POU is read from: the default ones, and `pous/interfaces`
+ * (IEC 61131-3 INTERFACEs), which is created only when a project has one.
+ */
+export const projectPouReadDirectories = [...projectPouDirectories, 'pous/interfaces'] as const
 // Kept out of projectPouDirectories: pou-path detection
 // (detectPouTypeFromPath) must never see datatypes/ entries.
 export const projectDataTypeDirectories = ['datatypes'] as const

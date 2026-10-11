@@ -251,7 +251,14 @@ export function prepareXmlForLibraryBuild(project: PLCProject, manifestJson: str
 
   const knownPous: KnownPou[] = stubbed.data.pous.map((p) => ({
     name: p.data.name,
-    kind: p.type === 'program' ? 'PROGRAM' : p.type === 'function' ? 'FUNCTION' : 'FUNCTION_BLOCK',
+    kind:
+      p.type === 'program'
+        ? 'PROGRAM'
+        : p.type === 'function'
+          ? 'FUNCTION'
+          : p.type === 'interface'
+            ? 'INTERFACE'
+            : 'FUNCTION_BLOCK',
     language: p.data.language,
   }))
 

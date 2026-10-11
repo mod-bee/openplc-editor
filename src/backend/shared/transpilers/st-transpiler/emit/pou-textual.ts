@@ -16,6 +16,7 @@ import type { ProgramChunk } from '../helpers/program'
 import { reIndentText } from '../helpers/text-helpers'
 import { computePouName } from '../helpers/text-helpers'
 import { varTypeNames } from '../helpers/type-text'
+import { edgeSuffix, varBlockBucketKey, varBlockQualifier } from '../helpers/var-block'
 import type { TranspilePou, TranspileProject, TranspileVariable, TranspileVariableClass } from '../types'
 import { declaredTypeName, getTypeAsText } from './type-text'
 import { computeValue } from './value'
@@ -37,6 +38,8 @@ interface InterfaceEntry {
   located: boolean
   /** Block qualifier for this group; absent = plain `VAR`. */
   flag?: TranspileVariable['flag']
+  /** Access specifier of the group's `VAR` section; absent = none. */
+  access?: TranspileVariable['access']
   vars: TranspileVariable[]
 }
 
@@ -65,11 +68,15 @@ export function generateTextualPou(pou: TranspilePou, project: TranspileProject,
       program: 'PROGRAM',
       function: 'FUNCTION',
       'function-block': 'FUNCTION_BLOCK',
+      interface: 'INTERFACE',
     } as Record<string, string>
   )[pou.pouType]
 
   const program: ProgramChunk[] = []
   program.push([`${kindKeyword} `, []])
+  // ABSTRACT / FINAL sit between the keyword and the name (IEC 61131-3 Annex A).
+  const modifier = pouModifier(pou)
+  if (modifier) program.push([modifier, [tagName, 'modifier']])
   program.push([pou.name, [tagName, 'name']])
 
   if (pou.pouType === 'function') {
@@ -78,17 +85,25 @@ export function generateTextualPou(pou: TranspilePou, project: TranspileProject,
   }
   // Dropped here, a derived block reaches strucpp with no base clause, so it
   // is emitted with no base class, no inherited pins and no dynamic binding.
-  if (pou.interface.extends) {
-    program.push([` EXTENDS ${pou.interface.extends}`, [tagName, 'extends']])
-  }
+  // Likewise IMPLEMENTS: without it no instance is assignable to the interface.
+  pushOopClauses(program, pou, tagName)
   program.push(['\n', []])
+
+  // An INTERFACE holds method prototypes only (6.6.6.1): no VAR sections of its
+  // own, its prototypes are its body.
+  if (pou.pouType === 'interface') {
+    const prototypes = pou.body.language === 'st' ? pou.body.value : ''
+    if (prototypes.length > 0) program.push([reIndentText(prototypes, indent), [tagName, 'body', indent]])
+    program.push([`END_${kindKeyword}\n\n`, []])
+    return program
+  }
 
   const iface = computeInterface(pou.interface.variables)
 
   let varNumber = 0
   for (const entry of iface) {
     const variableType = locationCategory(entry.keyword)
-    program.push([`  ${entry.keyword}${flagKeyword(entry.flag)}`, []])
+    program.push([`  ${entry.keyword}${varBlockQualifier(entry.flag, entry.access)}`, []])
     program.push(['\n', []])
 
     for (const v of entry.vars) {
@@ -105,6 +120,8 @@ export function generateTextualPou(pou: TranspilePou, project: TranspileProject,
       const typeText = getTypeAsText(v)
       program.push([': ', []])
       program.push([typeText, [tagName, variableType, varNumber, 'type']])
+      const edge = edgeSuffix(v)
+      if (edge) program.push([edge, [tagName, variableType, varNumber, 'edge']])
 
       if (v.initialValue !== undefined && v.initialValue !== '') {
         const declared = declaredTypeName(v)
@@ -143,6 +160,22 @@ export function generateTextualPou(pou: TranspilePou, project: TranspileProject,
 
 /* ────────────────────── helpers ─────────────────────────────────────────── */
 
+/** `ABSTRACT ` / `FINAL ` for a function block (6.6.5.8), else empty. */
+export function pouModifier(pou: TranspilePou): string {
+  if (pou.pouType !== 'function-block') return ''
+  return pou.interface.isAbstract ? 'ABSTRACT ' : pou.interface.isFinal ? 'FINAL ' : ''
+}
+
+/** ` EXTENDS …` and ` IMPLEMENTS …` after the POU name (6.6.5.5, 6.6.6.4, 6.6.6.6). */
+export function pushOopClauses(program: ProgramChunk[], pou: TranspilePou, tagName: string): void {
+  if (pou.interface.extends) {
+    program.push([` EXTENDS ${pou.interface.extends}`, [tagName, 'extends']])
+  }
+  if (pou.pouType === 'function-block' && pou.interface.implements && pou.interface.implements.length > 0) {
+    program.push([` IMPLEMENTS ${pou.interface.implements.join(', ')}`, [tagName, 'implements']])
+  }
+}
+
 function computeInterface(variables: TranspileVariable[]): InterfaceEntry[] {
   // Bucket variables by class, mirroring the order Python's varlist
   // iteration produces.  `classToKeyword` is keyed on IR class names
@@ -166,15 +199,27 @@ function computeInterface(variables: TranspileVariable[]): InterfaceEntry[] {
   // order the DOM emitter produced.
   const grouped = new Map<
     string,
-    { keyword: string; flag?: TranspileVariable['flag']; located: TranspileVariable[]; unlocated: TranspileVariable[] }
+    {
+      keyword: string
+      flag?: TranspileVariable['flag']
+      access?: TranspileVariable['access']
+      located: TranspileVariable[]
+      unlocated: TranspileVariable[]
+    }
   >()
   // Maintain insertion order matching the IR's variable order.
   for (const v of variables) {
     const keyword = classToKeyword[v.class ?? 'local'] ?? varTypeNames.localVars
-    const key = `${keyword}\u0000${v.flag ?? ''}`
+    const key = varBlockBucketKey(keyword, v)
     let bucket = grouped.get(key)
     if (!bucket) {
-      bucket = { keyword, ...(v.flag !== undefined ? { flag: v.flag } : {}), located: [], unlocated: [] }
+      bucket = {
+        keyword,
+        ...(v.flag !== undefined ? { flag: v.flag } : {}),
+        ...(v.access !== undefined ? { access: v.access } : {}),
+        located: [],
+        unlocated: [],
+      }
       grouped.set(key, bucket)
     }
     if (v.location) bucket.located.push(v)
@@ -183,7 +228,10 @@ function computeInterface(variables: TranspileVariable[]): InterfaceEntry[] {
 
   const out: InterfaceEntry[] = []
   for (const bucket of grouped.values()) {
-    const flagPart = bucket.flag !== undefined ? { flag: bucket.flag } : {}
+    const flagPart = {
+      ...(bucket.flag !== undefined ? { flag: bucket.flag } : {}),
+      ...(bucket.access !== undefined ? { access: bucket.access } : {}),
+    }
     if (bucket.unlocated.length > 0) {
       out.push({ keyword: bucket.keyword, located: false, ...flagPart, vars: bucket.unlocated })
     }
@@ -192,11 +240,6 @@ function computeInterface(variables: TranspileVariable[]): InterfaceEntry[] {
     }
   }
   return out
-}
-
-/** `CONSTANT` / `RETAIN` suffix for a var-block header; empty for a plain VAR. */
-function flagKeyword(flag: TranspileVariable['flag']): string {
-  return flag === 'constant' ? ' CONSTANT' : flag === 'retain' ? ' RETAIN' : ''
 }
 
 const ERROR_VAR_TYPES: Record<string, string> = {
