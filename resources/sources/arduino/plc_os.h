@@ -221,6 +221,14 @@ uint32_t plc_os_heap_min_free(void);
 // or timer task).
 void plc_os_start_scheduler(void);
 
+// Restart the board, as runtime v4's watchdog exit restarts its process.
+void plc_os_restart(void);
+
+// Words that survive a software restart (not a power cut), for the safe-mode
+// marker; NULL on a board that has none, which then stays in ERROR in place.
+#define PLC_OS_NOINIT_WORDS 4
+uint32_t *plc_os_noinit_words(void);
+
 #if defined(STRUCPP_THREADED) && defined(STRUCPP_PLATFORM_THREADS)
 // STruC++'s locks for shared globals, on a toolchain without <mutex>: one
 // recursive, priority-inheriting mutex per global (one for all of them on a

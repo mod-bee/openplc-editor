@@ -343,6 +343,12 @@ void setup()
 #endif
     runtime_retain_load();
 
+    // Outputs on STOP and in ERROR: held at their last values, or off (the
+    // default when the project does not say).
+#ifdef OPENPLC_OUTPUTS_ON_STOP
+    runtime_set_outputs_on_stop(OPENPLC_OUTPUTS_ON_STOP);
+#endif
+
     // Initialize hardware (HAL -- unchanged)
     hardwareInit();
 
@@ -627,15 +633,17 @@ void modbusTask()
     // Read changes from clients
     mbtask();
 
-    // Write changes back to OpenPLC Buffers
-    for (int i = 0; i < MAX_DIGITAL_OUTPUT; i++)
+    // Write changes back to OpenPLC Buffers. Outputs held at their last
+    // values (STOP with Outputs on STOP: Hold) take no write.
+    const bool outputs = !runtime_outputs_held();
+    for (int i = 0; outputs && i < MAX_DIGITAL_OUTPUT; i++)
     {
         if (bool_output[i/8][i%8] != NULL)
         {
             *bool_output[i/8][i%8] = get_discrete(i, COILS);
         }
     }
-    for (int i = 0; i < MAX_ANALOG_OUTPUT; i++)
+    for (int i = 0; outputs && i < MAX_ANALOG_OUTPUT; i++)
     {
         if (int_output[i] != NULL)
         {

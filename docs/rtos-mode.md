@@ -95,6 +95,19 @@ mode off for that board.
 
 - **A task that runs past its interval** (an overrun) is skipped at its next
   release, never queued up. Overruns are counted. Timers keep real time.
+- **Faults are handled as on the OpenPLC Runtime v4** (its Watchdog System), and
+  the debugger's status names each one:
+  - a task still in the same scan on 10 of its due ticks (its first scan: after
+    10 s) stops the PLC; the stop lands in ERROR, and a start runs it again;
+  - a runtime error in a task (array index out of range, NULL reference) ends
+    that task: its programs no longer run until the next start, its outputs keep
+    their last values, and the other tasks keep running;
+  - on every stop each task may finish its scan for 10 of its periods (10 s for
+    a first scan) and 2 s more; one that cannot, or a dispatcher that runs no
+    frame for max(10 base ticks, 1 s), restarts the board in safe mode: ERROR,
+    no program runs, outputs off, the reason shown; a start then restarts it
+    normally. A board with no memory that survives a restart stays up in ERROR
+    instead.
 - **The debugger and Modbus run below the PLC tasks** (on the Pico, on the other
   core), so a task waiting on a block never holds them up. On a single-core
   board, a task that computes non-stop for longer than its interval delays
@@ -110,9 +123,18 @@ mode off for that board.
 - **Forced values** hold on inputs and outputs every cycle, over the hardware
   and over Modbus or S7 writes.
 - **STOP** switches the outputs off at once, lets every task finish the scan it
-  is in, saves retained values, then stops.
-- **Retained values** are saved between scans. A task stuck in a block is saved
-  as it stands, so it can never stop retain from being saved.
+  is in, saves retained values, then stops. With *Outputs on STOP / error* set to
+  *Hold last value* (device screen), the outputs keep their last values instead,
+  in STOP and in ERROR, and the program is re-initialised at the next start.
+- **Retained values** in the built-in store are saved in the background by the
+  debugger's task, below every PLC task, a few values per pass, about once a
+  second; the store then commits them at the Persistent Storage period. (A
+  board package with NVRAM may ask for them at the end of every scan frame
+  instead, as on runtime v4.) No PLC task ever waits for it.
+  Each value is saved whole (read until two reads agree), but values may come
+  from consecutive scans. STOP saves the values the program stopped with. A
+  program whose retained values do not fit is reported in the status
+  (`retain: NOT KEPT ...`), never silently.
 - **The Arduino sketch hook** (`sketch_setup`, `sketch_loop`), when a board
   package uses it, runs in the fastest task: `sketch_setup` before that task's
   first scan (the network is up by then), `sketch_loop` after each of its scans.
@@ -133,7 +155,8 @@ single loop, and the build log says why. That happens when:
 
 With the switch set by hand, each of these stops the build instead. The one
 exception is the free-RAM count, which only warns: the board may then stop at
-start-up in ERROR.
+start-up in ERROR, and the status says what could not be created (a task by
+name, a service, the dispatcher).
 
 ## Seeing what the board is doing
 

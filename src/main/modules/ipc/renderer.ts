@@ -10,6 +10,7 @@ import type {
   listConversations,
   renameConversation,
 } from '@root/backend/editor/edge-ai'
+import type { RuntimeFault } from '@root/backend/shared/debug/types'
 import type { CompileProgramIpcArgs } from '@root/middleware/adapters/editor/compile-program-flow'
 import type { CompileLibraryIpcArgs } from '@root/middleware/adapters/editor/compiler-adapter'
 import type {
@@ -22,6 +23,7 @@ import type {
   DeviceConnectionStatusPayload,
   DeviceLicenseReport,
   DeviceLicenseRequest,
+  DevicePlcStatePayload,
 } from '@root/middleware/shared/ports/device-port'
 import type { EdgeSignInOutcome, EdgeUserRead } from '@root/middleware/shared/ports/edge-account-port'
 import type { ESIDevice, ESIRepositoryItemLight } from '@root/middleware/shared/ports/esi-types'
@@ -672,11 +674,8 @@ const rendererProcessBridge = {
    * every liveness tick (FC 0x46 carries the state), so a switch flipped by hand
    * at the panel surfaces within one interval without any extra traffic.
    */
-  onDevicePlcState: (
-    callback: (payload: { port: string; plcState?: number; switchPosition?: number }) => void,
-  ): (() => void) => {
-    const listener = (_event: unknown, payload: { port: string; plcState?: number; switchPosition?: number }) =>
-      callback(payload)
+  onDevicePlcState: (callback: (payload: DevicePlcStatePayload) => void): (() => void) => {
+    const listener = (_event: unknown, payload: DevicePlcStatePayload) => callback(payload)
     ipcRenderer.on('device:plc-state', listener)
     return () => ipcRenderer.removeListener('device:plc-state', listener)
   },
@@ -732,6 +731,8 @@ const rendererProcessBridge = {
     }
     /** Run/stop mode-switch position; absent on older runtimes. */
     switchPosition?: 'run' | 'stop'
+    /** The first fault since the last start; absent when there is none. */
+    fault?: RuntimeFault
     error?: string
   }> => ipcRenderer.invoke('runtime:get-status', ipAddress, includeStats),
   runtimeStartPlc: (ipAddress: string): Promise<{ success: boolean; error?: string; status?: string }> =>

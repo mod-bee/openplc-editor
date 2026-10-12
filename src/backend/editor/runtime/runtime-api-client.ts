@@ -30,7 +30,8 @@ import type { IncomingHttpHeaders, IncomingMessage } from 'node:http'
 import https from 'node:https'
 
 import { getRuntimeHttpsOptions } from '@root/backend/editor/utils/runtime-https-config'
-import type { PlcControlResult } from '@root/backend/shared/debug/types'
+import { faultFromRuntimeV4 } from '@root/backend/shared/debug/health'
+import type { PlcControlResult, RuntimeFault } from '@root/backend/shared/debug/types'
 import { SNAPSHOT_LIMITS } from '@root/backend/shared/project/project-snapshot-archive'
 import { PlcRuntimeState } from '@root/backend/shared/simulator/types'
 import { getErrorMessage } from '@root/frontend/utils/get-error-message'
@@ -61,6 +62,7 @@ const LoginResponseSchema = z.object({ access_token: z.string() })
 const PlcStatusResponseSchema = z.object({
   status: z.string().optional(),
   switchPosition: z.string().optional(),
+  fault: z.unknown().optional(),
 })
 
 const ProjectSnapshotBodySchema = z.object({
@@ -737,7 +739,7 @@ export class RuntimeApiClient {
   private async statusCommand(
     address: string,
     endpoint: string,
-  ): Promise<{ success: boolean; status?: string; switchPosition?: string; error?: string }> {
+  ): Promise<{ success: boolean; status?: string; switchPosition?: string; fault?: RuntimeFault; error?: string }> {
     try {
       const result = await this.makeRuntimeApiRequest<z.infer<typeof PlcStatusResponseSchema>>(
         address,
@@ -751,6 +753,7 @@ export class RuntimeApiClient {
         success: true,
         status: (result.data?.status ?? '').trim(),
         ...(result.data?.switchPosition ? { switchPosition: result.data.switchPosition } : {}),
+        ...(faultFromRuntimeV4(result.data?.fault) ? { fault: faultFromRuntimeV4(result.data?.fault) } : {}),
       }
     } catch (error) {
       return { success: false, error: getErrorMessage(error) }
@@ -777,7 +780,9 @@ export class RuntimeApiClient {
   }
 
   /** Run state and mode-switch position. */
-  getStatus(address: string): Promise<{ success: boolean; status?: string; switchPosition?: string; error?: string }> {
+  getStatus(
+    address: string,
+  ): Promise<{ success: boolean; status?: string; switchPosition?: string; fault?: RuntimeFault; error?: string }> {
     return this.statusCommand(address, '/api/status')
   }
 

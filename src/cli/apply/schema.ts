@@ -367,6 +367,13 @@ const deviceSchema = z
      * Refused for a board without it.
      */
     rtos: z.object({ enabled: z.boolean() }).strict().optional(),
+    /**
+     * What the outputs do when the PLC stops or goes to ERROR, as CODESYS's
+     * "Behaviour of outputs in Stop": "off" (the default: every output switched
+     * off) or "hold" (each keeps its last value). Both runtimes. Retained values
+     * are kept either way.
+     */
+    outputsOnStop: z.enum(['off', 'hold']).optional(),
   })
   .strict()
 

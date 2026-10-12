@@ -52,6 +52,9 @@ export interface ComposeRuntimeV4BundleInput {
   /** MD5 of `programSt` — written to `defines.h` so the v4 runtime
    *  shim (`runtime_v4_entry.cpp`) can report it via FC 0x45. */
   md5: string
+  /** Outputs on STOP and in ERROR. 'hold' adds `OPENPLC_OUTPUTS_ON_STOP 1` to
+   *  `defines.h`, the same line the firmware gets; 'off' or absent adds nothing. */
+  outputsOnStop?: 'off' | 'hold'
   /** Strucpp emitted artefacts (key = filename at zip root, value
    *  = file content).  Typically: generated.cpp, generated.hpp,
    *  generated_debug.cpp, debug-map.json, per-POU *.cpp splits,
@@ -142,7 +145,11 @@ export function composeRuntimeV4Bundle(input: ComposeRuntimeV4BundleInput): Reco
   // 4. defines.h with PROGRAM_MD5 — mirrors editor's emission in
   //    `compiler-module.ts` (the v4 runtime shim reads PROGRAM_MD5 to
   //    answer the editor's FC 0x45 DEBUG_GET_MD5 query).
-  files['defines.h'] = `#pragma once\n// Program MD5\n#define PROGRAM_MD5 "${input.md5}"\n`
+  files['defines.h'] =
+    `#pragma once\n// Program MD5\n#define PROGRAM_MD5 "${input.md5}"\n` +
+    (input.outputsOnStop === 'hold'
+      ? '// Outputs on STOP / error: hold their last values\n#define OPENPLC_OUTPUTS_ON_STOP 1\n'
+      : '')
 
   // 5. c_blocks.h — empty stub when there are no C/C++ POUs (matches
   //    the editor's static `resources/sources/arduino/c_blocks.h`

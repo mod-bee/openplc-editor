@@ -958,4 +958,36 @@ extern "C" unsigned int __atomic_add_fetch_4(volatile void *ptr, unsigned int va
 }
 #endif
 
+// ---------------------------------------------------------------------------
+// Restart and the words that survive it (plc_os.h), for the safe-mode restart:
+// memory the startup code does not clear, where the core has it.
+// ---------------------------------------------------------------------------
+#if defined(OPENPLC_RTOS_FREERTOS_ESP32)
+#include "esp_attr.h"
+#include "esp_system.h"
+RTC_NOINIT_ATTR static uint32_t s_noinit[PLC_OS_NOINIT_WORDS];
+extern "C" uint32_t *plc_os_noinit_words(void) { return s_noinit; }
+extern "C" void plc_os_restart(void) { esp_restart(); }
+#elif defined(OPENPLC_RTOS_FREERTOS_RP2040)
+#include <hardware/watchdog.h>
+#include <pico.h>
+static uint32_t __uninitialized_ram(s_noinit)[PLC_OS_NOINIT_WORDS];
+extern "C" uint32_t *plc_os_noinit_words(void) { return s_noinit; }
+extern "C" void plc_os_restart(void)
+{
+    watchdog_reboot(0, 0, 0);
+    for (;;) {}
+}
+#elif defined(OPENPLC_RTOS_ZEPHYR)
+#include <zephyr/sys/reboot.h>
+static __noinit uint32_t s_noinit[PLC_OS_NOINIT_WORDS];
+extern "C" uint32_t *plc_os_noinit_words(void) { return s_noinit; }
+extern "C" void plc_os_restart(void) { sys_reboot(SYS_REBOOT_WARM); }
+#else
+// No memory the core leaves alone across a reset: no restart either, so a
+// restarted board never runs the program that stalled it.
+extern "C" uint32_t *plc_os_noinit_words(void) { return NULL; }
+extern "C" void plc_os_restart(void) {}
+#endif
+
 #endif // OPENPLC_RTOS

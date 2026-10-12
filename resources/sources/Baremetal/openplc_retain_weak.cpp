@@ -10,7 +10,9 @@ The store is switched on by the project's Persistent Storage setting, which
 arrives in defines.h as OPLC_RETAIN_STORE_ENABLED and OPLC_RETAIN_FLUSH_MS. It
 uses the storage each Arduino core already ships:
 
-  ESP32                         Preferences (NVS, wear-levelled)
+  ESP32                         Preferences (NVS, wear-levelled), in 512-byte chunks:
+                                only changed chunks written, then a header that
+                                commits them, so a power cut keeps old or new
   ESP8266, RP2040 (Earle core)  EEPROM emulated in one flash sector, begin()/commit()
   STM32 without data EEPROM     EEPROM emulated in flash, the core's buffered API
                                 (one page erase per commit, not one per byte)
@@ -61,6 +63,7 @@ Same mechanism, and the same reasoning, as license_store_weak.cpp.
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "license_blob.h"   // LIC_BLOB_SIZE: the license store's region at the bottom of EEPROM
 
 namespace {
@@ -90,7 +93,44 @@ openplc_retain_status_t save_pending()
 #if defined(OPLC_RETAIN_STORE_PREFERENCES)
 
 const char *const kNamespace = "oplc_retain";
-const char *const kKey       = "blob";
+// The whole blob in one key, as stores before chunking kept it: still read,
+// and removed by the first chunked save.
+const char *const kLegacyKey = "blob";
+const char *const kHeaderKey = "hdr";
+
+// The blob is kept in fixed-size chunks, each in one of two slots ("a<n>" or
+// "b<n>"). A save writes only the chunks that changed, each into the slot not
+// in use, then the header naming the slots in use. Each NVS write is atomic,
+// so a power cut anywhere leaves the old values or the new ones, never a mix.
+// Small writes also keep the flash cache, which every core runs from, off for
+// less time, and wear the flash less.
+constexpr uint16_t kChunk     = 512;
+constexpr uint16_t kMaxChunks = (65535u + kChunk - 1u) / kChunk;
+constexpr uint32_t kMagic     = 0x3143524Fu;   // "ORC1"
+
+struct Header {
+    uint32_t magic;
+    uint16_t len;                    // blob bytes
+    uint16_t chunk;                  // the chunk size it was written with
+    uint32_t generation;             // counts saves
+    uint8_t  slot[kMaxChunks / 8];   // bit n set: chunk n is "b<n>", else "a<n>"
+};
+
+Header s_header       = {};
+bool   s_header_valid = false;   // s_header describes what NVS holds
+
+uint16_t chunk_count(uint16_t len) { return (uint16_t)((len + kChunk - 1u) / kChunk); }
+uint16_t chunk_size(uint16_t len, uint16_t n)
+{
+    return (uint16_t)((uint32_t)(n + 1u) * kChunk <= len ? kChunk : len - (uint32_t)n * kChunk);
+}
+bool slot_of(const Header &h, uint16_t n) { return ((h.slot[n >> 3] >> (n & 7u)) & 1u) != 0; }
+void set_slot(Header &h, uint16_t n, bool b)
+{
+    if (b) h.slot[n >> 3] = (uint8_t)(h.slot[n >> 3] | (1u << (n & 7u)));
+    else   h.slot[n >> 3] = (uint8_t)(h.slot[n >> 3] & ~(1u << (n & 7u)));
+}
+void chunk_key(char *key, bool b, uint16_t n) { snprintf(key, 8, "%c%u", b ? 'b' : 'a', (unsigned)n); }
 
 // What NVS holds, to tell a change without reading flash every scan. On the
 // heap and grown to what is actually stored, not a static array of this
@@ -128,13 +168,39 @@ openplc_retain_status_t store_read(uint8_t *out, uint16_t cap, uint16_t *out_len
     Preferences prefs;
     // A read-only begin fails when the namespace was never written: a first boot.
     if (!prefs.begin(kNamespace, true)) return OPLC_RETAIN_NO_DATA;
-    const size_t n = prefs.getBytesLength(kKey);
+
+    Header h;
+    if (prefs.getBytesLength(kHeaderKey) == sizeof h && prefs.getBytes(kHeaderKey, &h, sizeof h) == sizeof h &&
+        h.magic == kMagic && h.chunk == kChunk) {
+        if (h.len == 0) { prefs.end(); return OPLC_RETAIN_NO_DATA; }
+        // Larger than the caller's buffer: say how large, so the runtime can
+        // read it into a buffer that fits.
+        if (h.len > cap) { prefs.end(); *out_len = h.len; return OPLC_RETAIN_TOO_LARGE; }
+        const uint16_t chunks = chunk_count(h.len);
+        for (uint16_t n = 0; n < chunks; ++n) {
+            char key[8];
+            chunk_key(key, slot_of(h, n), n);
+            const uint16_t size = chunk_size(h.len, n);
+            if (prefs.getBytesLength(key) != size ||
+                prefs.getBytes(key, out + (uint32_t)n * kChunk, size) != size) {
+                prefs.end();
+                return OPLC_RETAIN_IO_ERROR;
+            }
+        }
+        prefs.end();
+        s_header       = h;
+        s_header_valid = true;
+        *out_len       = h.len;
+        shadow_set(out, h.len);
+        return OPLC_RETAIN_OK;
+    }
+
+    s_header_valid = false;
+    const size_t n = prefs.getBytesLength(kLegacyKey);
     if (n == 0) { prefs.end(); return OPLC_RETAIN_NO_DATA; }
     if (n > 0xFFFF) { prefs.end(); return OPLC_RETAIN_IO_ERROR; }
-    // Larger than the caller's buffer — an older program that retained more.
-    // Say how large, so the runtime can read it into a buffer that fits.
     if (n > cap) { prefs.end(); *out_len = (uint16_t)n; return OPLC_RETAIN_TOO_LARGE; }
-    const size_t got = prefs.getBytes(kKey, out, cap);
+    const size_t got = prefs.getBytes(kLegacyKey, out, cap);
     prefs.end();
     if (got != n) return OPLC_RETAIN_IO_ERROR;
     *out_len = (uint16_t)n;
@@ -149,12 +215,61 @@ bool store_differs(const uint8_t *bytes, uint16_t len)
 
 openplc_retain_status_t store_write(const uint8_t *bytes, uint16_t len)
 {
+    if (len == 0) return OPLC_RETAIN_OK;
     Preferences prefs;
     if (!prefs.begin(kNamespace, false)) return OPLC_RETAIN_IO_ERROR;
-    const size_t put = prefs.putBytes(kKey, bytes, len);
-    prefs.end();
-    if (put != len) return OPLC_RETAIN_IO_ERROR;
+
+    // Every chunk when what NVS holds is not known to match the shadow byte for
+    // byte (first save, a legacy blob, another program's size).
+    const bool every = !s_header_valid || s_header.len != len || s_shadow_len != len;
+    const uint16_t old_chunks = s_header_valid ? chunk_count(s_header.len) : 0;
+    const uint16_t chunks     = chunk_count(len);
+
+    Header h     = {};
+    h.magic      = kMagic;
+    h.chunk      = kChunk;
+    h.len        = len;
+    h.generation = (s_header_valid ? s_header.generation : 0u) + 1u;
+    for (uint16_t n = 0; n < chunks; ++n) {
+        const bool in_use = n < old_chunks;             // the old header names a slot for it
+        const bool active = in_use && slot_of(s_header, n);
+        const uint32_t off = (uint32_t)n * kChunk;
+        const uint16_t size = chunk_size(len, n);
+        if (!every && memcmp(bytes + off, s_shadow + off, size) == 0) {
+            set_slot(h, n, active);                     // unchanged: keep the slot in use
+            continue;
+        }
+        // Into the slot NOT in use, so the values the old header names survive
+        // until the new header is written.
+        const bool next = in_use ? !active : false;
+        char key[8];
+        chunk_key(key, next, n);
+        if (prefs.putBytes(key, bytes + off, size) != size) {
+            prefs.end();
+            return OPLC_RETAIN_IO_ERROR;
+        }
+        set_slot(h, n, next);
+    }
+    // The commit point: one atomic write switches to the new values.
+    if (prefs.putBytes(kHeaderKey, &h, sizeof h) != sizeof h) {
+        prefs.end();
+        return OPLC_RETAIN_IO_ERROR;
+    }
+    s_header       = h;
+    s_header_valid = true;
     shadow_set(bytes, len);
+
+    // Space no header names any more: the whole-blob key, and chunks past a
+    // smaller program's end.
+    if (prefs.isKey(kLegacyKey)) prefs.remove(kLegacyKey);
+    for (uint16_t n = chunks; n < old_chunks; ++n) {
+        char key[8];
+        chunk_key(key, false, n);
+        prefs.remove(key);
+        chunk_key(key, true, n);
+        prefs.remove(key);
+    }
+    prefs.end();
     return OPLC_RETAIN_OK;
 }
 
@@ -313,7 +428,9 @@ __attribute__((weak)) openplc_retain_status_t openplc_retain_read(const char *, 
     return store_read(out, cap, out_len);
 }
 
-__attribute__((weak)) openplc_retain_status_t openplc_retain_write(const uint8_t *bytes, uint16_t len)
+// The built-in write, under a name of its own so openplc_retain_mode() can tell
+// whether a VPP replaced it: openplc_retain_write is a weak alias of it.
+extern "C" openplc_retain_status_t oplc_retain_builtin_write(const uint8_t *bytes, uint16_t len)
 {
     s_bytes = bytes;
     s_len   = len;
@@ -331,9 +448,21 @@ __attribute__((weak)) openplc_retain_status_t openplc_retain_write(const uint8_t
     return OPLC_RETAIN_OK;
 }
 
+__attribute__((weak, alias("oplc_retain_builtin_write"))) openplc_retain_status_t
+openplc_retain_write(const uint8_t *bytes, uint16_t len);
+
 __attribute__((weak)) openplc_retain_status_t openplc_retain_flush(void)
 {
     return save_pending();
+}
+
+// This store saves on its own period, so it wants the values about once a
+// second, packed in the background. A VPP store that replaces it and does not
+// say gets them every scan frame, as a runtime-v4 plugin does.
+__attribute__((weak)) openplc_retain_mode_t openplc_retain_mode(void)
+{
+    return openplc_retain_write == oplc_retain_builtin_write ? OPLC_RETAIN_MODE_PERIODIC
+                                                             : OPLC_RETAIN_MODE_EVERY_SCAN;
 }
 
 #else  // no built-in store on this board, or Persistent Storage is off
@@ -362,6 +491,13 @@ __attribute__((weak)) openplc_retain_status_t openplc_retain_flush(void)
     // the result, and reporting failure here would put a misleading line in
     // the log of every board without retention, on every stop.
     return OPLC_RETAIN_OK;
+}
+
+// No store of its own: a VPP store that replaces these and does not say gets
+// the values every scan frame, as a runtime-v4 plugin does.
+__attribute__((weak)) openplc_retain_mode_t openplc_retain_mode(void)
+{
+    return OPLC_RETAIN_MODE_EVERY_SCAN;
 }
 
 #endif

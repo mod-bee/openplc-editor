@@ -10,21 +10,32 @@ bytes and back (strucpp's iec_retain.hpp).
 The split is the point. Retention hardware has nothing in common between
 targets — battery-backed SRAM, FRAM, an EEPROM with a 100k-cycle budget, an
 NVS partition, a file on a data partition — so the runtime does not try to have
-an opinion. It hands over the current values once per scan cycle and asks for
-them once at start. What that costs, how often it is really committed, and what
-wear it implies are decisions only the platform can make.
+an opinion. It hands over the current values while running and asks for them
+once at start. What that costs, how often it is really committed, and what wear
+it implies are decisions only the platform can make.
 
-IDENTICAL, DELIBERATELY, TO THE runtime-v4 SURFACE. The same three function
-names, the same status codes, the same contract text describe the plugin hooks
-on the Linux daemon, and the two runtimes call them at the same points in the
-PLC lifecycle. A vendor writing retain support reads one page and writes the
-same shape twice, rather than learning two interfaces for one job.
+IDENTICAL, DELIBERATELY, TO THE runtime-v4 SURFACE. The same function names,
+the same status codes, the same contract text describe the plugin hooks on the
+Linux daemon, and the two runtimes call them at the same points in the PLC
+lifecycle. A vendor writing retain support reads one page and writes the same
+shape twice, rather than learning two interfaces for one job.
 
-THE THREE CALLS, AND WHEN THEY HAPPEN
+THE CALLS, AND WHEN THEY HAPPEN
 
     start   openplc_retain_read()    once, before the first scan
-    scan    openplc_retain_write()   every cycle, WHILE RUNNING ONLY
-    stop    openplc_retain_flush()   once, on the transition into STOP
+    run     openplc_retain_write()   WHILE RUNNING ONLY, as often as the mode says
+    stop    openplc_retain_write()   the values the program stopped with,
+            openplc_retain_flush()   then a commit, on the transition into STOP
+
+THE STORE SAYS HOW OFTEN IT WANTS THE VALUES (openplc_retain_mode()):
+
+    EVERY_SCAN  at the end of every scan frame, with every task idle: a store
+                on memory that takes a write per scan (battery-backed SRAM,
+                FRAM, NVRAM). The DEFAULT, for a store that does not say.
+    PERIODIC    about once a second, packed in the background while the tasks
+                run, a few values at a time: a store that commits on its own
+                period (flash, EEPROM). No task waits for it. The firmware's
+                built-in store (openplc_retain_weak.cpp) is one.
 
 WRITE IS THE DURABILITY PATH; FLUSH IS ONLY A HINT. This matters enough to say
 before anything else, because getting it backwards produces a driver that looks
@@ -119,10 +130,10 @@ openplc_retain_status_t openplc_retain_read(const char *program_md5, uint16_t md
  * so a driver that defers its commit may commit from it in flush() without
  * keeping a copy.
  *
- * CALLED ONCE PER SCAN CYCLE, unconditionally, while the PLC is RUNNING. The
- * runtime does not diff, does not rate-limit and does not decide when a value
- * is worth keeping: it delivers the current bytes every cycle and the decision
- * of what to do with them is yours.
+ * CALLED UNCONDITIONALLY while the PLC is RUNNING: every scan frame, or about
+ * once a second for a PERIODIC store (openplc_retain_mode()). The runtime does
+ * not diff and does not decide when a value is worth keeping: it delivers the
+ * current bytes and the decision of what to do with them is yours.
  *
  * That means a driver over slow storage MUST NOT write through on every call.
  * Hold the bytes and commit on your own schedule — every ten seconds, on a
@@ -153,6 +164,26 @@ openplc_retain_status_t openplc_retain_write(const uint8_t *blob, uint16_t len);
  * started again without the board rebooting, and the next
  * openplc_retain_read() has to see what this committed. */
 openplc_retain_status_t openplc_retain_flush(void);
+
+typedef enum {
+    // Every scan frame, at its end, with every task idle. The default.
+    OPLC_RETAIN_MODE_EVERY_SCAN = 0,
+    // About once a second, packed in the background while the tasks run.
+    OPLC_RETAIN_MODE_PERIODIC   = 1,
+} openplc_retain_mode_t;
+
+/* How often this store wants the values (see the table at the top).
+ *
+ * Optional. Asked once, when the runtime sets retention up for a program. A
+ * store that does not define it gets every scan frame, as a runtime-v4 plugin
+ * without retain_mode() does; the firmware's built-in store answers PERIODIC.
+ *
+ * A PERIODIC store loses at most the last second of changes on a power cut,
+ * plus whatever it holds itself; in return the scan pays nothing for it. An
+ * EVERY_SCAN store gets each frame's values, and every frame pays for packing
+ * them — on a program with thousands of retained values that is milliseconds
+ * a frame, so choose it only for memory that wants it. */
+openplc_retain_mode_t openplc_retain_mode(void);
 
 #ifdef __cplusplus
 }

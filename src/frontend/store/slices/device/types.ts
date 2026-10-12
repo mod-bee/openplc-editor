@@ -1,3 +1,4 @@
+import type { FaultSummary, RetainSummary } from '../../../../backend/shared/debug/health'
 import type { VppPackagePin } from '../../../../backend/shared/types/PLC/devices/configuration'
 import type { DeviceLicenseReport } from '../../../../middleware/shared/ports/device-port'
 import type { EtherCATRuntimeStatusResponse } from '../../../../middleware/shared/ports/ethercat-types'
@@ -8,6 +9,7 @@ import type {
   DeviceConfiguration,
   DeviceLinkTransport,
   DevicePin,
+  OutputsOnStop,
   PersistentStorageSettings,
   PlcStatus,
   TimingStats,
@@ -85,6 +87,11 @@ export type RuntimeConnection = {
    *  poll. `'run'` on any device without a physical switch, so a null-safe
    *  caller treats absence as "no gating". */
   switchPosition: 'run' | 'stop' | null
+  /** A baremetal target's first fault since its last start (a stalled task, or
+   *  why it is in ERROR) and its retention health, from the status poll; null
+   *  when there is none or the firmware does not report it. */
+  plcFault: FaultSummary | null
+  plcRetain: RetainSummary | null
   ipAddress: string | null
   /** Version string reported by the connected runtime (from
    *  get-users-info / the X-OpenPLC-Runtime-Version header), or null
@@ -269,6 +276,7 @@ export type DeviceActions = {
   setPlcRuntimeStatus: (status: PlcStatus | null) => void
   /** Set the mode-switch position (null clears it, e.g. on disconnect). */
   setPlcSwitchPosition: (position: 'run' | 'stop' | null) => void
+  setPlcHealth: (fault: FaultSummary | null, retain: RetainSummary | null) => void
   setSelectedDevice: (device: SelectedDevice | null) => void
   setStoredCredentials: (credentials: StoredCredentials | null) => void
   setTimingStats: (stats: TimingStats | null) => void
@@ -319,6 +327,8 @@ export type DeviceActions = {
    * re-sending the other two.
    */
   setPersistentStorage: (patch: Partial<PersistentStorageSettings>) => void
+  /** Outputs on STOP and in ERROR: switched off, or held at their last values. */
+  setOutputsOnStop: (mode: OutputsOnStop) => void
   /** Record (or clear, with `null`) the VPP package a board was authored against. */
   setVppPackagePin: (board: string, pin: VppPackagePin | null) => void
   setVendorScreenData: (persistenceKey: string, data: unknown) => void

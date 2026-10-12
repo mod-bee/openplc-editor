@@ -1601,6 +1601,27 @@ describe('createDeviceSlice', () => {
     })
   })
 
+  describe('outputsOnStop', () => {
+    it('is off (absent) until set, and survives a reload of the saved configuration', () => {
+      const store = makeStore()
+      expect(store.getState().deviceDefinitions.configuration.outputsOnStop).toBeUndefined()
+      store.getState().deviceActions.setOutputsOnStop('hold')
+      expect(store.getState().deviceUpdated.updated).toBe(true)
+      const saved = store.getState().deviceDefinitions.configuration
+
+      const reloaded = makeStore()
+      reloaded.getState().deviceActions.setDeviceDefinitions({ configuration: saved })
+      expect(reloaded.getState().deviceDefinitions.configuration.outputsOnStop).toBe('hold')
+    })
+
+    it('belongs to the project, so changing the board keeps it', () => {
+      const store = makeStore()
+      store.getState().deviceActions.setOutputsOnStop('hold')
+      store.getState().deviceActions.setDeviceBoard('ESP8266 NodeMCU')
+      expect(store.getState().deviceDefinitions.configuration.outputsOnStop).toBe('hold')
+    })
+  })
+
   // -----------------------------------------------------------------------
   // setCommunicationPort
   // -----------------------------------------------------------------------
@@ -1706,6 +1727,34 @@ describe('createDeviceSlice', () => {
       store.getState().deviceActions.setPlcRuntimeStatus('RUNNING')
       store.getState().deviceActions.setPlcRuntimeStatus(null)
       expect(store.getState().runtimeConnection.plcStatus).toBeNull()
+    })
+  })
+
+  // -----------------------------------------------------------------------
+  // setPlcHealth
+  // -----------------------------------------------------------------------
+  describe('setPlcHealth', () => {
+    it('defaults to none, records a fault and retain health, and a disconnect clears them', () => {
+      const store = makeStore()
+      expect(store.getState().runtimeConnection.plcFault).toBeNull()
+      expect(store.getState().runtimeConnection.plcRetain).toBeNull()
+      const fault = {
+        kind: 'task-stuck',
+        code: 0x10,
+        task: 1,
+        taskName: 'NET',
+        safeMode: false,
+        count: 1,
+        detail: 800,
+        text: 'task NET stuck in one scan for 10 periods (800 ms): PLC stopped, ERROR',
+      }
+      const retain = { kind: 'ok', bytes: 100, text: 'kept (100 bytes)' }
+      store.getState().deviceActions.setPlcHealth(fault, retain)
+      expect(store.getState().runtimeConnection.plcFault).toEqual(fault)
+      expect(store.getState().runtimeConnection.plcRetain).toEqual(retain)
+      store.getState().deviceActions.clearRuntimeConnection()
+      expect(store.getState().runtimeConnection.plcFault).toBeNull()
+      expect(store.getState().runtimeConnection.plcRetain).toBeNull()
     })
   })
 

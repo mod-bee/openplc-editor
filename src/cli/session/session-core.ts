@@ -13,6 +13,7 @@
  */
 
 import type { RuntimeApiClient } from '@root/backend/editor/runtime/runtime-api-client'
+import { describeFault, describeRetain } from '@root/backend/shared/debug/health'
 import type { DeviceDebugChannel, PlcControlResult } from '@root/backend/shared/debug/types'
 import { PlcRuntimeState } from '@root/backend/shared/simulator/types'
 import type { TargetEndian } from '@root/frontend/utils/endian'
@@ -37,7 +38,15 @@ export interface PlcControl {
    *  included, to its initial value, the stored retained values replaced, RUN. */
   coldRestart(): Promise<{ success: boolean; error?: string }>
   /** Current run state, or 'unknown' when the target cannot be asked. */
-  state(): Promise<'running' | 'stopped' | 'unknown'>
+  state(): Promise<'running' | 'stopped' | 'error' | 'unknown'>
+  /** State, fault and retention in one read, where the target reports them. */
+  report?(): Promise<PlcReport>
+}
+
+export interface PlcReport {
+  state: 'running' | 'stopped' | 'error' | 'unknown'
+  fault?: SessionStatus['fault']
+  retain?: SessionStatus['retain']
 }
 
 export interface SessionCoreOptions {
@@ -540,11 +549,22 @@ export class SessionCore {
       projectPath: this.options.projectPath,
       programMd5: md5 ?? this.options.programMd5,
       md5Matches: (md5 ?? this.options.programMd5)?.toLowerCase() === this.options.index.md5.toLowerCase(),
-      plcState: await this.options.plc.state(),
+      ...(await this.plcReport()),
       forced: [...this.forced].sort(),
       watching: this.watching.map((variable) => variable.name),
       startedAt: this.startedAt,
       lastActivityAt: new Date(this.lastActivityAtMs).toISOString(),
+    }
+  }
+
+  private async plcReport(): Promise<Pick<SessionStatus, 'plcState' | 'fault' | 'retain'>> {
+    const plc = this.options.plc
+    if (!plc.report) return { plcState: await plc.state() }
+    const report = await plc.report()
+    return {
+      plcState: report.state,
+      ...(report.fault ? { fault: report.fault } : {}),
+      ...(report.retain ? { retain: report.retain } : {}),
     }
   }
 
@@ -648,18 +668,33 @@ export function restPlcControl(client: RuntimeApiClient, address: string): PlcCo
     stop: async () => describe(await client.setPlcState(address, 'stop'), 'stopped'),
     coldRestart: async () => describe(await client.coldRestart(address), 'cold-restarted'),
     async state() {
-      const result = await client.getStatus(address)
-      if (!result.success || !result.status) return 'unknown'
-      const status = result.status.toLowerCase()
-      if (status.includes('running')) return 'running'
-      if (status.includes('stopped')) return 'stopped'
-      return 'unknown'
+      return (await report()).state
     },
+    report,
+  }
+
+  async function report(): Promise<PlcReport> {
+    const result = await client.getStatus(address)
+    if (!result.success || !result.status) return { state: 'unknown' }
+    const status = result.status.toLowerCase()
+    const state: PlcReport['state'] = status.includes('running')
+      ? 'running'
+      : status.includes('stopped')
+        ? 'stopped'
+        : status.includes('error')
+          ? 'error'
+          : 'unknown'
+    return { state, ...(result.fault ? { fault: describeFault(result.fault, []) } : {}) }
   }
 }
 
 /** Run/stop for a baremetal target, which answers it on the debug channel itself. */
-export function channelPlcControl(channel: DeviceDebugChannel): PlcControl {
+/**
+ * Run/stop control over a board's debug channel. `taskNames` are the project's
+ * tasks in its configuration's order, which is how the board numbers them, so a
+ * fault can name its task.
+ */
+export function channelPlcControl(channel: DeviceDebugChannel, taskNames: readonly string[] = []): PlcControl {
   return {
     async start() {
       if (!channel.setPlcState) return { success: false, error: 'This target does not support run/stop control' }
@@ -712,15 +747,34 @@ export function channelPlcControl(channel: DeviceDebugChannel): PlcControl {
       }
     },
     async state() {
-      if (!channel.getStatus) return 'unknown'
-      const result = await channel.getStatus()
-      if (!result.success) return 'unknown'
-      if (result.plcState === undefined) return result.running ? 'running' : 'unknown'
-      // Compared as a number: `plcState` arrives as a raw byte off the wire, not
-      // as a member of the enum, so an enum-typed comparison would be a lie.
-      return result.plcState === Number(PlcRuntimeState.RUNNING) ? 'running' : 'stopped'
+      return (await report()).state
     },
+    report,
   }
+
+  async function report(): Promise<PlcReport> {
+    if (!channel.getStatus) return { state: 'unknown' }
+    const result = await channel.getStatus()
+    if (!result.success) return { state: 'unknown' }
+    const state = plcStateOf(result.plcState, result.running)
+    return {
+      state,
+      ...(result.fault && result.fault.code !== 0 ? { fault: describeFault(result.fault, taskNames) } : {}),
+      ...(result.retain ? { retain: describeRetain(result.retain) } : {}),
+    }
+  }
+}
+
+export { describeFault, describeRetain }
+
+/** The wire byte as a state. ERROR is its own state, never "stopped". */
+export function plcStateOf(plcState: number | undefined, running: boolean | undefined): PlcReport['state'] {
+  // Compared as a number: `plcState` arrives as a raw byte off the wire.
+  if (plcState === undefined) return running ? 'running' : 'unknown'
+  if (plcState === Number(PlcRuntimeState.RUNNING)) return 'running'
+  if (plcState === Number(PlcRuntimeState.STOPPED)) return 'stopped'
+  if (plcState === Number(PlcRuntimeState.ERROR)) return 'error'
+  return 'unknown'
 }
 
 /**

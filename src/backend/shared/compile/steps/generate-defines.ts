@@ -17,7 +17,7 @@
  * into the in-memory file map sent to `/compile-arduino`).
  */
 
-import type { PersistentStorageSettings, PinPullSpec } from '../../../../middleware/shared/ports/types'
+import type { OutputsOnStop, PersistentStorageSettings, PinPullSpec } from '../../../../middleware/shared/ports/types'
 import { PIN_PULL_CODES, resolveEffectivePinPull } from '../../../../middleware/shared/utils/pin-pull'
 import type { DevicePin } from '../../types/PLC/devices'
 import { activeRetainStore } from './generate-retain-conf'
@@ -128,6 +128,11 @@ export interface GenerateDefinesInput {
   persistentStorage?: PersistentStorageSettings
   /** The target's VPP handles retention itself, so the built-in store stays off. */
   targetHidesPersistentStorage?: boolean
+
+  /** Outputs on STOP and in ERROR (`DeviceConfiguration.outputsOnStop`). 'hold'
+   *  emits `OPENPLC_OUTPUTS_ON_STOP 1`; 'off' or absent emits nothing, which the
+   *  firmware reads as off. */
+  outputsOnStop?: OutputsOnStop
 }
 
 /**
@@ -165,6 +170,7 @@ export function generateDefinesContent(input: GenerateDefinesInput): string {
     pinPull,
     persistentStorage,
     targetHidesPersistentStorage,
+    outputsOnStop,
   } = input
 
   let DEFINES_CONTENT = ''
@@ -365,6 +371,14 @@ export function generateDefinesContent(input: GenerateDefinesInput): string {
       DEFINES_CONTENT += '#define OPLC_RETAIN_STORE_ENABLED 1\n'
       DEFINES_CONTENT += `#define OPLC_RETAIN_FLUSH_MS ${store.flushSeconds * 1000}UL\n`
     }
+  }
+
+  // 6b. Outputs on STOP and in ERROR. Only 'hold' is written, so a project that
+  //     keeps the default builds exactly as before. Runtime v4 gets the same
+  //     line in its own defines.h (composeRuntimeV4Bundle).
+  if (outputsOnStop === 'hold') {
+    DEFINES_CONTENT += '\n//Outputs on STOP / error: hold their last values\n'
+    DEFINES_CONTENT += '#define OPENPLC_OUTPUTS_ON_STOP 1\n'
   }
 
   // 7. Libraries the installed libraries depend on. The sketch includes this

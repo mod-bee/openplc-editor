@@ -37,6 +37,7 @@
  *   - runtimeLogout()
  */
 
+import type { RuntimeFault } from '../../../backend/shared/debug/types'
 import type { PluginCommandOutcome } from '../../../backend/shared/utils/vpp/screen-actions'
 import type {
   EtherCATRuntimeStatusResponse,
@@ -122,6 +123,9 @@ export interface RuntimeStatusResult {
    *  `'run'`, and runtimes older than this field omit it entirely — treat
    *  `undefined` as "no gating". */
   switchPosition?: 'run' | 'stop'
+  /** The first fault since the last start (a stuck task, a task a runtime
+   *  error ended, a safe-mode restart's reason); absent when there is none. */
+  fault?: RuntimeFault
   error?: string
 }
 

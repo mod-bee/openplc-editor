@@ -94,6 +94,9 @@ export async function runDescribe(store: OpenPLCStore, args: ParsedArgs, reporte
         : {}),
       // Only a switch someone set: the default is the board's, not the project's.
       ...(rtos.chosen ? { rtos: { enabled: rtos.enabled } } : {}),
+      ...(state.deviceDefinitions.configuration.outputsOnStop
+        ? { outputsOnStop: state.deviceDefinitions.configuration.outputsOnStop }
+        : {}),
     }
     spec.libraries = (state.project.data.libraries ?? []).map((ref) => ({ name: ref.name, version: ref.version }))
     spec.globalVariableLists = (state.project.data.globalVariableLists ?? []).map((list) => ({

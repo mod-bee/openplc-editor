@@ -70,6 +70,8 @@ import type {
   DebugVersionResult,
   Md5ProbeResult,
   PlcControlResult,
+  RetainHealth,
+  RuntimeFault,
 } from './types'
 
 // ---------------------------------------------------------------------------
@@ -392,19 +394,70 @@ export function parseGetStatusResponse(data: Uint8Array): DebugStatusResult {
     return { success: false, error: `Incomplete status response (${data.length} bytes, expected 11)` }
   }
 
-  const running = readU8(data, 2)
+  const state = readU8(data, 2)
   return {
     success: true,
-    running: running !== 0,
-    // Same byte as `running`, as the tri-state the run/stop machine actually
-    // has (STOPPED / RUNNING / ERROR).
-    plcState: running,
+    // Only RUNNING runs: ERROR (2) is not running.
+    running: state === 1,
+    // Same byte, as the tri-state the run/stop machine actually has (STOPPED /
+    // RUNNING / ERROR).
+    plcState: state,
     tick: readU32BE(data, 3),
     uptimeMs: readU32BE(data, 7),
     // Appended by firmware carrying the run/stop state machine; absent on older
     // firmware, which callers read as "no switch gating".
     ...(data.length >= 12 ? { switchPosition: readU8(data, 11) } : {}),
+    // Appended by firmware with the watchdogs and retain health.
+    ...(data.length >= 20 ? { fault: decodeRuntimeFault(data, 12) } : {}),
+    ...(data.length >= 25 ? { retain: decodeRetainHealth(data, 20) } : {}),
   }
+}
+
+/** RUNTIME_FAULT_* codes (arduino_runtime_glue.h) by their machine names. */
+export const RUNTIME_FAULT_KINDS: Readonly<Record<number, string>> = {
+  0x00: 'none',
+  0x01: 'setup',
+  0x02: 'task-create',
+  0x03: 'service-create',
+  0x04: 'dispatcher-create',
+  0x05: 'scheduler',
+  0x10: 'task-stuck',
+  0x11: 'dispatcher-stalled',
+  0x12: 'first-scan-stuck',
+  0x13: 'stop-timeout',
+  0x14: 'task-ended',
+}
+
+/** RUNTIME_RETAIN_* codes by their machine names. */
+export const RETAIN_HEALTH_KINDS: Readonly<Record<number, string>> = {
+  0: 'none',
+  1: 'ok',
+  2: 'no-store',
+  3: 'too-large',
+  4: 'io-error',
+  5: 'pending',
+}
+
+const RUNTIME_FAULT_NO_TASK = 0xff
+
+/** `[code][task][safe_mode][count][detail:u32BE]` at `at`. */
+export function decodeRuntimeFault(data: Uint8Array, at: number): RuntimeFault {
+  const code = readU8(data, at)
+  const task = readU8(data, at + 1)
+  return {
+    code,
+    kind: RUNTIME_FAULT_KINDS[code] ?? `unknown-0x${code.toString(16)}`,
+    ...(task !== RUNTIME_FAULT_NO_TASK && code !== 0 ? { task } : {}),
+    safeMode: readU8(data, at + 2) !== 0,
+    count: readU8(data, at + 3),
+    detail: readU32BE(data, at + 4),
+  }
+}
+
+/** `[code][bytes:u32BE]` at `at`. */
+export function decodeRetainHealth(data: Uint8Array, at: number): RetainHealth {
+  const code = readU8(data, at)
+  return { code, kind: RETAIN_HEALTH_KINDS[code] ?? 'unknown', bytes: readU32BE(data, at + 1) }
 }
 
 /**

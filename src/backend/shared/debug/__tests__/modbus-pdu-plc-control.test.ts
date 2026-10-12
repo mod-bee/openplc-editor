@@ -140,6 +140,31 @@ describe('status read carries run/stop state (FC 0x46)', () => {
     expect(r.switchPosition).toBe(PlcSwitchPosition.STOP)
   })
 
+  it('reads ERROR as not running (it is its own state, never "running")', () => {
+    const r = parseGetStatusResponse(statusFrame(PlcRuntimeState.ERROR, PlcSwitchPosition.RUN))
+    expect(r.running).toBe(false)
+    expect(r.plcState).toBe(PlcRuntimeState.ERROR)
+  })
+
+  it('reads the appended fault and retain fields', () => {
+    const base = Array.from(statusFrame(PlcRuntimeState.RUNNING, PlcSwitchPosition.RUN))
+    // fault: task-stuck, task 1, not safe mode, 2 faults, 1234 ms; retain: ok, 21756 bytes
+    const frame = new Uint8Array([...base, 0x10, 1, 0, 2, 0, 0, 0x04, 0xd2, 1, 0, 0, 0x54, 0xfc])
+    const r = parseGetStatusResponse(frame)
+    expect(r.fault).toEqual({ code: 0x10, kind: 'task-stuck', task: 1, safeMode: false, count: 2, detail: 1234 })
+    expect(r.retain).toEqual({ code: 1, kind: 'ok', bytes: 21756 })
+  })
+
+  it('a fault naming no task (0xff) and no fault at all', () => {
+    const base = Array.from(statusFrame(PlcRuntimeState.ERROR, PlcSwitchPosition.RUN))
+    const setup = parseGetStatusResponse(new Uint8Array([...base, 0x01, 0xff, 1, 1, 0, 0, 0, 0]))
+    expect(setup.fault).toEqual({ code: 1, kind: 'setup', safeMode: true, count: 1, detail: 0 })
+    expect(setup.retain).toBeUndefined()
+    const none = parseGetStatusResponse(new Uint8Array([...base, 0, 0xff, 0, 0, 0, 0, 0, 0, 3, 0, 1, 0, 0]))
+    expect(none.fault?.kind).toBe('none')
+    expect(none.retain).toEqual({ code: 3, kind: 'too-large', bytes: 65536 })
+  })
+
   it('omits switchPosition on firmware that predates the state machine', () => {
     // 11-byte frame: the field simply is not there, which callers read as
     // "no switch gating" rather than a guessed RUN.

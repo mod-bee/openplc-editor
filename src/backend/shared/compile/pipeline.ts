@@ -305,6 +305,9 @@ export interface RunCompilePipelineArgs {
    *  is what makes the runtime remove any copy the device still has and
    *  leaves the vendor's driver as the only store. */
   targetHidesPersistentStorage?: boolean
+  /** Outputs on STOP and in ERROR, `DeviceConfiguration.outputsOnStop`:
+   *  'hold' adds `OPENPLC_OUTPUTS_ON_STOP 1` to defines.h for both runtimes. */
+  outputsOnStop?: import('../../../middleware/shared/ports/types').OutputsOnStop
   /** User-authored configuration-screen data from
    *  `DeviceConfiguration.vendorScreenData`.  The platform adapter
    *  reads `devices/configuration.json` (editor) or the store (web)
@@ -564,6 +567,7 @@ async function runCompilePipelineInner(
     vppModbusState,
     persistentStorage,
     targetHidesPersistentStorage,
+    outputsOnStop,
     vendorScreenData,
     editorVersion,
   } = args
@@ -857,6 +861,7 @@ async function runCompilePipelineInner(
     const bundle: RuntimeV4Bundle = composeRuntimeV4Bundle({
       programSt,
       md5,
+      ...(outputsOnStop ? { outputsOnStop } : {}),
       strucppFiles: strucppFilesMap,
       libraryResources,
       cBlocks: { header: cBlocks.header, code: cBlocks.code },
@@ -1172,6 +1177,7 @@ async function runCompilePipelineInner(
     ...(boardEntry.pinPull ? { pinPull: boardEntry.pinPull } : {}),
     ...(persistentStorage !== undefined ? { persistentStorage } : {}),
     targetHidesPersistentStorage: targetHidesPersistentStorage ?? false,
+    ...(outputsOnStop ? { outputsOnStop } : {}),
   })
 
   // A board reached only over Ethernet must never be handed an image with no

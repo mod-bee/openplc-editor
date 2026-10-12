@@ -231,10 +231,10 @@ import { app as electronApp, MessageChannelMain } from 'electron'
 import JSZip from 'jszip'
 
 import type { ThirdPartyLibraryRequest } from '../../../middleware/shared/ports/compiler-platform-port'
-import type { PersistentStorageSettings, PlatformOption } from '../../../middleware/shared/ports/types'
+import type { OutputsOnStop, PersistentStorageSettings, PlatformOption } from '../../../middleware/shared/ports/types'
 import { BoardInfoResolver } from '../../shared/hardware/board-info-resolver'
 import { findVppDeviceByBoardName } from '../../shared/hardware/find-vpp-device'
-import { persistentStorageSchema } from '../../shared/types/PLC/devices/configuration'
+import { outputsOnStopSchema, persistentStorageSchema } from '../../shared/types/PLC/devices/configuration'
 import type { AvailableBoards } from '../hardware/types'
 import { formatPackageIntegrityError, PackageManagerModule } from '../package-manager'
 import { createDesktopLibraryBuildPort } from './desktop-library-build-port'
@@ -3043,12 +3043,15 @@ class CompilerModule {
     // EEPROM, through defines.h). The simulator and runtime v3 have none.
     let persistentStorage: PersistentStorageSettings | undefined
     let targetHidesPersistentStorage = false
+    // Outputs on STOP and in ERROR, from the same file; absent is 'off'.
+    let outputsOnStop: OutputsOnStop = 'off'
     const isArduinoFirmware = !isSimulator && !isRuntimeV3 && !isRuntimeV4
     if (isRuntimeV4 || isArduinoFirmware) {
       const devicesConfigurationFilePath = join(normalizedProjectPath, 'devices', 'configuration.json')
       // Tracked out here, not acted on inside the `try`, so the catch below
       // cannot swallow the refusal along with the missing-file case it is for.
       let storageStanzaInvalid = false
+      let outputsOnStopInvalid = false
       try {
         const deviceConfig = await CompilerModule.readJSONFile<DeviceConfiguration>(devicesConfigurationFilePath)
         // Validated, not trusted. `readJSONFile` is `JSON.parse(...) as T`, so a
@@ -3062,6 +3065,9 @@ class CompilerModule {
         } else if (deviceConfig.persistentStorage !== undefined) {
           storageStanzaInvalid = true
         }
+        const parsedOutputs = outputsOnStopSchema.safeParse(deviceConfig.outputsOnStop)
+        if (parsedOutputs.success) outputsOnStop = parsedOutputs.data ?? 'off'
+        else outputsOnStopInvalid = true
       } catch {
         // No configuration.json — a project that never configured storage, which
         // generateRetainConf treats as "emit nothing".
@@ -3088,6 +3094,19 @@ class CompilerModule {
             'Refusing to build: uploading without them would switch persistent storage OFF on ' +
             'the device, and retained variables would stop being kept.\n' +
             'Open the Persistent Storage screen and re-save the setting, then build again.\n' +
+            'Stopping compilation process.',
+        })
+        _mainProcessPort.close()
+        return
+      }
+      // Same reasoning: building without it would switch held outputs off.
+      if (outputsOnStopInvalid) {
+        _mainProcessPort.postMessage({
+          logLevel: 'error',
+          message:
+            'The "Outputs on STOP / error" setting in devices/configuration.json could not be read ' +
+            '(it must be "off" or "hold").\n' +
+            'Open the device configuration and choose the setting again, then build again.\n' +
             'Stopping compilation process.',
         })
         _mainProcessPort.close()
@@ -3146,6 +3165,7 @@ class CompilerModule {
         ...(vppModbusState ? { vppModbusState } : {}),
         ...(persistentStorage ? { persistentStorage } : {}),
         targetHidesPersistentStorage,
+        outputsOnStop,
         vendorScreenData: effectiveVendorScreenData,
         // Compared against the `minEditorVersion` a runtime publishes at
         // `/api/capabilities` (DOPE-448). Injected because the pipeline

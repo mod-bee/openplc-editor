@@ -102,6 +102,7 @@ export const DefaultWorkspaceActivityBar = ({ zoom }: DefaultWorkspaceActivityBa
 
   const connectionStatus = useOpenPLCStore((state) => state.runtimeConnection.connectionStatus)
   const plcStatus = useOpenPLCStore((state): RuntimeConnection['plcStatus'] => state.runtimeConnection.plcStatus)
+  const plcFault = useOpenPLCStore((state): RuntimeConnection['plcFault'] => state.runtimeConnection.plcFault)
   const switchPosition = useOpenPLCStore((state) => state.runtimeConnection.switchPosition)
   const jwtToken = useOpenPLCStore((state) => state.runtimeConnection.jwtToken)
   const isDebuggerVisible = useOpenPLCStore((state) => state.workspace.isDebuggerVisible)
@@ -1399,9 +1400,7 @@ export const DefaultWorkspaceActivityBar = ({ zoom }: DefaultWorkspaceActivityBa
                   : 'Start Simulator'
                 : plcControlBlocked
                   ? plcControlBlockedReason
-                  : plcStatus === 'RUNNING'
-                    ? 'Stop PLC'
-                    : 'Start PLC'
+                  : `${plcStatus === 'RUNNING' ? 'Stop PLC' : 'Start PLC'}${plcFault ? ` (PLC fault: ${plcFault.text})` : ''}`
             }
           >
             <PlayButton

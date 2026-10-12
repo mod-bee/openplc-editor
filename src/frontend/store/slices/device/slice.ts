@@ -106,6 +106,8 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
     connectionStatus: 'disconnected',
     plcStatus: null,
     switchPosition: null,
+    plcFault: null,
+    plcRetain: null,
     ipAddress: null,
     runtimeUpdateInProgress: false,
     runtimeVersion: null,
@@ -187,6 +189,8 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.jwtToken = null
           runtimeConnection.connectionStatus = 'disconnected'
           runtimeConnection.plcStatus = null
+          runtimeConnection.plcFault = null
+          runtimeConnection.plcRetain = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
           runtimeConnection.selectedDevice = null
@@ -577,6 +581,14 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
         }),
       )
     },
+    setPlcHealth: (fault, retain): void => {
+      setState(
+        produce(({ runtimeConnection }: DeviceSlice) => {
+          runtimeConnection.plcFault = fault
+          runtimeConnection.plcRetain = retain
+        }),
+      )
+    },
     setSelectedDevice: (device): void => {
       setState(
         produce(({ runtimeConnection }: DeviceSlice) => {
@@ -639,6 +651,8 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.jwtToken = null
           runtimeConnection.connectionStatus = 'disconnected'
           runtimeConnection.plcStatus = null
+          runtimeConnection.plcFault = null
+          runtimeConnection.plcRetain = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
           runtimeConnection.selectedDevice = null
@@ -700,6 +714,14 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
       setState(
         produce(({ deviceLicense }: DeviceSlice) => {
           resetDeviceLicense(deviceLicense)
+        }),
+      )
+    },
+    setOutputsOnStop: (mode): void => {
+      setState(
+        produce(({ deviceDefinitions, deviceUpdated }: DeviceSlice) => {
+          deviceUpdated.updated = true
+          deviceDefinitions.configuration.outputsOnStop = mode
         }),
       )
     },
@@ -888,6 +910,7 @@ function mergeDeviceConfigWithDefaults(
     // the store the moment the project was reopened.
     ...(provided.persistentStorage ? { persistentStorage: provided.persistentStorage } : {}),
     ...(provided.persistentStorageByBoard ? { persistentStorageByBoard: provided.persistentStorageByBoard } : {}),
+    ...(provided.outputsOnStop ? { outputsOnStop: provided.outputsOnStop } : {}),
     // Must merge — otherwise every project load drops the saved pin and
     // board.tsx's drift detection sees a blank slate instead of the real
     // prior pin, so a project with a VPP board always opens as if unpinned.

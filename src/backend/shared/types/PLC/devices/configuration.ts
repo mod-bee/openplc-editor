@@ -48,6 +48,13 @@ const deviceConfigurationSchema = z.object({
   // property of the target box, not of the program, so retargeting must not
   // silently carry one device's path onto another.
   persistentStorageByBoard: z.record(z.string(), persistentStorageSchema).optional(),
+  // What the outputs do when the PLC stops or goes to ERROR, as CODESYS's
+  // "Behaviour of outputs in Stop": 'off' (every output switched off) or
+  // 'hold' (each keeps its last value). A property of the machine the project
+  // drives, so the project's, not a board's. Absent means 'off'. Reaches both
+  // runtimes as OPENPLC_OUTPUTS_ON_STOP in defines.h. Retained values are kept
+  // either way.
+  outputsOnStop: z.enum(['off', 'hold']).optional(),
   // User picks from VPP `target.platformOptions` (e.g. Nano cpu=atmega328old).
   // Keyed by option `key`, value is the chosen `values[].id`. The compile and
   // upload pipelines fall back to each manifest option's `default` when a key
@@ -61,5 +68,7 @@ const deviceConfigurationSchema = z.object({
 type DeviceConfiguration = z.infer<typeof deviceConfigurationSchema>
 type VppPackagePin = z.infer<typeof vppPackagePinSchema>
 
-export { deviceConfigurationSchema, persistentStorageSchema, vppPackagePinSchema }
+const outputsOnStopSchema = deviceConfigurationSchema.shape.outputsOnStop
+
+export { deviceConfigurationSchema, outputsOnStopSchema, persistentStorageSchema, vppPackagePinSchema }
 export type { DeviceConfiguration, VppPackagePin }

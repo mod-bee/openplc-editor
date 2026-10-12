@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
+import { describeFault } from '../../backend/shared/debug/health'
 import type { PlcStatus } from '../../middleware/shared/ports/types'
 import { useRuntime } from '../../middleware/shared/providers'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../store'
@@ -28,6 +29,7 @@ export const useRuntimePolling = () => {
   const jwtToken = useOpenPLCStore((state) => state.runtimeConnection.jwtToken)
   const setPlcRuntimeStatus = useOpenPLCStore((state) => state.deviceActions.setPlcRuntimeStatus)
   const setPlcSwitchPosition = useOpenPLCStore((state) => state.deviceActions.setPlcSwitchPosition)
+  const setPlcHealth = useOpenPLCStore((state) => state.deviceActions.setPlcHealth)
   const setTimingStats = useOpenPLCStore((state) => state.deviceActions.setTimingStats)
   const setEthercatStatus = useOpenPLCStore((state) => state.deviceActions.setEthercatStatus)
   const openModal = useOpenPLCStore((state) => state.modalActions.openModal)
@@ -35,6 +37,8 @@ export const useRuntimePolling = () => {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const consecutiveFailuresRef = useRef<number>(0)
   const isPollingRef = useRef(false)
+  // The fault last written to the console, so it gets one line per change, not one per poll.
+  const lastFaultRef = useRef('')
 
   const clearConnectionState = useCallback(() => {
     const { deviceActions } = store.getState()
@@ -43,6 +47,8 @@ export const useRuntimePolling = () => {
     deviceActions.setRuntimeConnectionStatus('disconnected')
     deviceActions.setPlcRuntimeStatus(null)
     deviceActions.setPlcSwitchPosition(null)
+    deviceActions.setPlcHealth(null, null)
+    lastFaultRef.current = ''
     deviceActions.setTimingStats(null)
     deviceActions.setEthercatStatus(null)
   }, [store])
@@ -156,6 +162,15 @@ export const useRuntimePolling = () => {
         // Runtime v4 reports the mode-switch position alongside the state;
         // absent on older runtimes, which means "no gating".
         setPlcSwitchPosition(statusResult.switchPosition ?? null)
+        // A stuck task, a task a runtime error ended, or a safe-mode
+        // restart's reason. The runtime names the task itself.
+        const faultSummary = statusResult.fault ? describeFault(statusResult.fault, []) : null
+        setPlcHealth(faultSummary, null)
+        const faultLine = faultSummary ? `PLC fault: ${faultSummary.text}` : ''
+        if (faultLine !== lastFaultRef.current) {
+          if (faultLine) store.getState().consoleActions.addLog({ level: 'error', message: faultLine })
+          lastFaultRef.current = faultLine
+        }
 
         if (includeTimingStatsInPolling && statusResult.timingStats) {
           setTimingStats(statusResult.timingStats)
@@ -215,6 +230,7 @@ export const useRuntimePolling = () => {
     handleConnectionLost,
     setPlcRuntimeStatus,
     setPlcSwitchPosition,
+    setPlcHealth,
     setTimingStats,
     setEthercatStatus,
   ])

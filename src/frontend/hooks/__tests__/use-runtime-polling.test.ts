@@ -239,3 +239,52 @@ describe('useRuntimePolling — while the runtime is being replaced', () => {
     expect(data).toHaveProperty('label', '192.168.2.4')
   })
 })
+
+describe('useRuntimePolling — the runtime fault', () => {
+  const fault = { code: 0x10, kind: 'task-stuck', task: 1, taskName: 'NET', safeMode: false, count: 1, detail: 1000 }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockRuntime.getLogs.mockResolvedValue({ success: true, logs: [] })
+    mockRuntime.getEthercatRuntimeStatus = undefined
+    connectRuntime()
+  })
+
+  const faultLines = () => store.getState().logs.filter((l) => String(l.message).startsWith('PLC fault:'))
+
+  it('shows the reason for ERROR, naming the task, and logs it once', async () => {
+    mockRuntime.getStatus.mockResolvedValue({ success: true, status: 'STATUS:ERROR', fault })
+
+    renderPolling()
+    await act(async () => {
+      await flushAll()
+    })
+
+    expect(spies.setPlcRuntimeStatus).toHaveBeenCalledWith('ERROR')
+    const shown = store.getState().runtimeConnection.plcFault
+    expect(shown?.kind).toBe('task-stuck')
+    expect(shown?.text).toContain('NET')
+    expect(faultLines()).toHaveLength(1)
+  })
+
+  it('clears the fault once the runtime reports none', async () => {
+    mockRuntime.getStatus.mockResolvedValueOnce({ success: true, status: 'STATUS:ERROR', fault })
+    mockRuntime.getStatus.mockResolvedValue({ success: true, status: 'STATUS:RUNNING' })
+    jest.useFakeTimers()
+    try {
+      renderPolling()
+      await act(async () => {
+        await flushAll()
+      })
+      expect(store.getState().runtimeConnection.plcFault).not.toBeNull()
+      await act(async () => {
+        jest.advanceTimersByTime(2000)
+        await flushAll()
+      })
+      expect(store.getState().runtimeConnection.plcFault).toBeNull()
+      expect(faultLines()).toHaveLength(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+})

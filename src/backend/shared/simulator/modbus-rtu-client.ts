@@ -3,6 +3,7 @@ import {
   buildReadLicenseRequest,
   buildWriteLicenseRequest,
   isGetListOverflowException,
+  parseGetStatusResponse,
   parsePlcSetStateResponse,
   parseReadLicenseResponse,
   parseWriteLicenseResponse,
@@ -525,17 +526,8 @@ export class ModbusRtuClient {
         return { success: false, error: `Incomplete status response (${response.length} bytes, expected at least 18)` }
       }
 
-      return {
-        success: true,
-        running: readUint8(response, 9) !== 0,
-        // Same byte as `running`, as the tri-state the run/stop machine has.
-        plcState: readUint8(response, 9),
-        tick: readUint32BE(response, 10),
-        uptimeMs: readUint32BE(response, 14),
-        // Appended by firmware carrying the run/stop state machine; absent on
-        // older firmware, which callers read as "no switch gating".
-        ...(response.length >= 19 ? { switchPosition: readUint8(response, 18) } : {}),
-      }
+      // The PDU starts at the FC (offset 7); one parser for every client.
+      return parseGetStatusResponse(response.subarray(7))
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) }
     }

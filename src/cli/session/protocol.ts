@@ -147,7 +147,30 @@ export const VariableValueSchema = z.object({
 })
 export type VariableValue = z.infer<typeof VariableValueSchema>
 
-export const PlcStateSchema = z.enum(['running', 'stopped', 'unknown'])
+export const PlcStateSchema = z.enum(['running', 'stopped', 'error', 'unknown'])
+
+/** A runtime fault the target reports (FC 0x46): a stall, or why it is in ERROR. */
+export const PlcFaultSchema = z.object({
+  kind: z.string(),
+  code: z.number(),
+  /** The IEC task it names, by index in the task statistics, and its name when known. */
+  task: z.number().optional(),
+  taskName: z.string().optional(),
+  /** The board restarted in safe mode for it (no program runs until a start). */
+  safeMode: z.boolean(),
+  count: z.number(),
+  /** ms for a stuck task, a stall or a stop; the reason code for `task-ended`. */
+  detail: z.number(),
+  /** One line for a person. */
+  text: z.string(),
+})
+
+/** Whether the target keeps its retained values (FC 0x46). */
+export const PlcRetainSchema = z.object({
+  kind: z.string(),
+  bytes: z.number(),
+  text: z.string(),
+})
 
 export const SessionStatusSchema = z.object({
   sessionId: z.string(),
@@ -162,6 +185,10 @@ export const SessionStatusSchema = z.object({
   /** Whether that MD5 matches the locally compiled artifacts. */
   md5Matches: z.boolean(),
   plcState: PlcStateSchema,
+  /** The first fault since the last start; absent when there is none or the target cannot say. */
+  fault: PlcFaultSchema.optional(),
+  /** Retention health; absent when the target cannot say. */
+  retain: PlcRetainSchema.optional(),
   /**
    * Paths this session forced and has not released — what `close` will unforce.
    *

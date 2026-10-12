@@ -175,9 +175,9 @@ Zephyr) are listed in `middleware/shared/utils/rtos/support.ts`.
 
 | Task | Runs |
 |---|---|
-| Dispatcher (`loop()`, or a task of its own; the highest priority) | the base tick: run/stop, HAL input, the located globals, releasing each IEC task when due, HAL output as each finishes, forced values, retain, statistics |
+| Dispatcher (`loop()`, or a task of its own; the highest priority) | the base tick: run/stop, HAL input, the located globals, releasing each IEC task when due, HAL output as each finishes, forced values, the task watchdog, statistics. Its own work per frame is bounded: nothing in it grows with the program |
 | One worker per IEC task | its programs, under its own scan lock, with its located variables copied in and out of the process image. IEC PRIORITY 0 is the highest. |
-| Service A | Modbus RTU/TCP, the debugger, discovery; samples stack margins and the heap once a second |
+| Service A | Modbus RTU/TCP, the debugger, discovery; the background retain save, a bounded step per pass; samples stack margins and the heap and watches the dispatcher once a second |
 | Service B (if OPC-UA or S7 is enabled) | OPC-UA, S7 |
 
 On a board with 32 KB of RAM or less (`PLC_OS_SMALL_STACKS`) the two services
@@ -265,8 +265,54 @@ located ARRAY global is built with one worker.
 
 ### Retain
 
-Packed between the owners' scans (a task stalled in a block is read as it
-stands), and on STOP after the last scans.
+The store says how often it wants the values (`openplc_retain_mode()`, as a
+runtime v4 plugin's `retain_mode()` does). An EVERY_SCAN store (NVRAM, FRAM;
+the default for a store that does not say) gets them from the dispatcher at the
+end of each frame in which every task is idle. A PERIODIC store, such as the
+firmware's built-in one, gets them in the background from service A, below
+every IEC task: once a period
+(`OPENPLC_RTOS_RETAIN_PERIOD_US`, 1 s) it packs the retained leaves into the
+retain buffer, `OPENPLC_RTOS_RETAIN_STEP_LEAVES` (32) per pass
+(`strucpp::retain::Packer2`), then hands the blob to the store, which commits at
+its own period. Leaves are read without any lock a task uses, each until two
+reads agree, so no task waits for retain and no value is stored torn; values may
+come from consecutive scans. STOP saves after the last scans (every task parked),
+as does a block's `runtime_retain_flush_now()`; either restarts the background
+pack. A program whose blob cannot be kept is reported in the status (FC `0x46`).
+
+### Watchdog and faults
+
+The same rules and limits as the OpenPLC Runtime v4 (its docs/ARCHITECTURE.md,
+Watchdog System, and task_policy.h):
+
+- A task found still in the same scan on `OPENPLC_RTOS_STUCK_PERIODS` (10)
+  consecutive due ticks, replayed ones included, stops the PLC; the stop lands in
+  ERROR (`runtime_rtos_fault_stop`). A first scan is not counted but is stopped
+  past `OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US` (10 s).
+- A runtime error in a task (a caught exception, or `iec_runtime_fault` where
+  there are none) ends that task: its programs are skipped until the next
+  STOP -> RUN; the other tasks keep running.
+- On a stop, an in-flight scan may run until 10 of its periods after its release
+  (10 s for a first scan) plus `OPENPLC_RTOS_ABORT_TIMEOUT_US` (2 s). A task this
+  board cannot abort past that, or a dispatcher with no frame for max(10 base
+  ticks, `OPENPLC_RTOS_DISPATCH_STALL_MIN_US` 1 s) (watched by service A),
+  restarts the board in safe mode (`plc_os_restart`, the reason kept in
+  `plc_os_noinit_words`): ERROR, no IEC task created, outputs off. RUN from safe
+  mode restarts normally. Without such memory the board stays up in ERROR.
+
+The first fault since STOP -> RUN, and why the PLC is in ERROR, are appended to
+the status reply (FC `0x46`: `[fault][task][safe_mode][count][detail:u32]`, then
+`[retain][bytes:u32]`).
+
+### Outputs on STOP and in ERROR
+
+The project's *Outputs on STOP / error* (`OPENPLC_OUTPUTS_ON_STOP` in
+`defines.h`, as on runtime v4). Off, the default: every output is switched off
+while stopping and stays off. Hold (`1`): every output keeps the value the last
+scans gave it; the cold stop's re-initialisation moves to the next start, so the
+program still starts from its initial values with its retained ones restored,
+and no Modbus write reaches an output while stopped. A safe-mode restart starts
+with the outputs off either way.
 
 ### Statistics
 

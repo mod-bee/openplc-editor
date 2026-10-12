@@ -142,9 +142,13 @@ function applyDevice(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChang
   }
 
   // Before the bail-out below: a `device` section carrying nothing but
-  // `persistentStorage` or `rtos` still has work to do.
+  // `persistentStorage`, `rtos` or `outputsOnStop` still has work to do.
   applyPersistentStorage(store, spec, changes)
   applyRtos(store, spec, changes, errors)
+  if (spec.device.outputsOnStop !== undefined) {
+    store.getState().deviceActions.setOutputsOnStop(spec.device.outputsOnStop)
+    changes.push({ kind: 'device', action: 'update', name: `outputsOnStop = ${spec.device.outputsOnStop}` })
+  }
 
   const rest = { ...configuration }
   delete rest.deviceBoard

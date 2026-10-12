@@ -45,6 +45,19 @@ extern "C" {
 // some cores an RTOS object made before the scheduler starts masks interrupts.
 void runtime_rtos_init(void);
 void runtime_rtos_fault(void);   // set-up failed: ERROR, outputs off, nothing released
+// The same, naming what failed (RUNTIME_FAULT_*) and the IEC task, if one.
+void runtime_rtos_fail(uint8_t code, uint8_t task);
+
+// Faults, as runtime v4 handles them (its docs/ARCHITECTURE.md, Watchdog System):
+// a task stuck in one scan stops the PLC, and the stop lands in ERROR; a task
+// ended by a runtime error leaves the others running; a dispatcher that stops,
+// or a stop that cannot finish, restarts the board in safe mode (ERROR, no
+// program, outputs off).
+void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms);
+void runtime_rtos_task_ended(uint32_t worker, uint8_t reason);
+void runtime_rtos_safe_mode(uint8_t code, uint8_t task, uint32_t ms);
+bool runtime_rtos_in_safe_mode(void);
+bool runtime_rtos_fault_stopped(void);   // ERROR from a fault stop: RUN may leave it
 
 // One worker per IEC task (or one for all, when not threaded), each with its
 // own scan lock. Called by plc_rtos_start(), after runtime_discover_tasks().
@@ -57,8 +70,9 @@ uint32_t    runtime_rtos_worker_divisor(uint32_t worker);    // released every N
 // when it is between scans. A task stuck in a block shows here.
 uint32_t    runtime_rtos_worker_busy_us(uint32_t worker);
 
-// One release of a worker; `run_tick` is the grid time in base ticks.
-void runtime_rtos_worker_cycle(uint32_t worker, uint64_t run_tick);
+// One release of a worker; `run_tick` is the grid time in base ticks. False
+// when a runtime error ended the task (runtime_rtos_task_ended was called).
+bool runtime_rtos_worker_cycle(uint32_t worker, uint64_t run_tick);
 
 // The process-image lock: held for a copy, a HAL refresh or one protocol
 // request's reads and writes of the image, never across I/O to a peer.
@@ -98,11 +112,59 @@ bool    runtime_rtos_cold_restart_pending(void);
 void    runtime_rtos_cold_restart_cancel(void);
 void    runtime_rtos_cold_restart(uint64_t run_tick);
 void    runtime_rtos_stopped_copy_in(void);
-// False when skipped this time: a task was mid-scan (not stalled), or a service
-// held one. A task stalled in a block is read as it stands, so it cannot keep
-// retain from being saved.
-bool    runtime_rtos_retain_save(void);
+// One bounded step of the background retain save, from service A, for a
+// PERIODIC store: packs a few leaves, and hands the blob to the store when it is
+// complete. Never takes a lock a PLC task uses, so no task waits for it.
+void    runtime_rtos_retain_service(void);
+// The save for an EVERY_SCAN store, from the dispatcher at the end of a frame
+// with every task idle (openplc_retain_mode()).
+void    runtime_rtos_retain_frame(void);
+// How far past its due time a background save completed, at most (statistics);
+// `reset` restarts the maximum.
+uint32_t runtime_rtos_retain_late_max_us(bool reset);
 #endif
+
+// ---------------------------------------------------------------------------
+// Faults and retain health, reported by the debugger's status (FC 0x46).
+// ---------------------------------------------------------------------------
+#define RUNTIME_FAULT_NONE               0x00
+#define RUNTIME_FAULT_SETUP              0x01  // an RTOS lock could not be created
+#define RUNTIME_FAULT_TASK_CREATE        0x02  // `task` could not be created (memory)
+#define RUNTIME_FAULT_SERVICE_CREATE     0x03  // a service task could not be created
+#define RUNTIME_FAULT_DISPATCHER_CREATE  0x04
+#define RUNTIME_FAULT_SCHEDULER          0x05  // the RTOS scheduler did not start
+#define RUNTIME_FAULT_TASK_STUCK         0x10  // `task` stuck in one scan for 10 periods: PLC stopped, ERROR
+#define RUNTIME_FAULT_DISPATCHER_STALLED 0x11  // no frame for max(10 base ticks, 1 s): safe-mode restart
+#define RUNTIME_FAULT_FIRST_SCAN_STUCK   0x12  // `task`'s first scan past 10 s: PLC stopped, ERROR
+#define RUNTIME_FAULT_STOP_TIMEOUT       0x13  // `task` did not finish its scan on a stop: safe-mode restart
+#define RUNTIME_FAULT_TASK_ENDED         0x14  // a runtime error ended `task`; the others keep running
+#define RUNTIME_FAULT_NO_TASK            0xFF
+
+// TASK_ENDED reasons (strucpp::IecFault values, then the catch-alls).
+#define RUNTIME_TASK_ENDED_NULL_REFERENCE 0
+#define RUNTIME_TASK_ENDED_ARRAY_BOUNDS   1
+#define RUNTIME_TASK_ENDED_BAD_LOCATION   2
+#define RUNTIME_TASK_ENDED_OTHER          0xFE
+
+// The first fault since the last STOP -> RUN (later ones only count).
+typedef struct {
+    uint8_t  code;       // RUNTIME_FAULT_*
+    uint8_t  task;       // the IEC task (statistics order), or RUNTIME_FAULT_NO_TASK
+    uint8_t  safe_mode;  // 1: the board restarted in safe mode for it (no program runs)
+    uint8_t  count;      // faults since cleared, saturating at 255
+    uint32_t detail;     // ms for a stall or stop; the reason for TASK_ENDED
+} runtime_fault_t;
+void runtime_get_fault(runtime_fault_t* out);
+
+#define RUNTIME_RETAIN_NONE      0  // the program retains nothing
+#define RUNTIME_RETAIN_OK        1  // the store took the last save
+#define RUNTIME_RETAIN_NO_STORE  2  // the board stores nothing (no backend, or Persistent Storage off)
+#define RUNTIME_RETAIN_TOO_LARGE 3  // the blob does not fit; `bytes` is what it needs
+#define RUNTIME_RETAIN_IO_ERROR  4  // the store failed
+#define RUNTIME_RETAIN_PENDING   5  // nothing handed to the store yet
+
+// Retain health; `bytes` (may be NULL) gets the blob size this program needs.
+uint8_t runtime_retain_status(uint32_t* bytes);
 
 // Globals owned by arduino_runtime_glue.cpp, read by the sketch.
 extern unsigned long long base_tick_ns;
@@ -153,7 +215,7 @@ void runtime_retain_load();
 
 // Ask the driver to commit anything it is still holding. Called internally on
 // the transition into STOP. A hint, not the durability mechanism — that is the
-// per-scan write. See Baremetal/openplc_retain.h.
+// write while running. See Baremetal/openplc_retain.h.
 void runtime_retain_flush();
 
 // Pack the retained values now and commit them through the store (write +
@@ -166,6 +228,25 @@ void runtime_retain_flush();
 // calling it should declare it weak and check for NULL, so it still links
 // against firmware older than this.
 uint8_t runtime_retain_flush_now(void);
+
+// ---------------------------------------------------------------------------
+// Outputs on STOP and in ERROR: the project's setting, OPENPLC_OUTPUTS_ON_STOP
+// in defines.h (absent: OFF), as on runtime v4. Retained values are kept either
+// way.
+//
+//   OFF   every output is switched off, and stays off while stopped.
+//   HOLD  every output keeps the value the last scan gave it. The cold stop's
+//         re-initialisation then happens at the next start, so the program
+//         still starts from its initial values (with its retained ones), and
+//         no protocol write reaches an output while stopped.
+// ---------------------------------------------------------------------------
+#define RUNTIME_OUTPUTS_OFF  0
+#define RUNTIME_OUTPUTS_HOLD 1
+// From setup(), before the first scan.
+void runtime_set_outputs_on_stop(uint8_t mode);
+// True while the outputs are held: stopped or in ERROR with HOLD. A protocol
+// write to an output is then dropped.
+bool runtime_outputs_held(void);
 
 // ---------------------------------------------------------------------------
 // Run/stop control surface.

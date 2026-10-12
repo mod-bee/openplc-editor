@@ -49,7 +49,40 @@ export interface DebugStatusResult {
    *  report RUN. Absent on firmware predating the run/stop state machine, which
    *  callers should read as "no gating". */
   switchPosition?: number
+  /** The first fault since the last STOP -> RUN (a stalled task or dispatcher),
+   *  or why the PLC is in ERROR. Absent on firmware that does not report one. */
+  fault?: RuntimeFault
+  /** Whether retained values are being kept. Absent on older firmware. */
+  retain?: RetainHealth
   error?: string
+}
+
+/** A runtime fault as FC 0x46 reports it (arduino_runtime_glue.h, RUNTIME_FAULT_*). */
+export interface RuntimeFault {
+  /** RUNTIME_FAULT_* code; 0 = none. */
+  code: number
+  /** Short machine name of the code, e.g. `task-stalled`. */
+  kind: string
+  /** The IEC task, in configuration order; absent when the fault names none. */
+  task?: number
+  /** The task's name, where the target reports it (Runtime v4 does). */
+  taskName?: string
+  /** The board restarted in safe mode for it: no program runs until a start. */
+  safeMode: boolean
+  /** Faults since cleared (saturates at 255). */
+  count: number
+  /** ms for a stuck task, a stall or a stop; the reason code for `task-ended`. */
+  detail: number
+}
+
+/** Retention health as FC 0x46 reports it (RUNTIME_RETAIN_*). */
+export interface RetainHealth {
+  /** RUNTIME_RETAIN_* code. */
+  code: number
+  /** `none`, `ok`, `no-store`, `too-large`, `io-error`, `pending`, or `unknown`. */
+  kind: string
+  /** Blob size this program's retained values need, in bytes. */
+  bytes: number
 }
 
 /** Result of the runtime version probe (FC 0x47) — ASCII version string. */

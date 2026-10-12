@@ -61,6 +61,7 @@ import {
   RETAINED_RETRIEVALS,
 } from '@root/backend/editor/project/materialize-retrieved-project'
 import { isWebUrl } from '@root/backend/editor/utils/is-web-url'
+import { faultFromRuntimeV4 } from '@root/backend/shared/debug/health'
 import type {
   DebugAnchorResult,
   DebugDeviceIdResult,
@@ -501,16 +502,20 @@ class MainProcessBridge implements MainIpcModule {
         // Run/stop mode-switch position. Absent on runtimes older than the
         // run/stop interface — treat undefined as "no gating".
         switchPosition?: 'run' | 'stop'
+        // The first fault since the last start; absent when there is none.
+        fault?: unknown
       }>(ipAddress, endpoint, (data: string) => {
         const response = JSON.parse(data) as {
           status: string
           timing_stats?: TimingStatsResponse
           switchPosition?: 'run' | 'stop'
+          fault?: unknown
         }
         return response
       })
 
       if (result.success && result.data) {
+        const fault = faultFromRuntimeV4(result.data.fault)
         const raw = result.data.timing_stats
         let timingStats: { tasks: TaskStats[]; plugin_stats?: PluginStatsMap } | undefined
         if (raw && Array.isArray((raw as { tasks?: TaskStats[] }).tasks)) {
@@ -529,6 +534,7 @@ class MainProcessBridge implements MainIpcModule {
           status: result.data.status,
           timingStats,
           ...(result.data.switchPosition ? { switchPosition: result.data.switchPosition } : {}),
+          ...(fault ? { fault } : {}),
         }
       } else {
         return { success: false, error: !result.success ? result.error : 'Unknown error' }
@@ -2547,6 +2553,8 @@ class MainProcessBridge implements MainIpcModule {
       port,
       plcState: r.plcState,
       switchPosition: r.switchPosition,
+      ...(r.fault ? { fault: r.fault } : {}),
+      ...(r.retain ? { retain: r.retain } : {}),
     })
   }
 

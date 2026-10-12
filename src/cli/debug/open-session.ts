@@ -194,7 +194,13 @@ export async function openDebugSession(store: OpenPLCStore, options: OpenSession
     index,
     // Run/stop follows the target: a runtime drives it over REST, a baremetal
     // board answers it on the debug channel itself (FC 0x4b).
-    plc: runtime && options.host ? restPlcControl(runtime, options.host) : channelPlcControl(channel),
+    plc:
+      runtime && options.host
+        ? restPlcControl(runtime, options.host)
+        : channelPlcControl(
+            channel,
+            store.getState().project.data.configurations.resource.tasks.map((task) => task.name),
+          ),
     programMd5: targetMd5,
     endian,
     // Batch size is a property of the medium's frame budget, from the shared table.

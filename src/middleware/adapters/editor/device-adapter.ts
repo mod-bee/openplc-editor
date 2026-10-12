@@ -21,6 +21,7 @@ import type {
   DeviceConnectResult,
   DeviceLicenseReport,
   DeviceLicenseRequest,
+  DevicePlcStatePayload,
   DevicePort,
 } from '../../shared/ports/device-port'
 import type { BoardInfo, CommunicationPort, DebugConnectionConfig, RtosStatsResult } from '../../shared/ports/types'
@@ -91,7 +92,7 @@ export function createEditorDeviceAdapter(): DevicePort {
       return window.bridge.onDeviceConnectionStatus(callback)
     },
 
-    onPlcState(callback: (payload: { port: string; plcState?: number; switchPosition?: number }) => void): () => void {
+    onPlcState(callback: (payload: DevicePlcStatePayload) => void): () => void {
       return window.bridge.onDevicePlcState(callback)
     },
   }

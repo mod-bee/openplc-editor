@@ -20,11 +20,29 @@ extern "C" {
 #error "modbus_config.h decides whether the network needs a lock in RTOS mode, and did not"
 #endif
 
-#ifndef OPENPLC_RTOS_RETAIN_PERIOD_US
-// How often retained values are handed to the platform. Not every frame: at a
-// fast base tick that is pure overhead, and the platform decides for itself
-// when to commit.
-#define OPENPLC_RTOS_RETAIN_PERIOD_US 20000
+// The watchdog, as runtime v4's (its docs/ARCHITECTURE.md, Watchdog System,
+// and core/src/plc_app/task_policy.h): the same limits and the same actions.
+//
+// A task still in the same scan on this many consecutive due ticks stops the
+// PLC; the stop lands in ERROR. A task's first scan is not counted, but is
+// stopped past OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US.
+#ifndef OPENPLC_RTOS_STUCK_PERIODS
+#define OPENPLC_RTOS_STUCK_PERIODS 10
+#endif
+#ifndef OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US
+#define OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US 10000000
+#endif
+// On a stop, each in-flight scan may run until that many periods after its
+// release (the first-scan timeout for a first scan), then this much longer
+// (v4's abort grace); a task this board cannot abort then restarts it in safe
+// mode, as v4 exits for a safe-mode restart.
+#ifndef OPENPLC_RTOS_ABORT_TIMEOUT_US
+#define OPENPLC_RTOS_ABORT_TIMEOUT_US 2000000
+#endif
+// A dispatcher with no frame for max(10 base ticks, this) restarts the board
+// in safe mode (v4: PLC_DISPATCHER_STALL_MIN_MS, then _exit for a restart).
+#ifndef OPENPLC_RTOS_DISPATCH_STALL_MIN_US
+#define OPENPLC_RTOS_DISPATCH_STALL_MIN_US 1000000
 #endif
 
 #ifndef OPENPLC_RTOS_START_WAIT_US
@@ -66,6 +84,7 @@ struct Worker {
     int64_t       start_us;       // written by the worker before it signals completion
     int64_t       end_us;
     bool          recorded;       // this release's timing is in the statistics
+    uint32_t      stuck_ticks;    // due ticks found still in the same scan (the dispatcher's)
 };
 
 static Worker   s_workers[RTOS_MAX_WORKERS];
@@ -224,7 +243,6 @@ struct StatsSnapshot {
 };
 
 static TaskWindow     s_window[RTOS_MAX_WORKERS];   // the dispatcher's own
-static uint32_t       s_retain_late_max_us = 0;     // the dispatcher's own
 static StatsSnapshot  s_published;                  // what FC 0x4E reads
 static plc_os_mutex_t s_stats_lock = nullptr;
 static bool           s_reset_requested = false;
@@ -300,7 +318,7 @@ static void publish_stats(void)
     s_published.dispatcher_stack_free = __atomic_load_n(&s_stack_free[0], __ATOMIC_RELAXED);
     s_published.heap_free             = __atomic_load_n(&s_heap_free, __ATOMIC_RELAXED);
     s_published.heap_min_free         = __atomic_load_n(&s_heap_min_free, __ATOMIC_RELAXED);
-    s_published.retain_late_max_us    = s_retain_late_max_us;
+    s_published.retain_late_max_us    = runtime_rtos_retain_late_max_us(false);
     const bool reset = s_reset_requested;
     s_reset_requested = false;
     plc_os_mutex_unlock(s_stats_lock);
@@ -308,7 +326,7 @@ static void publish_stats(void)
     if (reset) {
         for (uint32_t w = 0; w < s_worker_count; ++w) window_reset(s_window[w]);
         for (int i = 0; i < 2; ++i) __atomic_store_n(&s_service_iter_max_us[i], 0, __ATOMIC_RELAXED);
-        s_retain_late_max_us = 0;
+        runtime_rtos_retain_late_max_us(true);
     }
 }
 
@@ -456,6 +474,46 @@ static uint8_t native_priority(uint32_t w)
 }
 
 // ---------------------------------------------------------------------------
+// Safe mode (v4: a watchdog exit restarts the runtime with --safe-mode): the
+// reason survives the restart in memory the startup code leaves alone; that
+// boot reports ERROR, runs no program and holds the outputs off.
+// ---------------------------------------------------------------------------
+
+#define SAFE_MODE_MAGIC 0x53414645u   // "SAFE"
+
+static void safe_mode_restart(uint8_t code, uint8_t task, uint32_t ms)
+{
+    uint32_t *m = plc_os_noinit_words();
+    if (m) {
+        m[1] = (uint32_t)code | ((uint32_t)task << 8);
+        m[2] = ms;
+        m[3] = SAFE_MODE_MAGIC ^ m[1] ^ m[2];
+        m[0] = SAFE_MODE_MAGIC;
+        plc_os_restart();
+    }
+    // Nothing survives a restart on this board: stay up, in ERROR, nothing released.
+    runtime_rtos_safe_mode(code, task, ms);
+}
+
+// The reason a safe-mode restart left, read and cleared once at start.
+static bool safe_mode_marker(uint8_t *code, uint8_t *task, uint32_t *ms)
+{
+    uint32_t *m = plc_os_noinit_words();
+    if (!m || m[0] != SAFE_MODE_MAGIC || m[3] != (SAFE_MODE_MAGIC ^ m[1] ^ m[2])) return false;
+    *code = (uint8_t)(m[1] & 0xFFu);
+    *task = (uint8_t)((m[1] >> 8) & 0xFFu);
+    *ms   = m[2];
+    m[0] = 0;
+    return true;
+}
+
+static uint32_t ms_since(int64_t since_us)
+{
+    const int64_t ms = (plc_os_now_us() - since_us) / 1000;
+    return ms <= 0 ? 0u : (ms > (int64_t)UINT32_MAX ? UINT32_MAX : (uint32_t)ms);
+}
+
+// ---------------------------------------------------------------------------
 // Services
 // ---------------------------------------------------------------------------
 
@@ -467,12 +525,33 @@ static bool s_service_a_started = false;
 // after it, so no client reads a pre-scan image. Set at once when RTOS mode
 // could not start, so the editor can still read that it is in ERROR.
 static bool s_gate_open = false;
+// Counted by the dispatcher every frame; service A reports it stalled when it
+// stops moving (watch_dispatcher).
+static uint32_t s_dispatch_beat = 0;
 
 static void open_gate(void)
 {
     __atomic_store_n(&s_gate_open, true, __ATOMIC_RELEASE);
     plc_os_notify(s_service_a);
     if (s_service_b) plc_os_notify(s_service_b);
+}
+
+// Service A watches the dispatcher: no frame for max(10 base ticks, 1 s) is a
+// stalled dispatcher, which restarts the board in safe mode (v4 layer 3).
+static void watch_dispatcher(void)
+{
+    static uint32_t last_beat = 0;
+    static int64_t  moved_us  = 0;
+    const int64_t   now       = plc_os_now_us();
+    const uint32_t  beat      = __atomic_load_n(&s_dispatch_beat, __ATOMIC_ACQUIRE);
+    if (moved_us == 0 || beat != last_beat || runtime_rtos_in_safe_mode()) {
+        last_beat = beat;
+        moved_us  = now;
+        return;
+    }
+    const uint64_t ticks = (base_tick_ns / 1000ULL) * 10ULL;
+    const int64_t  limit = (int64_t)(ticks > OPENPLC_RTOS_DISPATCH_STALL_MIN_US ? ticks : OPENPLC_RTOS_DISPATCH_STALL_MIN_US);
+    if (now - moved_us > limit) safe_mode_restart(RUNTIME_FAULT_DISPATCHER_STALLED, RUNTIME_FAULT_NO_TASK, ms_since(moved_us));
 }
 
 static void service_loop(int slot, plc_rtos_hook_t begin, plc_rtos_hook_t pass)
@@ -493,9 +572,14 @@ static void service_loop(int slot, plc_rtos_hook_t begin, plc_rtos_hook_t pass)
     for (;;) {
         const int64_t t0 = plc_os_now_us();
         pass();
+        // The retained values, a bounded step a pass, below every IEC task.
+        if (slot == 0) runtime_rtos_retain_service();
         const uint32_t took = (uint32_t)(plc_os_now_us() - t0);
         if (took > s_service_iter_max_us[slot]) __atomic_store_n(&s_service_iter_max_us[slot], took, __ATOMIC_RELAXED);
-        if (slot == 0) sample_health();
+        if (slot == 0) {
+            sample_health();
+            watch_dispatcher();
+        }
         // Block, so the core's idle task runs and the task watchdog stays fed.
         plc_os_yield_tick();
     }
@@ -558,14 +642,16 @@ static void image_to_banks(void)
 // output, before the HAL sees it.
 static void banks_to_image(void)
 {
-    for (int i = 0; i < MAX_DIGITAL_OUTPUT; i++) {
+    // Outputs held at their last values (STOP or ERROR) take no write.
+    const bool outputs = !runtime_outputs_held();
+    for (int i = 0; outputs && i < MAX_DIGITAL_OUTPUT; i++) {
         IEC_BOOL *slot = bool_output[i / 8][i % 8];
         if (slot != NULL) {
             const bool coil = get_discrete(i, COILS);
             if (coil != (bool)*slot) *slot = coil;
         }
     }
-    for (int i = 0; i < MAX_ANALOG_OUTPUT; i++)
+    for (int i = 0; outputs && i < MAX_ANALOG_OUTPUT; i++)
         if (int_output[i] != NULL && *int_output[i] != modbus.holding[i]) *int_output[i] = modbus.holding[i];
     for (int i = 0; i < MAX_MEMORY_WORD; i++)
         if (int_memory[i] != NULL && *int_memory[i] != modbus.holding[i + MAX_ANALOG_OUTPUT])
@@ -722,12 +808,12 @@ void plc_rtos_start(const plc_rtos_config_t *config)
     // failed, so it gets the memory before the IEC work does.
     if (!plc_os_task_create(service_a_main, nullptr, "plc_modbus", OPENPLC_RTOS_SERVICE_A_STACK,
                             OPENPLC_RTOS_SERVICE_A_PRIORITY, service_core, &s_service_a))
-        runtime_rtos_fault();
+        runtime_rtos_fail(RUNTIME_FAULT_SERVICE_CREATE, RUNTIME_FAULT_NO_TASK);
 #if !defined(PLC_OS_ONE_SERVICE_TASK)
     if (s_config.service_b &&
         !plc_os_task_create(service_b_main, nullptr, "plc_protocols", OPENPLC_RTOS_SERVICE_B_STACK,
                             OPENPLC_RTOS_SERVICE_B_PRIORITY, service_core, &s_service_b))
-        runtime_rtos_fault();
+        runtime_rtos_fail(RUNTIME_FAULT_SERVICE_CREATE, RUNTIME_FAULT_NO_TASK);
 #endif
 
     // A task that cannot be created (out of memory) leaves the PLC in ERROR with
@@ -738,10 +824,16 @@ void plc_rtos_start(const plc_rtos_config_t *config)
         s_workers[w].divisor = runtime_rtos_worker_divisor(w);
         window_reset(s_window[w]);
     }
+    // A safe-mode restart: ERROR with the reason it left, and no program runs.
+    {
+        uint8_t code, task;
+        uint32_t ms;
+        if (safe_mode_marker(&code, &task, &ms)) runtime_rtos_safe_mode(code, task, ms);
+    }
     for (uint32_t w = 0; w < s_worker_count && !faulted(); ++w) {
         if (!plc_os_task_create(work_main, (void *)(uintptr_t)w, runtime_rtos_worker_name(w),
                                 OPENPLC_RTOS_WORK_STACK, native_priority(w), plc_core, &s_workers[w].task))
-            runtime_rtos_fault();
+            runtime_rtos_fail(RUNTIME_FAULT_TASK_CREATE, (uint8_t)w);
     }
 
 #if PLC_OS_OWN_DISPATCHER
@@ -749,14 +841,14 @@ void plc_rtos_start(const plc_rtos_config_t *config)
                             OPENPLC_RTOS_DISPATCH_PRIORITY, plc_core, &s_dispatcher)) {
         // No dispatcher to open the services' gate: open it now, so the editor
         // can connect and read the ERROR.
-        runtime_rtos_fault();
+        runtime_rtos_fail(RUNTIME_FAULT_DISPATCHER_CREATE, RUNTIME_FAULT_NO_TASK);
         open_gate();
     }
     plc_os_start_scheduler();
     // Back here only when the RTOS could not start at all (no memory left for
     // its own idle or timer task): nothing runs and nothing can report it. The
     // build-time memory checks are what keep a board from getting here.
-    runtime_rtos_fault();
+    runtime_rtos_fail(RUNTIME_FAULT_SCHEDULER, RUNTIME_FAULT_NO_TASK);
 #else
     plc_os_task_set_priority(nullptr, OPENPLC_RTOS_DISPATCH_PRIORITY);
 #endif
@@ -783,17 +875,49 @@ static uint32_t output_finished(uint32_t mask, bool stop_pending)
     return mask & ~done;
 }
 
+// How long a task's in-flight scan may run after its release before a stop
+// gives up on it (v4: task_scan_limit_ns).
+static int64_t scan_limit_us(uint32_t w)
+{
+    const Worker &k = s_workers[w];
+    const int64_t periods = (int64_t)(base_tick_ns / 1000ULL) * k.divisor * OPENPLC_RTOS_STUCK_PERIODS;
+    if (__atomic_load_n(&k.completed, __ATOMIC_ACQUIRE) == 0 && OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US > periods)
+        return OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US;
+    return periods;
+}
+
+// A first scan past its timeout stops the PLC (v4: the main watchdog trips it).
+static void watch_first_scans(void)
+{
+    if (runtime_rtos_fault_stopped()) return;
+    for (uint32_t w = 0; w < s_worker_count; ++w) {
+        const Worker &k = s_workers[w];
+        if (k.released == 0 || worker_idle(w) || __atomic_load_n(&k.completed, __ATOMIC_ACQUIRE) != 0) continue;
+        if (plc_os_now_us() - k.release_us > OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US) {
+            runtime_rtos_fault_stop(RUNTIME_FAULT_FIRST_SCAN_STUCK, (uint8_t)w, ms_since(k.release_us));
+            return;
+        }
+    }
+}
+
+// A stop waits for the tasks in their scans for as long as v4 lets them run;
+// one that cannot finish restarts the board in safe mode.
+static void watch_stop_drain(void)
+{
+    for (uint32_t w = 0; w < s_worker_count; ++w) {
+        if (worker_idle(w)) continue;
+        const Worker &k = s_workers[w];
+        if (plc_os_now_us() - k.release_us > scan_limit_us(w) + OPENPLC_RTOS_ABORT_TIMEOUT_US)
+            safe_mode_restart(RUNTIME_FAULT_STOP_TIMEOUT, (uint8_t)w, ms_since(k.release_us));
+    }
+}
+
 // The dispatcher; never returns.
 static void dispatch_forever(void)
 {
     const uint32_t tick_us    = plc_os_tick_period_us();
     const uint32_t base_ticks = (uint32_t)((base_tick_ns / 1000ULL) / tick_us);
     const uint32_t step       = base_ticks > 0 ? base_ticks : 1;   // the editor refuses a period off the tick
-    const uint64_t base_us    = base_tick_ns / 1000ULL;
-    // Retain is due every this many base ticks, counted in run_tick like the
-    // task releases, so where in its frame a save lands never shifts the next.
-    const uint64_t retain_every =
-        base_us > 0 ? (OPENPLC_RTOS_RETAIN_PERIOD_US + base_us - 1) / base_us : 1;
 
     // The first scan waits for service A to bring up the ports and the network,
     // for a bounded time, so a network that never comes up cannot keep the PLC
@@ -812,7 +936,6 @@ static void dispatch_forever(void)
     bool           stop_pending = false;
     bool           gate_open    = false;
     uint32_t       frames       = 0;
-    uint64_t       retain_due   = 0;   // the run_tick the next save is due on
 
     for (;;) {
         plc_os_sleep_until_tick(deadline);
@@ -835,20 +958,21 @@ static void dispatch_forever(void)
         if (cold && state == PLC_STATE_STOPPED && wanted == PLC_STATE_RUNNING) {
             runtime_rtos_cold_restart(run_tick);
             for (uint32_t w = 0; w < s_worker_count; ++w) s_workers[w].next_tick = run_tick;
-            retain_due = run_tick;
             stop_pending = false;
             state = PLC_STATE_RUNNING;
         } else if (stop_pending && all_idle()) {
             runtime_rtos_enter_stop();
             stop_pending = false;
-            state = PLC_STATE_STOPPED;
-        } else if (state == PLC_STATE_STOPPED && wanted == PLC_STATE_RUNNING) {
+            state = runtime_rtos_state();   // ERROR after a fault stop (v4)
+        } else if (state == PLC_STATE_ERROR && wanted == PLC_STATE_RUNNING && runtime_rtos_in_safe_mode()) {
+            plc_os_restart();               // RUN from safe mode: start normally
+        } else if ((state == PLC_STATE_STOPPED || runtime_rtos_fault_stopped()) && wanted == PLC_STATE_RUNNING) {
             runtime_rtos_enter_run(run_tick);
             for (uint32_t w = 0; w < s_worker_count; ++w) s_workers[w].next_tick = run_tick;
-            retain_due = run_tick;
             state = PLC_STATE_RUNNING;
         }
 
+        if (stop_pending) watch_stop_drain();
         runtime_rtos_frame_input(all_idle());
         if (state == PLC_STATE_STOPPED) runtime_rtos_stopped_copy_in();
 
@@ -872,8 +996,16 @@ static void dispatch_forever(void)
                 s_window[w].overruns += (uint32_t)missed;
                 if (!worker_idle(w)) {
                     s_window[w].overruns++;
+                    // Due ticks, replayed ones included, found still in the same
+                    // scan; a first scan is not counted (v4).
+                    if (__atomic_load_n(&k.completed, __ATOMIC_ACQUIRE) != 0) {
+                        k.stuck_ticks += 1u + (uint32_t)missed;
+                        if (k.stuck_ticks >= OPENPLC_RTOS_STUCK_PERIODS && !runtime_rtos_fault_stopped())
+                            runtime_rtos_fault_stop(RUNTIME_FAULT_TASK_STUCK, (uint8_t)w, ms_since(k.release_us));
+                    }
                     continue;
                 }
+                k.stuck_ticks  = 0;
                 k.release_tick = due;
                 k.release_us   = plc_os_now_us();
                 k.recorded     = false;
@@ -902,16 +1034,13 @@ static void dispatch_forever(void)
         pending |= waiting;
         if (!released) runtime_rtos_frame_output(all_idle(), stop_pending);   // stopped, or nothing due
 
-        // Retained values, between the owners' scans; a task stalled in a block
-        // does not hold them up (runtime_rtos_retain_save). How late a save got,
-        // in whole frames past its due tick, is in the statistics.
-        if (state == PLC_STATE_RUNNING && !stop_pending && run_tick >= retain_due &&
-            runtime_rtos_retain_save()) {
-            const uint64_t late = (run_tick - retain_due) * base_us;
-            if (late > s_retain_late_max_us)
-                s_retain_late_max_us = late > UINT32_MAX ? UINT32_MAX : (uint32_t)late;
-            retain_due = run_tick + retain_every;
-        }
+        // Retained values: a PERIODIC store's are saved by service A in the
+        // background (runtime_rtos_retain_service), so no task waits for them;
+        // an EVERY_SCAN store gets each frame's, once every task is idle (v4).
+        if (state == PLC_STATE_RUNNING && !stop_pending && released && !waiting && all_idle())
+            runtime_rtos_retain_frame();
+        if (state == PLC_STATE_RUNNING && !stop_pending) watch_first_scans();
+        __atomic_store_n(&s_dispatch_beat, s_dispatch_beat + 1, __ATOMIC_RELEASE);
 
         // The services start once the first frame is out, or after a hundred
         // frames if a task is still stuck in its first scan.

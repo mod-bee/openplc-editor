@@ -21,6 +21,8 @@
  *   - getDeviceStatus()
  */
 
+import type { RetainHealth, RuntimeFault } from '@root/backend/shared/debug/types'
+
 import type {
   BoardInfo,
   CommunicationPort,
@@ -302,7 +304,17 @@ export interface DevicePort {
    * frame (FC 0x46) carries the run/stop state and the mode-switch position — so
    * this costs no extra round trip and needs no second timer. `plcState` is
    * 0/1/2 (STOPPED/RUNNING/ERROR); `switchPosition` is 0/1 (STOP/RUN) and is
-   * absent on firmware predating the run/stop state machine.
+   * absent on firmware predating the run/stop state machine. `fault` and
+   * `retain` are absent on firmware that does not report them.
    */
-  onPlcState?(callback: (payload: { port: string; plcState?: number; switchPosition?: number }) => void): () => void
+  onPlcState?(callback: (payload: DevicePlcStatePayload) => void): () => void
+}
+
+/** One status read of a held device link (FC 0x46). */
+export type DevicePlcStatePayload = {
+  port: string
+  plcState?: number
+  switchPosition?: number
+  fault?: RuntimeFault
+  retain?: RetainHealth
 }

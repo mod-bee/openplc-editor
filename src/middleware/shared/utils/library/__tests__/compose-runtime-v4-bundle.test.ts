@@ -103,6 +103,14 @@ describe('composeRuntimeV4Bundle', () => {
     )
   })
 
+  it("adds OPENPLC_OUTPUTS_ON_STOP 1 to defines.h for 'hold', the firmware's line", () => {
+    const hold = composeRuntimeV4Bundle({ ...baseInput(), outputsOnStop: 'hold' })
+    expect(hold['defines.h']).toContain('#define PROGRAM_MD5 "deadbeefdeadbeefdeadbeefdeadbeef"\n')
+    expect(hold['defines.h']).toContain('#define OPENPLC_OUTPUTS_ON_STOP 1\n')
+    const off = composeRuntimeV4Bundle({ ...baseInput(), outputsOnStop: 'off' })
+    expect(off['defines.h']).toBe(composeRuntimeV4Bundle(baseInput())['defines.h'])
+  })
+
   it('emits an empty c_blocks.h stub when no C/C++ POUs', () => {
     const files = composeRuntimeV4Bundle(baseInput())
     expect(files['c_blocks.h']).toBe('// Empty file\n')

@@ -464,6 +464,20 @@ describe('generateDefinesContent — Arduino library toggles', () => {
   })
 })
 
+describe('generateDefinesContent — outputs on STOP / error', () => {
+  it("emits OPENPLC_OUTPUTS_ON_STOP 1 for 'hold'", () => {
+    expect(generateDefinesContent({ ...EMPTY_INPUTS, outputsOnStop: 'hold' })).toContain(
+      '#define OPENPLC_OUTPUTS_ON_STOP 1\n',
+    )
+  })
+
+  it("emits nothing for 'off' or when unset, so the default build is unchanged", () => {
+    const before = generateDefinesContent({ ...EMPTY_INPUTS })
+    expect(before).not.toContain('OPENPLC_OUTPUTS_ON_STOP')
+    expect(generateDefinesContent({ ...EMPTY_INPUTS, outputsOnStop: 'off' })).toBe(before)
+  })
+})
+
 describe('generateDefinesContent — retain blob size', () => {
   it('emits OPLC_RETAIN_BLOB_SIZE when the program retains something', () => {
     const out = generateDefinesContent({ ...EMPTY_INPUTS, retainBlobSize: 148 })

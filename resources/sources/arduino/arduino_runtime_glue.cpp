@@ -17,6 +17,10 @@
 #include "arduino_runtime_glue.h"
 #include "openplc.h"
 #include "generated.hpp"
+#if STRUCPP_HAS_EXCEPTIONS
+#include <stdexcept>
+#include "iec_pointer.hpp"   // strucpp::NullReferenceException
+#endif
 #include "debug_dispatch.hpp"
 #include "iec_retain.hpp"
 #include "openplc_retain.h"
@@ -94,8 +98,29 @@ static void global_unlock(int32_t g)
 // address). Default behaviour: halt. A VPP HAL may provide a STRONG override
 // to signal the fault its own way — blink a status LED, sound an alarm,
 // reboot, etc. Kept free of <Arduino.h> so this TU stays macro-clean.
-__attribute__((weak)) void strucpp::iec_runtime_fault(strucpp::IecFault /*reason*/,
+// A runtime error ends the task it happens in, as in runtime v4: that task's
+// programs are not run again until the next STOP -> RUN, its outputs keep their
+// last values, and the other tasks keep running. With exceptions the throw is
+// caught around each program (RUN_PROGRAM); without, this hook jumps back there.
+// A VPP may still supply a strong definition.
+#if !STRUCPP_HAS_EXCEPTIONS
+#include <setjmp.h>
+static jmp_buf s_fault_jmp;
+static bool    s_fault_armed  = false;
+static uint8_t s_fault_reason = 0;
+#endif
+
+__attribute__((weak)) void strucpp::iec_runtime_fault(strucpp::IecFault reason,
                                                        const char* /*context*/) noexcept {
+#if !STRUCPP_HAS_EXCEPTIONS
+    if (s_fault_armed) {
+        s_fault_armed  = false;
+        s_fault_reason = (uint8_t)reason;
+        longjmp(s_fault_jmp, 1);
+    }
+#else
+    (void)reason;
+#endif
     for (;;) {
     }
 }
@@ -108,6 +133,10 @@ strucpp::Configuration_CONFIG0 g_config;
 static strucpp::ProgramBase** all_programs = nullptr;
 static uint32_t*               task_divisors  = nullptr;
 static size_t                  total_programs = 0;
+// The task each program of all_programs belongs to (configuration order), and
+// the tasks a runtime error has ended (bit per task; cleared on STOP -> RUN).
+static uint8_t*                program_task   = nullptr;
+static uint32_t                ended_tasks    = 0;
 
 unsigned long long base_tick_ns = 20000000ULL;
 uint32_t           scan_counter = 0;
@@ -125,6 +154,55 @@ static uint8_t last_switch     = PLC_SWITCH_RUN;
 static bool    software_stop   = false;
 // A cold restart was asked for (runtime_request_cold_restart) and not yet done.
 static bool    cold_restart_pending = false;
+
+// The first fault since the last STOP -> RUN (arduino_runtime_glue.h). Written
+// by the dispatcher and service A, read by the debugger: each field is atomic,
+// and a reader may see one update half done, which only a status display sees.
+static runtime_fault_t s_fault = {RUNTIME_FAULT_NONE, RUNTIME_FAULT_NO_TASK, 0, 0, 0};
+// ERROR came from a fault stop (RUN may leave it, as in v4), or the board is in
+// safe mode (no program runs until a RUN request restarts it).
+static bool s_fault_stop = false;
+static bool s_safe_mode  = false;
+
+extern "C" void runtime_get_fault(runtime_fault_t* out)
+{
+    if (!out) return;
+#if OPENPLC_RTOS
+    out->code      = __atomic_load_n(&s_fault.code, __ATOMIC_ACQUIRE);
+    out->task      = __atomic_load_n(&s_fault.task, __ATOMIC_RELAXED);
+    out->safe_mode = __atomic_load_n(&s_fault.safe_mode, __ATOMIC_RELAXED);
+    out->count     = __atomic_load_n(&s_fault.count, __ATOMIC_RELAXED);
+    out->detail    = __atomic_load_n(&s_fault.detail, __ATOMIC_RELAXED);
+#else
+    *out = s_fault;   // the loop build records none
+#endif
+}
+
+#if OPENPLC_RTOS
+// Keeps the first fault since the last STOP -> RUN and counts every one.
+static void fault_record(uint8_t code, uint8_t task, uint32_t detail, bool safe)
+{
+    if (__atomic_load_n(&s_fault.code, __ATOMIC_ACQUIRE) == RUNTIME_FAULT_NONE) {
+        __atomic_store_n(&s_fault.task, task, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_fault.detail, detail, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_fault.safe_mode, (uint8_t)safe, __ATOMIC_RELAXED);
+        __atomic_store_n(&s_fault.code, code, __ATOMIC_RELEASE);
+    }
+    const uint8_t n = __atomic_load_n(&s_fault.count, __ATOMIC_RELAXED);
+    if (n < 255) __atomic_store_n(&s_fault.count, (uint8_t)(n + 1), __ATOMIC_RELAXED);
+}
+
+// Cleared on STOP -> RUN; a set-up fault (ERROR) never reaches RUN, so it stays.
+static void fault_clear(void)
+{
+    __atomic_store_n(&s_fault.code, (uint8_t)RUNTIME_FAULT_NONE, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_fault.task, (uint8_t)RUNTIME_FAULT_NO_TASK, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_fault.safe_mode, (uint8_t)0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_fault.count, (uint8_t)0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_fault.detail, (uint32_t)0, __ATOMIC_RELAXED);
+    s_fault_stop = false;
+}
+#endif
 
 // Weak default: boards with no physical mode switch always read RUN, so the
 // gate collapses to "software request only" and the boot state is RUNNING --
@@ -198,6 +276,9 @@ extern "C" uint8_t runtime_request_plc_state(uint8_t desired_state)
 }
 
 static void runtime_reinit_program(bool restore = true);
+
+// Outputs on STOP and in ERROR (runtime_set_outputs_on_stop): held, or off.
+static bool s_hold_outputs = false;
 static void runtime_retain_store_initial_values();
 
 // A cold restart: IEC 61131-3 Figure 9 rule 4 (p.57) — every RETAIN and
@@ -367,17 +448,20 @@ void runtime_discover_tasks()
 
     all_programs   = new strucpp::ProgramBase*[prog_count];
     task_divisors  = new uint32_t[prog_count];
+    program_task   = new uint8_t[prog_count];
     total_programs = prog_count;
 
     size_t idx = 0;
+    uint8_t task_no = 0;
     for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
-        for (size_t t = 0; t < resources[r].task_count; ++t) {
+        for (size_t t = 0; t < resources[r].task_count; ++t, ++task_no) {
             auto&    task    = resources[r].tasks[t];
             uint64_t interval = task.interval_ns > 0 ? task.interval_ns : gcd_ns;
             uint32_t divisor  = (uint32_t)(interval / gcd_ns);
             for (size_t p = 0; p < task.program_count; ++p) {
                 all_programs[idx]  = task.programs[p];
                 task_divisors[idx] = divisor;
+                program_task[idx]  = task_no;
                 ++idx;
             }
         }
@@ -537,6 +621,13 @@ static uint8_t *retain_buffer     = nullptr;
 static uint16_t retain_capacity   = 0;
 static uint16_t retain_blob_len   = 0;   // 0 = nothing retained, or unusable
 static bool     retain_available  = false;
+// The store wants the values about once a second, packed in the background,
+// rather than every scan frame (openplc_retain_mode(), asked once at init).
+static bool     retain_periodic   = false;
+// What the debugger reports about retention (RUNTIME_RETAIN_*), and the blob
+// size this program needs.
+static uint8_t  retain_status     = RUNTIME_RETAIN_NONE;
+static uint32_t retain_needed     = 0;
 
 // This program's identity, handed to the driver on every read for a driver
 // that records it (the layout check decides whether stored values fit; see
@@ -546,8 +637,14 @@ static bool     retain_available  = false;
 // path (modbus_config.h), which this file is deliberately not on.
 static const char *retain_program_md5 = nullptr;
 
-// One packer at a time. In RTOS mode the dispatcher saves between scans
-// (runtime_rtos_retain_save) while a function block may ask for a save from
+#ifndef OPENPLC_RTOS_RETAIN_PERIOD_US
+// How often a PERIODIC store gets the retained values; the store still decides
+// when to commit (Persistent Storage period).
+#define OPENPLC_RTOS_RETAIN_PERIOD_US 1000000UL
+#endif
+
+// One packer at a time. In RTOS mode the background save (service A) or the
+// dispatcher's frame-end save packs while a function block may ask for a save from
 // inside its own scan (runtime_retain_flush_now) — both pack into the one
 // retain buffer and hand it to the one store. Innermost lock: taken after any
 // scan or image lock, never before one. Recursive, from the heap, created by
@@ -560,6 +657,18 @@ static plc_os_mutex_t s_retain_lock = nullptr;
 #else
 #  define RETAIN_LOCK()   ((void)0)
 #  define RETAIN_UNLOCK() ((void)0)
+#endif
+
+#if OPENPLC_RTOS
+// The background save (runtime_rtos_retain_service): its place in the pack,
+// and the program's layout, worked out once. Any other use of the buffer (a
+// restore, a STOP save, a save from a block) starts it over.
+static strucpp::retain::Packer2 retain_packer;
+static uint32_t retain_payload = 0;
+static uint32_t retain_trailer = 0;
+static inline void retain_packer_reset(void) { retain_packer.phase = strucpp::retain::Packer2::Idle; }
+#else
+static inline void retain_packer_reset(void) {}
 #endif
 
 static uint16_t retain_read_leaf(uint8_t arr, uint16_t elem, uint8_t* dest) {
@@ -624,6 +733,25 @@ static uint8_t retain_write_text(uint8_t arr, uint16_t elem, const uint8_t* src,
 #endif
 }
 
+// The store's answer to a write, as the debugger reports it.
+static void retain_note(openplc_retain_status_t rc)
+{
+    uint8_t st = RUNTIME_RETAIN_IO_ERROR;
+    switch (rc) {
+    case OPLC_RETAIN_OK:          st = RUNTIME_RETAIN_OK; break;
+    case OPLC_RETAIN_UNSUPPORTED: st = RUNTIME_RETAIN_NO_STORE; break;
+    case OPLC_RETAIN_TOO_LARGE:   st = RUNTIME_RETAIN_TOO_LARGE; break;
+    default:                      break;
+    }
+    retain_status = st;
+}
+
+extern "C" uint8_t runtime_retain_status(uint32_t* bytes)
+{
+    if (bytes) *bytes = retain_needed;
+    return retain_status;
+}
+
 // What the format-2 walk (iec_retain.hpp) borrows from this runtime.
 static const strucpp::retain::Host retain_host = {
     &strucpp::debug::handle_retain_leaf,
@@ -648,14 +776,19 @@ static strucpp::retain::Report retain_report = {};
 void runtime_retain_init(const char *program_md5, uint8_t *buffer, uint16_t capacity)
 {
     retain_available    = false;
+    retain_periodic     = false;
     retain_blob_len     = 0;
     retain_program_md5  = program_md5;
     retain_buffer       = buffer;
     retain_capacity     = buffer ? capacity : 0;
 
     const size_t needed = strucpp::retain::blob_size2(retain_host);
+    retain_needed = (uint32_t)needed;
+    retain_status = RUNTIME_RETAIN_NONE;
     if (needed == 0) return;           // the program retains nothing
-    // The store interface carries 16-bit lengths.
+    // The store interface carries 16-bit lengths. Too large is reported, never
+    // silent: the program then runs with every RETAIN variable NON_RETAIN.
+    retain_status = RUNTIME_RETAIN_TOO_LARGE;
     if (needed > strucpp::retain::BLOB_MAX) return;
     // The sketch sized the buffer from this same program, so this only fails
     // for firmware built without the editor's defines.h — where degrading to
@@ -664,6 +797,12 @@ void runtime_retain_init(const char *program_md5, uint8_t *buffer, uint16_t capa
 
     retain_blob_len  = (uint16_t)needed;
     retain_available = true;
+    retain_periodic  = openplc_retain_mode() == OPLC_RETAIN_MODE_PERIODIC;
+    retain_status    = RUNTIME_RETAIN_PENDING;
+#if OPENPLC_RTOS
+    // The layout is the program's, so the background save works it out once.
+    strucpp::retain::layout2(retain_host, &retain_payload, &retain_trailer);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -698,9 +837,11 @@ void runtime_retain_load()
 
     if (rc == OPLC_RETAIN_UNSUPPORTED) {
         retain_available = false;
+        retain_status = RUNTIME_RETAIN_NO_STORE;
         RETAIN_UNLOCK();
         return;
     }
+    retain_packer_reset();   // the buffer now holds the stored blob
 
 #if !defined(__AVR__)
     // Larger still than the buffer: a store that can say so reports the stored
@@ -760,9 +901,10 @@ static void runtime_retain_store_initial_values()
 {
     if (!retain_available) return;
     RETAIN_LOCK();
+    retain_packer_reset();   // this pack replaces a background one
     const size_t n = strucpp::retain::pack2(retain_buffer, retain_capacity, retain_host);
     if (n != 0) {
-        openplc_retain_write(retain_buffer, (uint16_t)n);
+        retain_note(openplc_retain_write(retain_buffer, (uint16_t)n));
         openplc_retain_flush();
     }
     RETAIN_UNLOCK();
@@ -774,25 +916,45 @@ static void runtime_retain_store_initial_values()
 }
 
 // ---------------------------------------------------------------------------
-// Save. Called once per scan cycle, unconditionally, WHILE RUNNING.
+// Save: pack the retained values and hand them to the store, now. The loop
+// build's cycle and the STOP transition call it.
 //
-// No dirty check and no rate limit here on purpose: whether these bytes are
-// worth committing, and how often, is the platform's decision, and it is the
-// only layer that knows what its storage costs. See openplc_retain.h.
-//
-// Running only, so the two runtimes agree: on the Linux daemon a STOP unloads
-// the program outright and there is no scan to save from, and a firmware that
-// kept writing an unchanging blob while the machine sat stopped would spend a
-// board's flash budget on nothing.
+// No dirty check here on purpose: whether these bytes are worth committing,
+// and when, is the platform's decision, and it is the only layer that knows
+// what its storage costs. See openplc_retain.h.
 // ---------------------------------------------------------------------------
 void runtime_retain_save()
 {
     if (!retain_available) return;
 
     RETAIN_LOCK();
+    retain_packer_reset();   // this pack replaces a background one
     const size_t n = strucpp::retain::pack2(retain_buffer, retain_capacity, retain_host);
-    if (n != 0) openplc_retain_write(retain_buffer, (uint16_t)n);
+    if (n != 0) retain_note(openplc_retain_write(retain_buffer, (uint16_t)n));
     RETAIN_UNLOCK();
+}
+
+// ---------------------------------------------------------------------------
+// The loop build's save, at the end of every cycle WHILE RUNNING: every cycle
+// for an EVERY_SCAN store, about once a second of IEC time for a PERIODIC one
+// (openplc_retain_mode()), as runtime v4 does.
+//
+// Running only, so the two runtimes agree: on the Linux daemon a STOP unloads
+// the program outright and there is no scan to save from, and a firmware that
+// kept writing an unchanging blob while the machine sat stopped would spend a
+// board's flash budget on nothing.
+// ---------------------------------------------------------------------------
+static uint64_t retain_since_ns = 0;
+
+static void runtime_retain_cycle()
+{
+    if (!retain_available) return;
+    if (retain_periodic) {
+        retain_since_ns += (uint64_t)base_tick_ns;
+        if (retain_since_ns < (uint64_t)OPENPLC_RTOS_RETAIN_PERIOD_US * 1000u) return;
+        retain_since_ns = 0;
+    }
+    runtime_retain_save();
 }
 
 // ---------------------------------------------------------------------------
@@ -836,14 +998,75 @@ extern "C" uint8_t runtime_retain_flush_now(void)
 {
     if (!retain_available) return OPLC_RETAIN_UNSUPPORTED;
     RETAIN_LOCK();
+    retain_packer_reset();   // this pack replaces a background one
     openplc_retain_status_t rc = OPLC_RETAIN_IO_ERROR;
     const size_t n = strucpp::retain::pack2(retain_buffer, retain_capacity, retain_host);
     if (n != 0) {
         rc = openplc_retain_write(retain_buffer, (uint16_t)n);
         if (rc == OPLC_RETAIN_OK) rc = openplc_retain_flush();
     }
+    retain_note(rc);
     RETAIN_UNLOCK();
     return static_cast<uint8_t>(rc);
+}
+
+// ---------------------------------------------------------------------------
+// Outputs on STOP and in ERROR (see arduino_runtime_glue.h).
+// ---------------------------------------------------------------------------
+extern "C" void runtime_set_outputs_on_stop(uint8_t mode) { s_hold_outputs = mode == RUNTIME_OUTPUTS_HOLD; }
+
+extern "C" bool runtime_outputs_held(void)
+{
+    return s_hold_outputs && __atomic_load_n(&plc_state, __ATOMIC_ACQUIRE) != PLC_STATE_RUNNING;
+}
+
+// ---------------------------------------------------------------------------
+// Ended tasks (runtime v4: a task ended by a runtime error stays ended until
+// the next start; the others keep running).
+// ---------------------------------------------------------------------------
+static bool task_ended(uint8_t task) { return task < 32 && (ended_tasks & (1u << task)) != 0; }
+
+static void end_task(uint8_t task, uint8_t reason)
+{
+    if (task < 32) ended_tasks |= 1u << task;
+#if OPENPLC_RTOS
+    runtime_rtos_task_ended(task, reason);
+#else
+    if (s_fault.code == RUNTIME_FAULT_NONE) {
+        s_fault.code   = RUNTIME_FAULT_TASK_ENDED;
+        s_fault.task   = task;
+        s_fault.detail = reason;
+    }
+    if (s_fault.count < 255) ++s_fault.count;
+#endif
+}
+
+// Run one program of `task`; a runtime error in it ends the task. Returns
+// false when it did.
+static bool run_program(strucpp::ProgramBase* program, uint8_t task)
+{
+#if STRUCPP_HAS_EXCEPTIONS
+    try {
+        program->run();
+        return true;
+    } catch (const std::out_of_range&) {
+        end_task(task, RUNTIME_TASK_ENDED_ARRAY_BOUNDS);
+    } catch (const strucpp::NullReferenceException&) {
+        end_task(task, RUNTIME_TASK_ENDED_NULL_REFERENCE);
+    } catch (...) {
+        end_task(task, RUNTIME_TASK_ENDED_OTHER);
+    }
+    return false;
+#else
+    if (setjmp(s_fault_jmp) == 0) {
+        s_fault_armed = true;
+        program->run();
+        s_fault_armed = false;
+        return true;
+    }
+    end_task(task, s_fault_reason);
+    return false;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -901,9 +1124,15 @@ void runtime_plc_cycle()
     // runtime_reinit_program() re-runs every declared initialiser, so a flush
     // after it would ask the driver to commit the initial values over the ones
     // the program actually stopped with.
+    // A PERIODIC store's values may be a second old: it gets the ones the
+    // program stopped with first (an EVERY_SCAN store got them last cycle).
+    // With the outputs held, the re-initialisation waits for the next start:
+    // the variables, and so the outputs they are bound to, keep their values.
     if (new_state == PLC_STATE_STOPPED && plc_state != PLC_STATE_STOPPED) {
+        if (retain_periodic) runtime_retain_save();
+        retain_since_ns = 0;
         runtime_retain_flush();
-        runtime_reinit_program();
+        if (!s_hold_outputs) runtime_reinit_program();
     }
 
     // Entering RUN restores the retained values, matching where the Linux
@@ -911,7 +1140,15 @@ void runtime_plc_cycle()
     // normally changes them while stopped, so this is usually a no-op.
     // Idempotent, so calling it on every RUN edge is safe.
     if (new_state == PLC_STATE_RUNNING && plc_state != PLC_STATE_RUNNING) {
-        runtime_retain_load();
+        if (s_hold_outputs) {
+            runtime_reinit_program();   // the cold stop, deferred; restores too
+        } else {
+            runtime_retain_load();
+        }
+        ended_tasks = 0;   // a start runs every task again (v4 recreates them)
+#if !OPENPLC_RTOS
+        s_fault = runtime_fault_t{RUNTIME_FAULT_NONE, RUNTIME_FAULT_NO_TASK, 0, 0, 0};
+#endif
     }
 
     plc_state = new_state;
@@ -923,14 +1160,16 @@ void runtime_plc_cycle()
 
     if (plc_state == PLC_STATE_RUNNING) {
         for (size_t i = 0; i < total_programs; ++i) {
+            if (task_ended(program_task[i])) continue;
             if (task_divisors[i] == 0 || (scan_counter % task_divisors[i]) == 0) {
-                all_programs[i]->run();
+                run_program(all_programs[i], program_task[i]);
             }
         }
         ++scan_counter;
-    } else {
+    } else if (!s_hold_outputs) {
         // Re-zero every stopped cycle, not just on the transition: a Modbus
         // client may have written coils into the image since the last cycle.
+        // (Held outputs take no protocol write while stopped.)
         runtime_zero_output_image();
     }
 
@@ -948,19 +1187,18 @@ void runtime_plc_cycle()
 #endif
     }
 
-    // 5. Hand the retained values to the platform. Every cycle while RUNNING —
-    //    a value that changed in the last scan before power loss is exactly the
-    //    one worth keeping. Whether this is actually committed to storage now is
-    //    the driver's call; the default is a no-op.
+    // 5. Hand the retained values to the platform while RUNNING: every cycle,
+    //    or about once a second for a PERIODIC store (runtime_retain_cycle).
+    //    Whether this is actually committed to storage now is the driver's call.
     //
     //    Not while stopped: the Linux daemon unloads the program on a STOP and
     //    has no scan to save from, so saving here would be the one place the two
     //    runtimes disagreed — and it would spend a board's flash budget
     //    rewriting an unchanging blob for as long as the machine sits idle. The
-    //    values the program stopped with are already stored by the last RUNNING
-    //    cycle, and the flush on the STOP transition commits them.
+    //    values the program stopped with are handed over and committed on the
+    //    STOP transition.
     if (plc_state == PLC_STATE_RUNNING) {
-        runtime_retain_save();
+        runtime_retain_cycle();
     }
 }
 
@@ -1004,10 +1242,47 @@ extern "C" void runtime_rtos_init(void)
 
 // RTOS mode could not be set up (a task or a lock could not be created): the
 // PLC stays in ERROR, releases no task and holds its outputs off, rather than
-// running with a task missing.
-extern "C" void runtime_rtos_fault(void)
+// running with a task missing. The reason is kept for the debugger.
+extern "C" void runtime_rtos_fail(uint8_t code, uint8_t task)
 {
+    fault_record(code, task, 0, false);
     __atomic_store_n(&plc_state, (uint8_t)PLC_STATE_ERROR, __ATOMIC_RELEASE);
+}
+
+extern "C" void runtime_rtos_fault(void) { runtime_rtos_fail(RUNTIME_FAULT_SETUP, RUNTIME_FAULT_NO_TASK); }
+
+// The dispatcher stops the PLC for a fault (v4: a stuck task): the stop latch is
+// set, as a STOP request would, so it stays stopped, and the stop lands in ERROR.
+extern "C" void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms)
+{
+    fault_record(code, task, ms, false);
+    s_fault_stop = true;
+    __atomic_store_n(&software_stop, true, __ATOMIC_RELEASE);
+}
+
+// A runtime error ended a task (v4: that task ends, the others keep running).
+extern "C" void runtime_rtos_task_ended(uint32_t w, uint8_t reason)
+{
+    fault_record(RUNTIME_FAULT_TASK_ENDED, (uint8_t)(w < RUNTIME_FAULT_NO_TASK ? w : RUNTIME_FAULT_NO_TASK - 1),
+                 reason, false);
+}
+
+// Safe mode (v4: the restart after a watchdog exit): ERROR, no program runs,
+// outputs off, the reason kept; a RUN request restarts the board normally.
+extern "C" void runtime_rtos_safe_mode(uint8_t code, uint8_t task, uint32_t ms)
+{
+    fault_record(code, task, ms, true);
+    s_safe_mode = true;
+    // Latched as a STOP request would be: only an explicit start leaves safe mode.
+    __atomic_store_n(&software_stop, true, __ATOMIC_RELEASE);
+    __atomic_store_n(&plc_state, (uint8_t)PLC_STATE_ERROR, __ATOMIC_RELEASE);
+}
+
+extern "C" bool runtime_rtos_in_safe_mode(void) { return s_safe_mode; }
+
+extern "C" bool runtime_rtos_fault_stopped(void)
+{
+    return s_fault_stop && __atomic_load_n(&plc_state, __ATOMIC_ACQUIRE) == PLC_STATE_ERROR;
 }
 
 extern "C" void runtime_rtos_image_lock(void)   { plc_os_mutex_lock(s_image_lock); }
@@ -1023,6 +1298,7 @@ struct RtosWorker {
     const uint32_t*        program_divisors;  // per program, in base ticks; null = every release
     uint64_t*              program_next;      // per program, the grid tick it is next due at
     size_t                 program_count;
+    const uint8_t*         program_task;      // per program, its task; null: the worker is one task
     plc_os_mutex_t         scan_lock;
     uint32_t               scan_started_us;   // low 32 bits of plc_os_now_us(): no 64-bit atomics on Cortex-M
     bool                   scan_active;
@@ -1624,6 +1900,7 @@ extern "C" void runtime_rtos_prepare_workers(void)
     s_workers[0].program_divisors = divisors;
     s_workers[0].program_next     = new uint64_t[total_programs > 0 ? total_programs : 1]();
     s_workers[0].program_count    = total_programs;
+    s_workers[0].program_task     = program_task;
 #endif
     for (uint32_t w = 0; w < s_worker_count; ++w) {
         s_workers[w].scan_lock       = plc_os_mutex_create();
@@ -1677,8 +1954,9 @@ extern "C" void runtime_rtos_frame_output(bool all_idle, bool stopping)
         if (all_idle) runtime_rtos_copy_out(RTOS_NO_OWNER);
     }
     runtime_rtos_pin_forced();
-    // Stopped, or stopping while tasks finish their last scan: outputs off now.
-    if (!running || stopping) runtime_zero_output_image();
+    // Stopped, or stopping while tasks finish their last scan: outputs off now,
+    // unless they are held at their last values.
+    if ((!running || stopping) && !s_hold_outputs) runtime_zero_output_image();
     updateOutputBuffers();
     plc_os_mutex_unlock(s_image_lock);
 }
@@ -1720,8 +1998,11 @@ extern "C" void runtime_rtos_enter_stop(void)
     runtime_retain_save();
     runtime_retain_flush();
     plc_os_mutex_lock(s_image_lock);   // re-initialisation rewrites the cells too
-    runtime_reinit_program();
-    __atomic_store_n(&plc_state, (uint8_t)PLC_STATE_STOPPED, __ATOMIC_RELEASE);
+    // Held outputs: the cells keep the last values, and the re-initialisation
+    // waits for the next start (runtime_rtos_enter_run).
+    if (!s_hold_outputs) runtime_reinit_program();
+    // A fault stop lands in ERROR (v4); a STOP request in STOPPED.
+    __atomic_store_n(&plc_state, (uint8_t)(s_fault_stop ? PLC_STATE_ERROR : PLC_STATE_STOPPED), __ATOMIC_RELEASE);
     plc_os_mutex_unlock(s_image_lock);
     unlock_all_workers();
 }
@@ -1748,6 +2029,8 @@ extern "C" void runtime_rtos_cold_restart(uint64_t run_tick)
     lock_all_workers();
     plc_os_mutex_lock(s_image_lock);   // re-initialisation rewrites the cells too
     __atomic_store_n(&cold_restart_pending, false, __ATOMIC_RELEASE);
+    fault_clear();
+    ended_tasks = 0;
     runtime_cold_restart();
     runtime_rtos_seed_image();
     for (uint32_t w = 0; w < s_worker_count; ++w) {
@@ -1765,8 +2048,14 @@ extern "C" void runtime_rtos_cold_restart(uint64_t run_tick)
 extern "C" void runtime_rtos_enter_run(uint64_t run_tick)
 {
     lock_all_workers();
+    fault_clear();
+    ended_tasks = 0;   // a start runs every task again (v4 recreates them)
     plc_os_mutex_lock(s_image_lock);   // a restore seeds the cells
-    runtime_retain_load();
+    if (s_hold_outputs) {
+        runtime_reinit_program();   // the cold stop, deferred; restores too
+    } else {
+        runtime_retain_load();
+    }
     for (uint32_t w = 0; w < s_worker_count; ++w) {
         if (s_workers[w].program_next) {
             for (size_t p = 0; p < s_workers[w].program_count; ++p) s_workers[w].program_next[p] = run_tick;
@@ -1794,24 +2083,117 @@ extern "C" void runtime_rtos_stopped_copy_in(void)
     unlock_all_workers();
 }
 
-// Retained values go to the platform between the owners' scans. A task stalled
-// in a block is packed as it stands, so it cannot stop retain for good. False,
-// skipping this frame, when a task is mid-scan (not stalled) or a service holds
-// its lock.
-extern "C" bool runtime_rtos_retain_save(void)
+// ---- The retain saves: background (service A) or at a frame's end -----------
+
+#ifndef OPENPLC_RTOS_RETAIN_STEP_LEAVES
+// Leaves packed per service pass: bounds how long one pass holds the service.
+#define OPENPLC_RTOS_RETAIN_STEP_LEAVES 32
+#endif
+
+// A value is taken once two reads in a row agree, so one a task is writing on
+// the other core is never stored half old, half new.
+#define RETAIN_LIVE_TRIES 8
+
+static uint16_t retain_read_live(uint8_t arr, uint16_t elem, uint8_t* dest)
 {
-    uint32_t locked = 0;
-    for (uint32_t w = 0; w < s_worker_count; ++w) {
-        if (plc_os_mutex_lock_for(s_workers[w].scan_lock, 0)) {
-            locked |= 1u << w;
-        } else if (!worker_stalled(w)) {
-            runtime_rtos_unlock_workers(locked);
-            return false;
+    uint8_t again[8];
+    uint16_t n = 0;
+    for (int t = 0; t < RETAIN_LIVE_TRIES; ++t) {
+        n = strucpp::debug::handle_read(arr, elem, dest);
+        if (n == 0 || n > sizeof again) return n;
+        if (strucpp::debug::handle_read(arr, elem, again) == n && memcmp(dest, again, n) == 0) return n;
+    }
+    return n;
+}
+
+// A string: read in place twice, compared by checksum (no second buffer).
+static uint16_t retain_read_text_live(uint8_t arr, uint16_t elem, uint8_t* dest, uint16_t cap)
+{
+    uint16_t n = 0;
+    for (int t = 0; t < RETAIN_LIVE_TRIES; ++t) {
+        n = strucpp::debug::handle_read_text(arr, elem, dest, cap);
+        const uint32_t first = strucpp::retain::crc32(dest, n);
+        const uint16_t m = strucpp::debug::handle_read_text(arr, elem, dest, cap);
+        if (m == n && strucpp::retain::crc32(dest, m) == first) return n;
+        n = m;
+    }
+    return n;
+}
+
+// Reads take no lock a PLC task uses, so no task ever waits for retain.
+static const strucpp::retain::Host retain_host_live = {
+    &strucpp::debug::handle_retain_leaf,
+    retain_read_live,
+    retain_write_leaf,
+    retain_read_text_live,
+    retain_write_text,
+    retain_size_leaf,
+};
+
+static int64_t  s_retain_due_us      = 0;   // service A's own
+static uint32_t s_retain_late_max_us = 0;   // how far past its due time a save completed
+
+extern "C" uint32_t runtime_rtos_retain_late_max_us(bool reset)
+{
+    const uint32_t v = __atomic_load_n(&s_retain_late_max_us, __ATOMIC_RELAXED);
+    if (reset) __atomic_store_n(&s_retain_late_max_us, 0u, __ATOMIC_RELAXED);
+    return v;
+}
+
+// One bounded step. While stopped nothing is packed: the STOP transition saved
+// the values the program stopped with (runtime_rtos_enter_stop).
+extern "C" void runtime_rtos_retain_service(void)
+{
+    using strucpp::retain::Packer2;
+    if (!retain_available || !retain_periodic) return;
+    const int64_t now = plc_os_now_us();
+    if (s_retain_due_us == 0) s_retain_due_us = now;
+    if (__atomic_load_n(&plc_state, __ATOMIC_ACQUIRE) != PLC_STATE_RUNNING) {
+        s_retain_due_us = now;   // the first save after RUN is not counted late
+        return;
+    }
+    RETAIN_LOCK();
+    if (retain_packer.phase == Packer2::Idle || retain_packer.phase == Packer2::Done ||
+        retain_packer.phase == Packer2::Failed) {
+        if (now < s_retain_due_us ||
+            !strucpp::retain::pack2_begin(retain_packer, retain_buffer, retain_capacity, retain_payload,
+                                          retain_trailer)) {
+            RETAIN_UNLOCK();
+            return;
         }
     }
-    runtime_retain_save();
-    runtime_rtos_unlock_workers(locked);
-    return true;
+    const Packer2::Phase phase =
+        strucpp::retain::pack2_step(retain_packer, retain_host_live, OPENPLC_RTOS_RETAIN_STEP_LEAVES);
+    if (phase == Packer2::Done) {
+        retain_note(openplc_retain_write(retain_buffer, (uint16_t)retain_packer.size()));
+        const int64_t done = plc_os_now_us();
+        const int64_t late = done - s_retain_due_us;
+        const uint32_t late_us = late <= 0 ? 0u : (late > (int64_t)UINT32_MAX ? UINT32_MAX : (uint32_t)late);
+        if (late_us > __atomic_load_n(&s_retain_late_max_us, __ATOMIC_RELAXED))
+            __atomic_store_n(&s_retain_late_max_us, late_us, __ATOMIC_RELAXED);
+        s_retain_due_us = done + (int64_t)OPENPLC_RTOS_RETAIN_PERIOD_US;
+        retain_packer_reset();
+    } else if (phase == Packer2::Failed) {
+        // The layout no longer matches the program: a firmware fault, reported.
+        retain_status = RUNTIME_RETAIN_IO_ERROR;
+        s_retain_due_us = plc_os_now_us() + (int64_t)OPENPLC_RTOS_RETAIN_PERIOD_US;
+        retain_packer_reset();
+    }
+    RETAIN_UNLOCK();
+}
+
+// An EVERY_SCAN store: the values at the end of a frame, with every task idle,
+// from the dispatcher (runtime v4 saves at the same point). Read live all the
+// same, as a service may write a variable meanwhile.
+extern "C" void runtime_rtos_retain_frame(void)
+{
+    if (!retain_available || retain_periodic) return;
+    if (__atomic_load_n(&plc_state, __ATOMIC_ACQUIRE) != PLC_STATE_RUNNING) return;
+    RETAIN_LOCK();
+    retain_packer_reset();
+    const size_t n = strucpp::retain::pack2(retain_buffer, retain_capacity, retain_host_live);
+    if (n != 0) retain_note(openplc_retain_write(retain_buffer, (uint16_t)n));
+    RETAIN_UNLOCK();
 }
 
 // ---- A worker's cycle -----------------------------------------------------------
@@ -1819,7 +2201,7 @@ extern "C" bool runtime_rtos_retain_save(void)
 // One release of worker `w`. `run_tick` is the dispatcher's count of base ticks
 // run so far, skipped releases included: IEC time is that grid time, so
 // TON/TOF keep wall-clock time across an overrun.
-extern "C" void runtime_rtos_worker_cycle(uint32_t w, uint64_t run_tick)
+extern "C" bool runtime_rtos_worker_cycle(uint32_t w, uint64_t run_tick)
 {
     RtosWorker& k = s_workers[w];
     plc_os_mutex_lock(k.scan_lock);
@@ -1837,7 +2219,13 @@ extern "C" void runtime_rtos_worker_cycle(uint32_t w, uint64_t run_tick)
 #else
     strucpp::__CURRENT_TIME_NS = (int64_t)run_tick * (int64_t)base_tick_ns;
 #endif
+    bool alive = true;
     for (size_t i = 0; i < k.program_count; ++i) {
+        const uint8_t task = k.program_task ? k.program_task[i] : (uint8_t)w;
+        if (task_ended(task)) {
+            alive = alive && k.program_task != nullptr;
+            continue;
+        }
         const uint32_t d = k.program_divisors ? k.program_divisors[i] : 1;
         if (d > 1) {
             // Due at its grid point, or at the latest one reached when releases
@@ -1846,7 +2234,7 @@ extern "C" void runtime_rtos_worker_cycle(uint32_t w, uint64_t run_tick)
             if (run_tick < next) continue;
             next = run_tick - (run_tick - next) % d + d;
         }
-        k.programs[i]->run();
+        if (!run_program(k.programs[i], task) && !k.program_task) alive = false;
     }
 
     plc_os_mutex_lock(s_image_lock);
@@ -1855,6 +2243,7 @@ extern "C" void runtime_rtos_worker_cycle(uint32_t w, uint64_t run_tick)
 
     __atomic_store_n(&k.scan_active, false, __ATOMIC_RELEASE);
     plc_os_mutex_unlock(k.scan_lock);
+    return alive;
 }
 #endif // OPENPLC_RTOS
 

@@ -352,7 +352,12 @@ void debugGetMd5(void * /*endianness*/)
 }
 
 // PDU request:  [FC]
-// PDU response: [FC, STATUS, running:u8, tick:u32 BE, uptime_ms:u32 BE]
+// PDU response: [FC, STATUS, running:u8, tick:u32 BE, uptime_ms:u32 BE,
+//                switch:u8, fault:u8, fault_task:u8, safe_mode:u8,
+//                fault_count:u8, fault_detail:u32 BE, retain:u8, retain_bytes:u32 BE]
+//
+// Everything after uptime_ms was appended over time; a client reads what is
+// there and ignores the rest (see arduino_runtime_glue.h for the codes).
 //
 // Lightweight liveness/diagnostic probe that does not require a full debug
 // session. `running` is always 1 on baremetal (the PLC scan is unconditional);
@@ -382,7 +387,27 @@ void debugGetStatus()
     // Boards with no physical switch report RUN, so a caller needs no "absent"
     // case; an older editor that stops reading at byte 11 simply ignores it.
     mb_frame[12] = runtime_get_switch_position();
-    mb_frame_len = 13;
+    // The first fault since RUN, as runtime v4 has them: a stuck task that
+    // stopped the PLC, a task a runtime error ended, a safe-mode restart, or why
+    // the PLC is in ERROR. A fault is never shown as plain "running".
+    runtime_fault_t fault;
+    runtime_get_fault(&fault);
+    mb_frame[13] = fault.code;
+    mb_frame[14] = fault.task;
+    mb_frame[15] = fault.safe_mode;
+    mb_frame[16] = fault.count;
+    mb_frame[17] = (uint8_t)((fault.detail >> 24) & 0xFF);
+    mb_frame[18] = (uint8_t)((fault.detail >> 16) & 0xFF);
+    mb_frame[19] = (uint8_t)((fault.detail >> 8) & 0xFF);
+    mb_frame[20] = (uint8_t)(fault.detail & 0xFF);
+    // Retention: whether the values are being kept, and the blob size needed.
+    uint32_t retain_bytes = 0;
+    mb_frame[21] = runtime_retain_status(&retain_bytes);
+    mb_frame[22] = (uint8_t)((retain_bytes >> 24) & 0xFF);
+    mb_frame[23] = (uint8_t)((retain_bytes >> 16) & 0xFF);
+    mb_frame[24] = (uint8_t)((retain_bytes >> 8) & 0xFF);
+    mb_frame[25] = (uint8_t)(retain_bytes & 0xFF);
+    mb_frame_len = 26;
 }
 
 // PDU request:  [FC][state:u8]        (0 = STOP, 1 = RUN, 3 = COLD RESTART)
