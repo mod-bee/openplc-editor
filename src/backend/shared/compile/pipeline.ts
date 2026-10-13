@@ -45,6 +45,7 @@ import {
   rtosRamNeed,
   rtosRamProblem,
   rtosScheduleProblem,
+  taskCoreProblem,
   withFqbnOptions,
 } from '../../../middleware/shared/utils/rtos'
 import { resolveTargetCapabilities } from '../../../middleware/shared/utils/target-capabilities'
@@ -604,10 +605,28 @@ async function runCompilePipelineInner(
   // before the long part of the build. On the default it falls back to the
   // single loop further down, with a warning.
   const rtosSettings = readRtosSettings(vendorScreenData)
-  if (targetCapabilities.rtos && rtosSettings.enabled && rtosSettings.chosen) {
+  // A task given a core needs RTOS mode as much as a switch set by hand: the
+  // single loop cannot place it, so nothing falls back to the loop either.
+  const rtosRequired =
+    rtosSettings.chosen || processedData.configuration.resource.tasks.some((task) => task.core !== undefined)
+  if (targetCapabilities.rtos && rtosSettings.enabled && rtosRequired) {
     const problem = rtosScheduleProblem(processedData.configuration.resource.tasks, targetCapabilities.rtos)
-    if (problem) return bailError(emit, 'validate', `${problem} RTOS mode can be switched off in Board Settings.`)
+    if (problem) {
+      const way = rtosSettings.chosen
+        ? 'RTOS mode can be switched off in Board Settings.'
+        : 'A task set to a core needs RTOS mode: set it to Auto to build the single scan loop.'
+      return bailError(emit, 'validate', `${problem} ${way}`)
+    }
   }
+
+  // A task core the target cannot give the task (a core it lacks, or any core
+  // on a firmware board with RTOS mode off) fails the build: the user chose it.
+  const coreProblem = taskCoreProblem(
+    processedData.configuration.resource.tasks,
+    targetCapabilities,
+    Boolean(targetCapabilities.rtos && rtosSettings.enabled),
+  )
+  if (coreProblem) return bailError(emit, 'validate', coreProblem)
 
   // ---------------------------------------------------------------------
   // Step 0b: Reject blank FBD variable blocks before the ST transpile.
@@ -1325,7 +1344,7 @@ async function runCompilePipelineInner(
       )
       if (!rtosLibrary.ok) {
         libraryProblem = `RTOS mode on this board needs the ${rtosProfile.library} library, which could not be installed (no internet connection, or the library index is out of reach).`
-        if (rtosSettings.chosen) {
+        if (rtosRequired) {
           return bailError(
             emit,
             'lib-install',
@@ -1475,7 +1494,7 @@ async function runCompilePipelineInner(
   // On the default, an RTOS build that fails for a reason of RTOS mode's own is
   // built again as the single loop. Until that is known, the attempt's error
   // lines are held back: errors if they stand, warnings if the fallback replaces them.
-  const mayFallBack = inRtosMode && !rtosSettings.chosen
+  const mayFallBack = inRtosMode && !rtosRequired
   let rtosOutgrewBoard = false
   let freeRamBytes: number | undefined
   const heldErrors: string[] = []

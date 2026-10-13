@@ -184,6 +184,9 @@ const PLCTaskSchema = z.object({
   triggering: z.enum(['Cyclic', 'Interrupt']),
   interval: z.string(), // TODO: Must have a regex validation for this. Probably a new modal must be created to handle this.
   priority: z.number(), // TODO: implement this validation. This must be a positive integer from 0 to 100
+  /** CPU core the task runs on; absent = Auto (the runtime places it). A vendor
+   *  extension: the build writes it as an IEC §6.2 pragma, `{CORE := n}`. */
+  core: z.number().int().min(0).max(63).optional(),
 })
 
 type PLCTask = z.infer<typeof PLCTaskSchema>

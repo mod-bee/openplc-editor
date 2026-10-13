@@ -729,9 +729,10 @@ export function parsePlcSetStateResponse(data: Uint8Array): PlcControlResult {
 //
 //   request:  [FC=0x4e] [flags: U8] [firstTask: U8]
 //             (flags bit 0: start a new window once the last task has been read)
-//   response: [FC=0x4e] [status] [version=2: U8]
+//   response: [FC=0x4e] [status] [version=2|3: U8]
 //             [taskTotal: U8] [firstTask: U8] [taskCount: U8]
 //             then per task [nameLen: U8] [name...] [12 x U32BE]
+//             (version 3:) [core: U8] [coreWanted: U8], 0xFF = Auto
 //             [serviceCount: U8] then per service [3 x U32BE]
 //             [dispatcherStack, heapFree, heapMinFree, baseTickUs,
 //              retainLateMaxUs: 5 x U32BE]
@@ -741,8 +742,12 @@ export function parsePlcSetStateResponse(data: Uint8Array): PlcControlResult {
 // ---------------------------------------------------------------------------
 
 const MODBUS_EXCEPTION_ILLEGAL_FUNCTION = 0x01
-const TASK_STATS_VERSION = 2
+/** Version 2, and version 3 with each task's core (firmware since the Core setting). */
+const TASK_STATS_VERSIONS = [2, 3]
 const TASK_STATS_TASK_U32S = 12
+/** Bytes after a task's values: none in version 2, its core and the one set in 3. */
+const taskStatsCoreBytes = (version: number): number => (version >= 3 ? 2 : 0)
+const CORE_AUTO = 0xff
 const TASK_STATS_TAIL_U32S = 5
 /** The most tasks a board has (OPENPLC_RTOS_MAX_WORKERS), so the most pages. */
 const TASK_STATS_MAX_PAGES = 32
@@ -764,10 +769,11 @@ export function taskStatsPduLength(pdu: Uint8Array): number | null {
   if (pdu.length < 2) return null
   if (readU8(pdu, 0) & 0x80 || readU8(pdu, 1) !== (ModbusDebugResponse.SUCCESS as number)) return 2
   if (pdu.length < 6) return null
+  const coreBytes = taskStatsCoreBytes(readU8(pdu, 2))
   let length = 6
   for (let task = 0; task < readU8(pdu, 5); task++) {
     if (pdu.length <= length) return null
-    length += 1 + readU8(pdu, length) + TASK_STATS_TASK_U32S * 4
+    length += 1 + readU8(pdu, length) + TASK_STATS_TASK_U32S * 4 + coreBytes
   }
   if (pdu.length <= length) return null
   return length + 1 + readU8(pdu, length) * 12 + TASK_STATS_TAIL_U32S * 4
@@ -807,7 +813,7 @@ export function parseGetTaskStatsPage(data: Uint8Array): TaskStatsPageResult {
   let offset = 2
   if (data.length < offset + 4) return truncated
   const version = readU8(data, offset)
-  if (version !== TASK_STATS_VERSION) {
+  if (!TASK_STATS_VERSIONS.includes(version)) {
     return {
       success: false,
       error: `Task statistics version ${version} is not supported: upload the project again to update the firmware`,
@@ -834,6 +840,17 @@ export function parseGetTaskStatsPage(data: Uint8Array): TaskStatsPageResult {
     offset += 1 + nameLength
     const values = u32s(TASK_STATS_TASK_U32S)
     if (!values) return truncated
+    let cores: { core?: number; coreWanted?: number } = {}
+    if (taskStatsCoreBytes(version) > 0) {
+      if (data.length < offset + 2) return truncated
+      const core = readU8(data, offset)
+      const wanted = readU8(data, offset + 1)
+      offset += 2
+      cores = {
+        ...(core !== CORE_AUTO ? { core } : {}),
+        ...(wanted !== CORE_AUTO ? { coreWanted: wanted } : {}),
+      }
+    }
     const [
       releases,
       overruns,
@@ -862,6 +879,7 @@ export function parseGetTaskStatsPage(data: Uint8Array): TaskStatsPageResult {
       stackFreeBytes,
       busyUs,
       periodUs,
+      ...cores,
     })
   }
 

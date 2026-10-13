@@ -5,7 +5,7 @@ import { usePouSnapshot } from '../../../hooks/use-pou-snapshot'
 import { useOpenPLCStore } from '../../../store'
 import { GenericTable } from '../../_atoms/generic-table'
 import { EditableNameCell, EditablePriorityCell } from './editable-cell'
-import { SelectableIntervalCell, SelectableTriggerCell } from './selectable-cell'
+import { SelectableCoreCell, SelectableIntervalCell, SelectableTriggerCell } from './selectable-cell'
 
 const columnHelper = createColumnHelper<PLCTask>()
 const columns = [
@@ -40,6 +40,16 @@ const columns = [
     minSize: 150,
     maxSize: 468,
     cell: (props) => EditablePriorityCell(props),
+  }),
+  // The task's CPU core (Auto by default); a vendor extension written to the
+  // build as an IEC §6.2 pragma.
+  columnHelper.accessor('core', {
+    header: 'Core',
+    enableResizing: false,
+    size: 150,
+    minSize: 100,
+    maxSize: 150,
+    cell: (props) => SelectableCoreCell(props),
   }),
 ]
 

@@ -65,6 +65,7 @@ void runtime_rtos_prepare_workers(void);
 uint32_t    runtime_rtos_worker_count(void);
 const char* runtime_rtos_worker_name(uint32_t worker);
 int32_t     runtime_rtos_worker_priority(uint32_t worker);   // IEC PRIORITY, 0 highest
+int32_t     runtime_rtos_worker_core(uint32_t worker);       // the task's CPU core, -1 = Auto
 uint32_t    runtime_rtos_worker_divisor(uint32_t worker);    // released every N base ticks
 // How long the worker has been inside its current scan, in microseconds; 0
 // when it is between scans. A task stuck in a block shows here.

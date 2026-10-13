@@ -86,6 +86,18 @@ uses the single loop and says why; set by hand, the build stops and tells you.
   Modbus server has one, its RS485 port. Anything written to them, even a debug
   `Serial.println`, breaks the frames the debugger or the Modbus master reads.
 
+- **Choose a task's core only when it needs one.** The task table's **Core**
+  column is **Auto** by default: the task runs on the PLC core, beside the
+  dispatcher, and the services use the other core. On a board with two cores
+  (ESP32, ESP32-S3, RP2040/RP2350) a task can be put on a core of its own, for
+  example a communications task on the services' core so the machine task does
+  not hold it back. Both cores share the flash and PSRAM cache, so a task on the
+  other core can slow the machine task a little: measure it (`debug stats`
+  shows each task's core). The build refuses a core the board does not have,
+  and a project with a task on a core is never built as the single loop.
+  The core is written to the program as `TASK t(...) {CORE := n};`, an IEC
+  61131-3 §6.2 pragma, so the ST stays IEC.
+
 **Projects written for the single loop.** The single loop runs tasks one after
 another, so two tasks updating the same global never interrupt each other. In
 RTOS mode they can. Check such globals against the rules above, or switch RTOS
@@ -153,7 +165,8 @@ single loop, and the build log says why. That happens when:
   task stacks are counted against the free RAM;
 - the RTOS build fails somewhere other than the project's own C/C++ code.
 
-With the switch set by hand, each of these stops the build instead. The one
+With the switch set by hand, or a task set to a core, each of these stops the
+build instead. The one
 exception is the free-RAM count, which only warns: the board may then stop at
 start-up in ERROR, and the status says what could not be created (a task by
 name, a service, the dispatcher).

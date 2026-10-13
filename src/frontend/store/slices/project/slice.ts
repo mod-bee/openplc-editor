@@ -1796,7 +1796,10 @@ const createProjectSlice: StateCreator<ProjectSliceRoot, [], [], ProjectSlice> =
         produce((slice: ProjectSlice) => {
           const tasks = slice.project.data.configurations.resource.tasks
           if (dto.rowId >= 0 && dto.rowId < tasks.length) {
-            tasks[dto.rowId] = { ...tasks[dto.rowId], ...dto.data }
+            const task = { ...tasks[dto.rowId], ...dto.data }
+            // Auto is no core at all, so a project on Auto saves as it always did.
+            if (task.core === undefined) delete task.core
+            tasks[dto.rowId] = task
           }
         }),
       )

@@ -11,6 +11,7 @@
 #include "arduino_runtime_glue.h"
 #include "plc_os.h"
 #include "plc_rtos.h"
+#include "plc_core_place.h"
 
 extern "C" {
 #include "openplc.h"
@@ -85,6 +86,8 @@ struct Worker {
     int64_t       end_us;
     bool          recorded;       // this release's timing is in the statistics
     uint32_t      stuck_ticks;    // due ticks found still in the same scan (the dispatcher's)
+    int8_t        core;           // the core it runs on
+    int8_t        core_wanted;    // the project's Core setting, PLC_CORE_AUTO for Auto
 };
 
 static Worker   s_workers[RTOS_MAX_WORKERS];
@@ -338,12 +341,15 @@ static void put_u32(uint8_t *&p, uint32_t v)
     *p++ = (uint8_t)v;
 }
 
-// Version 2 layout, all big-endian:
-//   [version:u8=2][task_total:u8][first:u8][task_count:u8]
+// Version 3 layout, all big-endian:
+//   [version:u8=3][task_total:u8][first:u8][task_count:u8]
 //   per task, from `first`: [name_len:u8][name], then releases, overruns,
 //             scan_min_us, scan_avg_us, scan_max_us, latency_avg_us,
 //             latency_max_us, cycle_min_us, cycle_max_us, stack_free_bytes,
 //             busy_us, period_us                               (12 x u32)
+//             [core:u8][core_wanted:u8]   the core it runs on and the one the
+//             project set (0xFF = Auto); a set core that differs is one the
+//             board lacks, placed on Auto (version 3)
 //   [service_count:u8=2]
 //   per service: iteration_max_us, busy_replies, stack_free_bytes (3 x u32)
 //   dispatcher_stack_free, heap_free, heap_min_free, base_tick_us,
@@ -352,7 +358,7 @@ static void put_u32(uint8_t *&p, uint32_t v)
 // until it has task_total. busy_us is live (time in the current scan, 0 between
 // scans) and period_us the task's interval, so a reader can tell a stuck task;
 // the rest is the published snapshot. Counters wrap at 2^32.
-#define RTOS_STATS_TASK_BYTES 48u
+#define RTOS_STATS_TASK_BYTES 50u
 #define RTOS_STATS_FIXED_BYTES (4u + 1u + 2u * 12u + 20u)
 
 size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool reset)
@@ -365,7 +371,7 @@ size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool 
     plc_os_mutex_unlock(s_stats_lock);
 
     uint8_t *p = out;
-    *p++ = 2;                                   // version
+    *p++ = 3;                                   // version
     *p++ = (uint8_t)s_worker_count;             // task_total
     *p++ = first;
     uint8_t *task_count = p++;
@@ -393,6 +399,8 @@ size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool 
         put_u32(p, snap.work_stack_free[i]);
         put_u32(p, runtime_rtos_worker_busy_us(i));
         put_u32(p, (uint32_t)((base_tick_ns / 1000ULL) * runtime_rtos_worker_divisor(i)));
+        *p++ = (uint8_t)s_workers[i].core;
+        *p++ = (uint8_t)s_workers[i].core_wanted;   // PLC_CORE_AUTO (-1) -> 0xFF
         (*task_count)++;
     }
     *p++ = 2;   // services: A (Modbus, debugger, discovery), B (OPC-UA, S7)
@@ -800,7 +808,10 @@ void plc_rtos_start(const plc_rtos_config_t *config)
         if (runtime_rtos_worker_divisor(w) < runtime_rtos_worker_divisor(s_sketch_worker)) s_sketch_worker = w;
 
     // The IEC work beside the dispatcher, on the core setup() runs on; the
-    // services on the other core where there is one.
+    // services on the other core where there is one. A task with a Core
+    // setting runs on that core instead (plc_core_place.h): on the services'
+    // core it outranks them as it outranks the dispatcher's gaps on this one,
+    // and the dispatcher releases and watches it there the same.
     const int plc_core     = plc_os_current_core();
     const int service_core = plc_os_core_count() > 1 ? (plc_core == 0 ? 1 : 0) : PLC_OS_ANY_CORE;
 
@@ -819,9 +830,13 @@ void plc_rtos_start(const plc_rtos_config_t *config)
     // A task that cannot be created (out of memory) leaves the PLC in ERROR with
     // nothing released, rather than running without it; the rest are then not
     // created either, leaving what memory there is to the services.
+    const int cores = plc_os_core_count();
     for (uint32_t w = 0; w < s_worker_count; ++w) {
-        s_workers[w]         = Worker{};
-        s_workers[w].divisor = runtime_rtos_worker_divisor(w);
+        s_workers[w]             = Worker{};
+        s_workers[w].divisor     = runtime_rtos_worker_divisor(w);
+        const int32_t wanted     = runtime_rtos_worker_core(w);
+        s_workers[w].core_wanted = (int8_t)(wanted >= 0 && wanted < 127 ? wanted : PLC_CORE_AUTO);
+        s_workers[w].core        = (int8_t)plc_core_place(s_workers[w].core_wanted, cores, plc_core);
         window_reset(s_window[w]);
     }
     // A safe-mode restart: ERROR with the reason it left, and no program runs.
@@ -832,7 +847,8 @@ void plc_rtos_start(const plc_rtos_config_t *config)
     }
     for (uint32_t w = 0; w < s_worker_count && !faulted(); ++w) {
         if (!plc_os_task_create(work_main, (void *)(uintptr_t)w, runtime_rtos_worker_name(w),
-                                OPENPLC_RTOS_WORK_STACK, native_priority(w), plc_core, &s_workers[w].task))
+                                OPENPLC_RTOS_WORK_STACK, native_priority(w), s_workers[w].core,
+                                &s_workers[w].task))
             runtime_rtos_fail(RUNTIME_FAULT_TASK_CREATE, (uint8_t)w);
     }
 

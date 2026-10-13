@@ -147,6 +147,8 @@ export interface TranspileTask {
   interval?: string
   /** Source signal expression for non-Cyclic tasks (mapped to SINGLE/MULTI). */
   single?: string
+  /** CPU core; absent = Auto. Emitted as the IEC §6.2 pragma `{CORE := n}`. */
+  core?: number
 }
 
 export interface TranspileInstance {

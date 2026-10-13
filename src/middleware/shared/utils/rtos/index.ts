@@ -1,3 +1,5 @@
+export { cpuCoresForRtos, taskCoreCount, taskCoreProblem } from './cores'
+export type { TaskCoreTarget, TaskWithCore } from './cores'
 export { findIntervalsOffTick } from './intervals'
 export {
   firmwareOutgrewBoard,

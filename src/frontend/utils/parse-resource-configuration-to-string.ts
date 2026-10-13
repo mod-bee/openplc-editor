@@ -18,7 +18,9 @@ export function parseResourceConfigurationToString(taskList: PLCTask[], instance
   for (const task of usedTasks) {
     const interval = (task.interval ?? '').trim() || DEFAULT_INTERVAL
     const priority = task.priority ?? DEFAULT_PRIORITY
-    out += `\t\tTASK ${task.name}(INTERVAL := ${interval}, PRIORITY := ${priority});\n`
+    // The task's CPU core, as the build writes it: an IEC §6.2 pragma.
+    const core = task.core !== undefined ? ` {CORE := ${task.core}}` : ''
+    out += `\t\tTASK ${task.name}(INTERVAL := ${interval}, PRIORITY := ${priority})${core};\n`
   }
 
   if (usedTasks.length) out += '\n'

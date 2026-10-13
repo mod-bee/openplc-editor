@@ -1707,6 +1707,46 @@ describe('runCompilePipeline — RTOS mode', () => {
     expect(files).toBeUndefined()
     expect(events.some((event) => event.level === 'error' && /fast \(T#500us\)/.test(event.message))).toBe(true)
   })
+
+  // A task's Core setting: the cores the board has, in RTOS mode only, and a
+  // project with a task on a core is never built as the single loop.
+  describe('task cores', () => {
+    const pinned = (core: number, interval = 'T#20ms') =>
+      projectWithTasks([
+        { name: 'main', triggering: 'Cyclic', interval: 'T#50ms', priority: 0 },
+        { name: 'net', triggering: 'Cyclic', interval, priority: 1, core },
+      ])
+    const errorMatching = (events: { level: string; message: string }[], pattern: RegExp) =>
+      events.some((event) => event.level === 'error' && pattern.test(event.message))
+
+    it('refuses a core the board does not have, naming the task', async () => {
+      const { result, events, files } = await compileFiles({ boardEntry: esp32Entry, vendorScreenData: {}, projectData: pinned(2) })
+      expect(result.success).toBe(false)
+      expect(files).toBeUndefined()
+      expect(errorMatching(events, /net is set to core 2.*cores 0-1/)).toBe(true)
+    })
+
+    it('refuses a core with RTOS mode switched off', async () => {
+      const { result, events } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: { rtos: { enabled: false } },
+        projectData: pinned(0),
+      })
+      expect(result.success).toBe(false)
+      expect(errorMatching(events, /net \(core 0\).*RTOS mode/)).toBe(true)
+    })
+
+    it('stops, rather than building the single loop, when RTOS mode cannot schedule a pinned project', async () => {
+      const { result, events, files } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: {},
+        projectData: pinned(0, 'T#500us'),
+      })
+      expect(result.success).toBe(false)
+      expect(files).toBeUndefined()
+      expect(errorMatching(events, /net \(T#500us\).*set it to Auto/)).toBe(true)
+    })
+  })
 })
 
 describe('runCompilePipeline — RTOS mode, several tasks', () => {
@@ -1914,6 +1954,25 @@ describe('runCompilePipeline — RTOS mode, several tasks', () => {
       expect(port.compileArduino.mock.calls[0]?.[0].files).toHaveProperty(['src/rtos_config.h'])
       expect(port.compileArduino.mock.calls[1]?.[0].files).not.toHaveProperty(['src/rtos_config.h'])
       expect(events.some((event) => event.level === 'warning' && /does not fit/.test(event.message))).toBe(true)
+    })
+
+    it('fails, rather than building the single loop, when a task is set to a core', async () => {
+      const port = overflowingPort()
+      const { emit } = captureEvents()
+      const result = await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          compileOnly: true,
+          boardEntry: { platform: 'esp32:esp32:esp32s3', core: 'esp32:esp32', compiler: 'arduino-cli' },
+          vendorScreenData: {},
+          projectData: projectWith([{ ...oneTask[0], core: 1 }], []),
+        }),
+        port,
+        emit,
+      )
+      expect(result.success).toBe(false)
+      expect(port.compileArduino).toHaveBeenCalledTimes(1)
     })
 
     it('fails when RTOS mode was chosen', async () => {

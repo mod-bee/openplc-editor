@@ -180,6 +180,17 @@ Zephyr) are listed in `middleware/shared/utils/rtos/support.ts`.
 | Service A | Modbus RTU/TCP, the debugger, discovery; the background retain save, a bounded step per pass; samples stack margins and the heap and watches the dispatcher once a second |
 | Service B (if OPC-UA or S7 is enabled) | OPC-UA, S7 |
 
+**Cores.** The dispatcher and the IEC tasks run on the core `setup()` runs on
+(the PLC core), the services on the other core where there is one. A task's
+**Core** setting (editor task table; `TASK t(...) {CORE := n};`, an IEC §6.2
+pragma, read through STruC++'s `strucpp_task_core()`) runs it on that core
+instead: on the services' core it outranks the services, as every task outranks
+them. Auto, and a core the board lacks, is the PLC core (`plc_core_place.h`);
+the task statistics (FC 0x4e version 3) carry the core set and the core used.
+The rule is the same on every target; `plc_os.cpp` only gives the core count
+and pins a task (ESP32 by chip, RP2040/RP2350 both cores, every other backend
+one core). Runtime v4 pins the task thread with CPU affinity the same way.
+
 On a board with 32 KB of RAM or less (`PLC_OS_SMALL_STACKS`) the two services
 share one task (4 KB stack), each IEC task and the dispatcher have a 2 KB
 stack, and one lock serves the network, every bus and every serial port.

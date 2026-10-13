@@ -737,4 +737,49 @@ describe('FC 0x4e — task statistics', () => {
     expect(parseGetTaskStatsPage(Uint8Array.from([0x4e, 0x81])).success).toBe(false)
     expect(parseGetTaskStatsPage(Uint8Array.from([0x4e])).success).toBe(false)
   })
+
+  // Version 3 adds, after each task's twelve values, the core it runs on and the
+  // core the project set (0xFF = Auto). Firmware built before it sends version 2.
+  const pageV3 = (total: number, first: number, tasks: (Task & { core: number; wanted: number })[]) =>
+    Uint8Array.from([
+      0x4e,
+      0x7e,
+      3,
+      total,
+      first,
+      tasks.length,
+      ...tasks.flatMap((entry) => [
+        entry.name.length,
+        ...Buffer.from(entry.name),
+        ...entry.values.flatMap(u32),
+        entry.core,
+        entry.wanted,
+      ]),
+      2,
+      ...[4500, 3, 2048, 900, 0, 4096].flatMap(u32),
+      ...[0x1000, 0x3d440, 0x3d324, 10_000, 250].flatMap(u32),
+    ])
+
+  it('reads each task core from version 3, and whether the board refused the one set', () => {
+    const reply = pageV3(3, 0, [
+      { ...main, core: 1, wanted: 0xff },
+      { ...net, core: 0, wanted: 0 },
+      { ...task(2), core: 1, wanted: 4 },
+    ])
+    expect(taskStatsPduLength(reply)).toBe(reply.length)
+    const result = parseGetTaskStatsPage(reply)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(result.page.stats.tasks.map(({ core, coreWanted }) => ({ core, coreWanted }))).toEqual([
+      { core: 1, coreWanted: undefined },
+      { core: 0, coreWanted: 0 },
+      { core: 1, coreWanted: 4 },
+    ])
+    expect(result.page.stats.retainLateMaxUs).toBe(250)
+  })
+
+  it('has no core from version 2', () => {
+    const result = parseGetTaskStatsPage(page(1, 0, [main]))
+    expect(result.success && result.page.stats.tasks[0].core).toBeUndefined()
+  })
 })

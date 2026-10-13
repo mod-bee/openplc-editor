@@ -78,6 +78,8 @@ export interface PLCTask {
   triggering: 'Cyclic' | 'Interrupt'
   interval: string
   priority: number
+  /** CPU core the task runs on; absent = Auto. See `PLCTaskSchema`. */
+  core?: number
 }
 
 export interface PLCInstance {
@@ -1073,6 +1075,11 @@ export interface RtosTaskStats {
   busyUs: number
   /** The task's period on the board: its interval, in whole base ticks. */
   periodUs: number
+  /** The core the task runs on (firmware since the per-task Core setting). */
+  core?: number
+  /** The core the project set; absent = Auto. One that differs from `core` is
+   *  a core the board lacks, which the firmware placed on Auto. */
+  coreWanted?: number
 }
 
 /** A service task: [0] Modbus, the debugger and discovery; [1] OPC-UA and S7. */

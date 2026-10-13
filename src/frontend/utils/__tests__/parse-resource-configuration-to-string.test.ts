@@ -86,3 +86,15 @@ describe('parseResourceConfigurationToString', () => {
     expect(result).toContain('PROGRAM Inst1 WITH Task1 : Secondary;')
   })
 })
+
+describe('parseResourceConfigurationToString — task core', () => {
+  it('writes a task core as an IEC pragma, and nothing for Auto', () => {
+    const tasks: PLCTask[] = [
+      { name: 'Main', triggering: 'Cyclic', interval: 'T#50ms', priority: 0 },
+      { name: 'Net', triggering: 'Cyclic', interval: 'T#20ms', priority: 1, core: 0 },
+    ]
+    const result = parseResourceConfigurationToString(tasks, [])
+    expect(result).toContain('TASK Main(INTERVAL := T#50ms, PRIORITY := 0);')
+    expect(result).toContain('TASK Net(INTERVAL := T#20ms, PRIORITY := 1) {CORE := 0};')
+  })
+})

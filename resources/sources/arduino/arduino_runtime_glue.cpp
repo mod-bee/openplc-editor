@@ -1293,6 +1293,7 @@ extern "C" void runtime_rtos_image_unlock(void) { plc_os_mutex_unlock(s_image_lo
 struct RtosWorker {
     const char*            name;
     int32_t                priority;          // IEC PRIORITY (0 is highest)
+    int32_t                core;              // the task's CPU core, -1 = Auto
     uint32_t               release_divisor;   // released every this many base ticks
     strucpp::ProgramBase** programs;
     const uint32_t*        program_divisors;  // per program, in base ticks; null = every release
@@ -1329,6 +1330,7 @@ extern "C" int64_t *strucpp_platform_current_time_slot(void)
 extern "C" uint32_t    runtime_rtos_worker_count(void) { return s_worker_count; }
 extern "C" const char* runtime_rtos_worker_name(uint32_t w) { return s_workers[w].name; }
 extern "C" int32_t     runtime_rtos_worker_priority(uint32_t w) { return s_workers[w].priority; }
+extern "C" int32_t     runtime_rtos_worker_core(uint32_t w) { return s_workers[w].core; }
 extern "C" uint32_t    runtime_rtos_worker_divisor(uint32_t w) { return s_workers[w].release_divisor; }
 
 // How long worker `w` has been in the scan it is in; 0 between scans.
@@ -1848,6 +1850,16 @@ extern "C" void runtime_rtos_unlock_workers(uint32_t mask)
 
 // ---- Setting the workers up ---------------------------------------------------
 
+// The task's CPU core from the project (`TASK t(...) {CORE := n};`, an IEC
+// §6.2 pragma), by resource and task index, -1 = Auto. STruC++ emits it only
+// when a task has a core; without it every task is on Auto.
+extern "C" int32_t strucpp_task_core(uint32_t resource, uint32_t task) __attribute__((weak));
+
+static int32_t task_core(size_t resource, size_t task)
+{
+    return strucpp_task_core ? strucpp_task_core((uint32_t)resource, (uint32_t)task) : -1;
+}
+
 // Called once from plc_rtos_start(), after runtime_discover_tasks(): one worker
 // per IEC task when the runtime is threaded, else one worker for all of them.
 extern "C" void runtime_rtos_prepare_workers(void)
@@ -1867,6 +1879,7 @@ extern "C" void runtime_rtos_prepare_workers(void)
             RtosWorker&    k        = s_workers[s_worker_count++];
             k.name             = task.name;
             k.priority         = task.priority;
+            k.core             = task_core(r, t);
             k.release_divisor  = (uint32_t)(interval / base_tick_ns);
             if (k.release_divisor == 0) k.release_divisor = 1;
             k.programs         = task.programs;
@@ -1893,8 +1906,17 @@ extern "C" void runtime_rtos_prepare_workers(void)
             for (size_t n = 0; n < task.program_count && p < total_programs; ++n) divisors[p++] = divisor;
         }
     }
+    // One thread for every task: it goes where they all agree to, else Auto.
+    int32_t shared_core = -2;   // none seen yet
+    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+        for (size_t t = 0; t < resources[r].task_count; ++t) {
+            const int32_t c = task_core(r, t);
+            shared_core = (shared_core == -2 || shared_core == c) ? c : -1;
+        }
+    }
     s_workers[0].name             = "PLC";
     s_workers[0].priority         = 0;
+    s_workers[0].core             = shared_core < 0 ? -1 : shared_core;
     s_workers[0].release_divisor  = 1;
     s_workers[0].programs         = all_programs;
     s_workers[0].program_divisors = divisors;

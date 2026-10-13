@@ -88,7 +88,15 @@ export function generateConfigurations(project: TranspileProject): ProgramChunk[
 
     out.push(['PRIORITY := ', []])
     out.push([`${task.priority}`, [resourceTagname, 'task', taskNumber, 'priority']])
-    out.push([');\n', []])
+    out.push([')', []])
+    // The task's CPU core: IEC 61131-3 §6.2 leaves a pragma's syntax and meaning
+    // to the Implementer, so the ST stays IEC. Auto writes nothing.
+    if (task.core !== undefined) {
+      out.push([' {CORE := ', []])
+      out.push([`${task.core}`, [resourceTagname, 'task', taskNumber, 'core']])
+      out.push(['}', []])
+    }
+    out.push([';\n', []])
   })
 
   // PROGRAM bindings — first the task-bound instances (in task

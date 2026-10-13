@@ -537,6 +537,15 @@ export function buildRequest(
 }
 
 /** Render a response in both modes. */
+/** Where a task runs: its core, "Auto" beside it when the OS chose, and a
+ *  refused core (one the board lacks) said plainly. Blank from older firmware. */
+function taskCoreText(task: { core?: number; coreWanted?: number }): string {
+  if (task.core === undefined) return task.coreWanted === undefined ? '' : `wanted ${task.coreWanted}`
+  if (task.coreWanted === undefined) return `${task.core} (Auto)`
+  if (task.coreWanted !== task.core) return `${task.core} (core ${task.coreWanted} refused: not on this board)`
+  return `${task.core}`
+}
+
 function report(reporter: Reporter, response: Response): CliResult {
   if (!response.ok) {
     return reporter.failure(
@@ -626,6 +635,7 @@ export function renderOk(response: OkResponse): string {
             'CYCLE us min/max',
             'LATENCY us avg/max',
             'STACK FREE',
+            'CORE',
             'NOW',
           ],
           stats.tasks.map((task) => [
@@ -637,6 +647,7 @@ export function renderOk(response: OkResponse): string {
             `${us(task.cycleMinUs)} / ${us(task.cycleMaxUs)}`,
             `${us(task.latencyAvgUs)} / ${us(task.latencyMaxUs)}`,
             `${us(task.stackFreeBytes)} B`,
+            taskCoreText(task),
             isRtosTaskStuck(task) ? `STUCK ${us(task.busyUs)} us` : task.busyUs > 0 ? 'scanning' : 'idle',
           ]),
         ),

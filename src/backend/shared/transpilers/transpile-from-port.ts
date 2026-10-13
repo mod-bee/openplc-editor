@@ -280,6 +280,7 @@ function projectTask(task: PLCTask): TranspileTask {
     priority: task.priority,
     triggering: task.triggering,
     ...(task.triggering === 'Cyclic' ? { interval: task.interval } : { single: task.interval }),
+    ...(task.core !== undefined ? { core: task.core } : {}),
   }
 }
 

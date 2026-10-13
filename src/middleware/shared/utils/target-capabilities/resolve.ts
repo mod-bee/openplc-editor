@@ -17,6 +17,7 @@
  * defensive purposes against user-supplied JSON).
  */
 
+import { cpuCoresForRtos } from '../rtos/cores'
 import { coreFromFqbn, resolveRtosProfile } from '../rtos/support'
 import type { DeclaredRtos } from '../rtos/types'
 import {
@@ -196,8 +197,11 @@ export function resolveTargetCapabilities(boardInfo: BoardInfoLike | undefined):
       : undefined
   if (rtos) {
     merged.rtos = rtos
+    merged.cpuCores = declared?.cpuCores ?? cpuCoresForRtos(rtos.backend, boardInfo.platform)
   } else {
     delete merged.rtos
+    // Firmware without RTOS mode is the single loop: no task of its own to place.
+    if (boardInfo.compiler === 'arduino-cli') delete merged.cpuCores
   }
 
   // ESP32 keeps retained values in NVS, which spreads writes across its pages,

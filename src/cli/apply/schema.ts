@@ -309,6 +309,11 @@ const taskSchema = z
     /** 0-100, and LOWER is higher priority. The stored schema leaves it
      *  unbounded with a TODO; the documented rule is enforced here. */
     priority: z.number().int().min(0).max(100),
+    /** CPU core the task runs on, 0 .. the board's cores - 1. Omitted = Auto:
+     *  the runtime places it (and applying a task without it puts a pinned task
+     *  back on Auto). Offered in RTOS mode on a multi-core board, and on a
+     *  Linux runtime; the build refuses a core the board does not have. */
+    core: z.number().int().min(0).max(63).optional(),
   })
   .strict()
 

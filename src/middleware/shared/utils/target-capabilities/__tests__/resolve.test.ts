@@ -322,3 +322,43 @@ describe('the default retain commit period', () => {
     }
   })
 })
+
+// The cores a task's Core setting can name: the RTOS backend's (ESP32 by chip,
+// both of the Pico's), what a Linux runtime declares, one everywhere else; a
+// package may declare its own.
+describe('resolveTargetCapabilities — cpuCores', () => {
+  it('reads the chip of an ESP32 board from its FQBN', () => {
+    const board = (platform: string) => ({ compiler: 'arduino-cli' as const, core: 'esp32:esp32', platform })
+    expect(resolveTargetCapabilities(board('esp32:esp32:esp32s3:PSRAM=enabled')).cpuCores).toBe(2)
+    expect(resolveTargetCapabilities(board('esp32:esp32:esp32c3')).cpuCores).toBe(1)
+  })
+
+  it('gives the Pico both cores and the other RTOS backends one', () => {
+    expect(resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'rp2040:rp2040' }).cpuCores).toBe(2)
+    expect(resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'arduino:samd' }).cpuCores).toBe(1)
+  })
+
+  it('has one core on a board with no RTOS backend, whatever a manifest says', () => {
+    const caps = resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'arduino:avr', capabilities: { cpuCores: 2 } })
+    expect(caps.cpuCores ?? 1).toBe(1)
+  })
+
+  it('takes a package declaration on an RTOS board', () => {
+    const caps = resolveTargetCapabilities({
+      compiler: 'arduino-cli',
+      core: 'esp32:esp32',
+      platform: 'esp32:esp32:custom_board',
+      capabilities: { cpuCores: 1 },
+    })
+    expect(caps.cpuCores).toBe(1)
+  })
+
+  it('gives a Linux runtime its declared cores, 4 when it declares none', () => {
+    expect(resolveTargetCapabilities({ compiler: 'openplc-compiler' }).cpuCores).toBe(4)
+    expect(resolveTargetCapabilities({ compiler: 'openplc-compiler', capabilities: { cpuCores: 2 } }).cpuCores).toBe(2)
+  })
+
+  it('has one core in the simulator', () => {
+    expect(resolveTargetCapabilities({ compiler: 'simulator' }).cpuCores ?? 1).toBe(1)
+  })
+})

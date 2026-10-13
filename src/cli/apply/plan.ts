@@ -840,7 +840,8 @@ function applyTasks(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange
     const existing = tasks.findIndex((task) => task.name === wanted.name)
 
     if (existing >= 0) {
-      state.projectActions.updateTask({ data: wanted, rowId: existing })
+      // The spec describes the task in full: no core is Auto, not "keep".
+      state.projectActions.updateTask({ data: { ...wanted, core: wanted.core }, rowId: existing })
       changes.push({ kind: 'task', action: 'update', name: wanted.name })
       continue
     }

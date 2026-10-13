@@ -3,8 +3,9 @@ import _ from 'lodash'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { PLCTask } from '../../../../middleware/shared/ports/types'
-import { findIntervalsOffTick } from '../../../../middleware/shared/utils/rtos'
+import { findIntervalsOffTick, taskCoreCount, taskCoreProblem } from '../../../../middleware/shared/utils/rtos'
 import { useRtosMode } from '../../../hooks/use-rtos-mode'
+import { useTargetCapabilities } from '../../../hooks/use-target-capabilities'
 import { LocationWarningGlyph } from '../../_atoms/location-warning-glyph'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '../../_atoms/select'
 import ArrowButtonGroup from '../../_features/[workspace]/editor/graphical/elements/arrow-button-group'
@@ -226,4 +227,57 @@ const SelectableIntervalCell = ({
     </Modal>
   )
 }
-export { SelectableIntervalCell, SelectableTriggerCell }
+const coreLabel = (core: number | undefined) => (core === undefined ? 'Auto' : `Core ${core}`)
+
+/**
+ * The task's CPU core: Auto (the runtime places it) or a core of the board.
+ * Offered where the target can place a task (RTOS mode on a multi-core board, a
+ * Linux runtime); elsewhere Auto only. A core the board cannot give the task is
+ * flagged here, as the build will refuse it.
+ */
+const SelectableCoreCell = ({ row: { index, original }, table }: ISelectableCellProps) => {
+  const capabilities = useTargetCapabilities()
+  const rtosOn = useRtosMode() !== undefined
+  const cores = taskCoreCount(capabilities, rtosOn)
+  const core = original.core
+  const problem = taskCoreProblem([original], capabilities, rtosOn)
+
+  const options: (number | undefined)[] = [undefined, ...Array.from({ length: cores > 1 ? cores : 0 }, (_, i) => i)]
+  const onValueChange = (value: string) => {
+    table.options.meta?.updateData(index, 'core', value === 'auto' ? undefined : Number(value))
+  }
+
+  return (
+    <div className='flex h-full w-full items-center justify-center gap-1'>
+      <Select value={core === undefined ? 'auto' : String(core)} onValueChange={onValueChange} disabled={cores <= 1}>
+        <SelectTrigger
+          aria-label={`Core of ${original.name}`}
+          title={cores <= 1 ? 'This board runs every task on the core the runtime picks (Auto).' : undefined}
+          placeholder={coreLabel(core)}
+          className='flex h-full w-full justify-center p-2 font-caption text-cp-sm font-medium text-neutral-850 outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-neutral-300'
+        />
+        <SelectContent
+          position='popper'
+          side='bottom'
+          sideOffset={-20}
+          className='box h-fit w-[200px] overflow-hidden rounded-lg bg-white outline-none dark:bg-neutral-950'
+        >
+          {options.map((option) => (
+            <SelectItem
+              key={option ?? 'auto'}
+              value={option === undefined ? 'auto' : String(option)}
+              className='flex w-full cursor-pointer items-center justify-center py-1 outline-none hover:bg-neutral-100 dark:hover:bg-neutral-900'
+            >
+              <span className='text-center font-caption text-xs font-normal text-neutral-700 dark:text-neutral-500'>
+                {coreLabel(option)}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {problem && <LocationWarningGlyph label='Core this board cannot give the task' tooltip={problem} />}
+    </div>
+  )
+}
+
+export { SelectableCoreCell, SelectableIntervalCell, SelectableTriggerCell }

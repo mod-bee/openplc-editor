@@ -231,6 +231,9 @@ const RtosStatsSchema = z.object({
       stackFreeBytes: z.number(),
       busyUs: z.number(),
       periodUs: z.number(),
+      /** The core the task runs on, and the one the project set (firmware since the Core setting). */
+      core: z.number().optional(),
+      coreWanted: z.number().optional(),
     }),
   ),
   services: z.array(z.object({ iterationMaxUs: z.number(), busyReplies: z.number(), stackFreeBytes: z.number() })),

@@ -210,6 +210,11 @@ export interface TargetCapabilities {
    *  per-board choice, `readRtosSettings`. */
   rtos?: RtosTargetProfile
 
+  /** The CPU cores a task's Core setting can name (0 .. cpuCores-1); absent = 1,
+   *  Auto only. Firmware: the RTOS backend's (`cpuCoresForRtos`), or a package's
+   *  declaration, on a board with RTOS mode only. Linux runtime: the board's. */
+  cpuCores?: number
+
   /* ---------------------------------------------------------------
    * Build / runtime behavior
    * --------------------------------------------------------------- */
