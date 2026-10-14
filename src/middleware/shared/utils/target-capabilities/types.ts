@@ -17,7 +17,7 @@
  * its capabilities are read.
  */
 
-import type { DeclaredRtos, RtosTargetProfile } from '../rtos/types'
+import type { DeclaredRtos, RtosTargetProfile, TaskThreadsProfile } from '../rtos/types'
 
 /**
  * Wire protocols a target can speak to the debugger.
@@ -214,6 +214,13 @@ export interface TargetCapabilities {
    *  Auto only. Firmware: the RTOS backend's (`cpuCoresForRtos`), or a package's
    *  declaration, on a board with RTOS mode only. Linux runtime: the board's. */
   cpuCores?: number
+
+  /** Each task runs on a thread of its own with a stuck watch, so its "Stop PLC
+   *  if stuck" and "Stack" settings apply (and the stacks it takes); absent =
+   *  every task stops the PLC when stuck and has the default stack. Firmware:
+   *  the RTOS backend's (`taskThreadsForRtos`), or a package's, in RTOS mode
+   *  only. Linux runtime: its own. */
+  taskThreads?: TaskThreadsProfile
 
   /* ---------------------------------------------------------------
    * Build / runtime behavior

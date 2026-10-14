@@ -19,6 +19,7 @@
 
 import { cpuCoresForRtos } from '../rtos/cores'
 import { coreFromFqbn, resolveRtosProfile } from '../rtos/support'
+import { taskThreadsForRtos } from '../rtos/task-settings'
 import type { DeclaredRtos } from '../rtos/types'
 import {
   ARDUINO_CLI_CAPABILITIES,
@@ -198,10 +199,14 @@ export function resolveTargetCapabilities(boardInfo: BoardInfoLike | undefined):
   if (rtos) {
     merged.rtos = rtos
     merged.cpuCores = declared?.cpuCores ?? cpuCoresForRtos(rtos.backend, boardInfo.platform)
+    merged.taskThreads = declared?.taskThreads ?? taskThreadsForRtos(rtos.backend)
   } else {
     delete merged.rtos
     // Firmware without RTOS mode is the single loop: no task of its own to place.
-    if (boardInfo.compiler === 'arduino-cli') delete merged.cpuCores
+    if (boardInfo.compiler === 'arduino-cli') {
+      delete merged.cpuCores
+      delete merged.taskThreads
+    }
   }
 
   // ESP32 keeps retained values in NVS, which spreads writes across its pages,

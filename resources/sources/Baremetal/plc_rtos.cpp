@@ -26,7 +26,9 @@ extern "C" {
 //
 // A task still in the same scan on this many consecutive due ticks stops the
 // PLC; the stop lands in ERROR. A task's first scan is not counted, but is
-// stopped past OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US.
+// stopped past OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US. A task set not to stop the
+// PLC when stuck (its "Stop PLC if stuck", plc_core_place.h) is reported
+// instead, once each time, and the PLC and the other tasks keep running.
 #ifndef OPENPLC_RTOS_STUCK_PERIODS
 #define OPENPLC_RTOS_STUCK_PERIODS 10
 #endif
@@ -88,6 +90,10 @@ struct Worker {
     uint32_t      stuck_ticks;    // due ticks found still in the same scan (the dispatcher's)
     int8_t        core;           // the core it runs on
     int8_t        core_wanted;    // the project's Core setting, PLC_CORE_AUTO for Auto
+    bool          stop_on_stuck;  // its "Stop PLC if stuck" (the default: yes)
+    bool          stuck_running;  // past the stuck limit now, reported and kept running
+    uint16_t      stuck_count;    // times it was, since start-up (saturating)
+    uint32_t      stack;          // its stack in bytes
 };
 
 static Worker   s_workers[RTOS_MAX_WORKERS];
@@ -341,8 +347,8 @@ static void put_u32(uint8_t *&p, uint32_t v)
     *p++ = (uint8_t)v;
 }
 
-// Version 3 layout, all big-endian:
-//   [version:u8=3][task_total:u8][first:u8][task_count:u8]
+// Version 4 layout, all big-endian:
+//   [version:u8=4][task_total:u8][first:u8][task_count:u8]
 //   per task, from `first`: [name_len:u8][name], then releases, overruns,
 //             scan_min_us, scan_avg_us, scan_max_us, latency_avg_us,
 //             latency_max_us, cycle_min_us, cycle_max_us, stack_free_bytes,
@@ -350,6 +356,10 @@ static void put_u32(uint8_t *&p, uint32_t v)
 //             [core:u8][core_wanted:u8]   the core it runs on and the one the
 //             project set (0xFF = Auto); a set core that differs is one the
 //             board lacks, placed on Auto (version 3)
+//             [flags:u8][stuck_count:u16][stack_bytes:u32]   bit 0: a stuck
+//             scan stops the PLC; bit 1: stuck now, kept running (its "Stop
+//             PLC if stuck" is No); the times so since start-up; its stack
+//             (version 4)
 //   [service_count:u8=2]
 //   per service: iteration_max_us, busy_replies, stack_free_bytes (3 x u32)
 //   dispatcher_stack_free, heap_free, heap_min_free, base_tick_us,
@@ -358,7 +368,7 @@ static void put_u32(uint8_t *&p, uint32_t v)
 // until it has task_total. busy_us is live (time in the current scan, 0 between
 // scans) and period_us the task's interval, so a reader can tell a stuck task;
 // the rest is the published snapshot. Counters wrap at 2^32.
-#define RTOS_STATS_TASK_BYTES 50u
+#define RTOS_STATS_TASK_BYTES 57u
 #define RTOS_STATS_FIXED_BYTES (4u + 1u + 2u * 12u + 20u)
 
 size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool reset)
@@ -371,7 +381,7 @@ size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool 
     plc_os_mutex_unlock(s_stats_lock);
 
     uint8_t *p = out;
-    *p++ = 3;                                   // version
+    *p++ = 4;                                   // version
     *p++ = (uint8_t)s_worker_count;             // task_total
     *p++ = first;
     uint8_t *task_count = p++;
@@ -401,6 +411,12 @@ size_t plc_rtos_encode_stats(uint8_t *out, size_t capacity, uint8_t first, bool 
         put_u32(p, (uint32_t)((base_tick_ns / 1000ULL) * runtime_rtos_worker_divisor(i)));
         *p++ = (uint8_t)s_workers[i].core;
         *p++ = (uint8_t)s_workers[i].core_wanted;   // PLC_CORE_AUTO (-1) -> 0xFF
+        *p++ = (uint8_t)((s_workers[i].stop_on_stuck ? 0x01u : 0u) |
+                         (__atomic_load_n(&s_workers[i].stuck_running, __ATOMIC_RELAXED) ? 0x02u : 0u));
+        const uint16_t stuck_count = __atomic_load_n(&s_workers[i].stuck_count, __ATOMIC_RELAXED);
+        *p++ = (uint8_t)(stuck_count >> 8);
+        *p++ = (uint8_t)stuck_count;
+        put_u32(p, s_workers[i].stack);
         (*task_count)++;
     }
     *p++ = 2;   // services: A (Modbus, debugger, discovery), B (OPC-UA, S7)
@@ -837,6 +853,9 @@ void plc_rtos_start(const plc_rtos_config_t *config)
         const int32_t wanted     = runtime_rtos_worker_core(w);
         s_workers[w].core_wanted = (int8_t)(wanted >= 0 && wanted < 127 ? wanted : PLC_CORE_AUTO);
         s_workers[w].core        = (int8_t)plc_core_place(s_workers[w].core_wanted, cores, plc_core);
+        s_workers[w].stop_on_stuck = runtime_rtos_worker_stop_on_stuck(w);
+        s_workers[w].stack = plc_task_stack(runtime_rtos_worker_stack(w), OPENPLC_RTOS_WORK_STACK,
+                                            OPENPLC_RTOS_TASK_STACK_MIN, OPENPLC_RTOS_TASK_STACK_MAX);
         window_reset(s_window[w]);
     }
     // A safe-mode restart: ERROR with the reason it left, and no program runs.
@@ -847,7 +866,7 @@ void plc_rtos_start(const plc_rtos_config_t *config)
     }
     for (uint32_t w = 0; w < s_worker_count && !faulted(); ++w) {
         if (!plc_os_task_create(work_main, (void *)(uintptr_t)w, runtime_rtos_worker_name(w),
-                                OPENPLC_RTOS_WORK_STACK, native_priority(w), s_workers[w].core,
+                                s_workers[w].stack, native_priority(w), s_workers[w].core,
                                 &s_workers[w].task))
             runtime_rtos_fail(RUNTIME_FAULT_TASK_CREATE, (uint8_t)w);
     }
@@ -902,28 +921,50 @@ static int64_t scan_limit_us(uint32_t w)
     return periods;
 }
 
-// A first scan past its timeout stops the PLC (v4: the main watchdog trips it).
+// A task past the stuck limit that is set not to stop the PLC: reported once
+// until it next finishes its scan; the PLC and the other tasks keep running.
+static void report_stuck_running(uint32_t w)
+{
+    Worker &k = s_workers[w];
+    if (__atomic_load_n(&k.stuck_running, __ATOMIC_RELAXED)) return;
+    __atomic_store_n(&k.stuck_running, true, __ATOMIC_RELAXED);
+    if (k.stuck_count < UINT16_MAX) __atomic_store_n(&k.stuck_count, (uint16_t)(k.stuck_count + 1), __ATOMIC_RELAXED);
+    runtime_rtos_task_stuck_running(w, ms_since(k.release_us));
+}
+
+// A first scan past its timeout stops the PLC (v4: the main watchdog trips it),
+// or is reported for a task set not to stop it.
 static void watch_first_scans(void)
 {
     if (runtime_rtos_fault_stopped()) return;
     for (uint32_t w = 0; w < s_worker_count; ++w) {
         const Worker &k = s_workers[w];
         if (k.released == 0 || worker_idle(w) || __atomic_load_n(&k.completed, __ATOMIC_ACQUIRE) != 0) continue;
-        if (plc_os_now_us() - k.release_us > OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US) {
+        const bool past = plc_os_now_us() - k.release_us > OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US;
+        switch (plc_task_stuck_action(past, k.stop_on_stuck)) {
+        case PLC_STUCK_STOP:
             runtime_rtos_fault_stop(RUNTIME_FAULT_FIRST_SCAN_STUCK, (uint8_t)w, ms_since(k.release_us));
             return;
+        case PLC_STUCK_REPORT:
+            report_stuck_running(w);
+            break;
+        default:
+            break;
         }
     }
 }
 
-// A stop waits for the tasks in their scans for as long as v4 lets them run;
-// one that cannot finish restarts the board in safe mode.
-static void watch_stop_drain(void)
+// A stop waits for the tasks in their scans for as long as v4 lets them run (a
+// task set not to stop the PLC when stuck: at least 10 s after the stop); one
+// that cannot finish restarts the board in safe mode.
+static void watch_stop_drain(int64_t stop_at_us)
 {
     for (uint32_t w = 0; w < s_worker_count; ++w) {
         if (worker_idle(w)) continue;
         const Worker &k = s_workers[w];
-        if (plc_os_now_us() - k.release_us > scan_limit_us(w) + OPENPLC_RTOS_ABORT_TIMEOUT_US)
+        const int64_t deadline = plc_task_stop_deadline(k.release_us, scan_limit_us(w), stop_at_us,
+                                                        PLC_STOP_WAIT_KEEP_RUNNING_US, k.stop_on_stuck);
+        if (plc_os_now_us() > deadline + OPENPLC_RTOS_ABORT_TIMEOUT_US)
             safe_mode_restart(RUNTIME_FAULT_STOP_TIMEOUT, (uint8_t)w, ms_since(k.release_us));
     }
 }
@@ -950,6 +991,7 @@ static void dispatch_forever(void)
     uint64_t       run_tick     = 0;   // base ticks run so far: IEC time is this grid
     uint32_t       pending      = 0;   // released workers whose outputs are not out yet
     bool           stop_pending = false;
+    int64_t        stop_at_us   = 0;   // when the pending stop was asked
     bool           gate_open    = false;
     uint32_t       frames       = 0;
 
@@ -970,7 +1012,10 @@ static void dispatch_forever(void)
         // keeps the PLC stopped, it lapses.
         const bool cold = runtime_rtos_cold_restart_pending();
         if (cold && state == PLC_STATE_STOPPED && wanted == PLC_STATE_STOPPED) runtime_rtos_cold_restart_cancel();
-        if (state == PLC_STATE_RUNNING && wanted == PLC_STATE_STOPPED) stop_pending = true;
+        if (state == PLC_STATE_RUNNING && wanted == PLC_STATE_STOPPED && !stop_pending) {
+            stop_pending = true;
+            stop_at_us   = plc_os_now_us();
+        }
         if (cold && state == PLC_STATE_STOPPED && wanted == PLC_STATE_RUNNING) {
             runtime_rtos_cold_restart(run_tick);
             for (uint32_t w = 0; w < s_worker_count; ++w) s_workers[w].next_tick = run_tick;
@@ -988,7 +1033,7 @@ static void dispatch_forever(void)
             state = PLC_STATE_RUNNING;
         }
 
-        if (stop_pending) watch_stop_drain();
+        if (stop_pending) watch_stop_drain(stop_at_us);
         runtime_rtos_frame_input(all_idle());
         if (state == PLC_STATE_STOPPED) runtime_rtos_stopped_copy_in();
 
@@ -1016,12 +1061,17 @@ static void dispatch_forever(void)
                     // scan; a first scan is not counted (v4).
                     if (__atomic_load_n(&k.completed, __ATOMIC_ACQUIRE) != 0) {
                         k.stuck_ticks += 1u + (uint32_t)missed;
-                        if (k.stuck_ticks >= OPENPLC_RTOS_STUCK_PERIODS && !runtime_rtos_fault_stopped())
+                        const int action =
+                            plc_task_stuck_action(k.stuck_ticks >= OPENPLC_RTOS_STUCK_PERIODS, k.stop_on_stuck);
+                        if (action == PLC_STUCK_STOP && !runtime_rtos_fault_stopped())
                             runtime_rtos_fault_stop(RUNTIME_FAULT_TASK_STUCK, (uint8_t)w, ms_since(k.release_us));
+                        else if (action == PLC_STUCK_REPORT)
+                            report_stuck_running(w);
                     }
                     continue;
                 }
                 k.stuck_ticks  = 0;
+                __atomic_store_n(&k.stuck_running, false, __ATOMIC_RELAXED);
                 k.release_tick = due;
                 k.release_us   = plc_os_now_us();
                 k.recorded     = false;

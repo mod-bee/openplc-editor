@@ -1720,7 +1720,11 @@ describe('runCompilePipeline — RTOS mode', () => {
       events.some((event) => event.level === 'error' && pattern.test(event.message))
 
     it('refuses a core the board does not have, naming the task', async () => {
-      const { result, events, files } = await compileFiles({ boardEntry: esp32Entry, vendorScreenData: {}, projectData: pinned(2) })
+      const { result, events, files } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: {},
+        projectData: pinned(2),
+      })
       expect(result.success).toBe(false)
       expect(files).toBeUndefined()
       expect(errorMatching(events, /net is set to core 2.*cores 0-1/)).toBe(true)
@@ -1745,6 +1749,59 @@ describe('runCompilePipeline — RTOS mode', () => {
       expect(result.success).toBe(false)
       expect(files).toBeUndefined()
       expect(errorMatching(events, /net \(T#500us\).*set it to Auto/)).toBe(true)
+    })
+  })
+
+  // A task's "Stop PLC if stuck" and "Stack": RTOS mode only, a stack within
+  // the board's range, and a project with either is never built as the loop.
+  describe('task stuck and stack settings', () => {
+    const withSettings = (settings: { stopOnStuck?: boolean; stack?: number }, interval = 'T#100ms') =>
+      projectWithTasks([
+        { name: 'logic', triggering: 'Cyclic', interval: 'T#50ms', priority: 0 },
+        { name: 'comms', triggering: 'Cyclic', interval, priority: 1, ...settings },
+      ])
+    const errorMatching = (events: { level: string; message: string }[], pattern: RegExp) =>
+      events.some((event) => event.level === 'error' && pattern.test(event.message))
+
+    it('builds them in RTOS mode, written to the program as the task pragma', async () => {
+      const { result, files } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: {},
+        projectData: withSettings({ stopOnStuck: false, stack: 16384 }),
+      })
+      expect(result.success).toBe(true)
+      expect(files?.['src/rtos_config.h']).toContain('#define OPENPLC_RTOS 1')
+    })
+
+    it('refuses a stack outside the board range, naming the task', async () => {
+      const { result, events, files } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: {},
+        projectData: withSettings({ stack: 2048 }),
+      })
+      expect(result.success).toBe(false)
+      expect(files).toBeUndefined()
+      expect(errorMatching(events, /comms is set to a 2048 byte stack.*4096 to 65536/)).toBe(true)
+    })
+
+    it('refuses them with RTOS mode switched off', async () => {
+      const { result, events } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: { rtos: { enabled: false } },
+        projectData: withSettings({ stopOnStuck: false }),
+      })
+      expect(result.success).toBe(false)
+      expect(errorMatching(events, /need RTOS mode.*comms \(Stop PLC if stuck: No\)/)).toBe(true)
+    })
+
+    it('stops, rather than building the single loop, when RTOS mode cannot schedule such a project', async () => {
+      const { result, files } = await compileFiles({
+        boardEntry: esp32Entry,
+        vendorScreenData: {},
+        projectData: withSettings({ stopOnStuck: false }, 'T#500us'),
+      })
+      expect(result.success).toBe(false)
+      expect(files).toBeUndefined()
     })
   })
 })

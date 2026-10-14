@@ -12,7 +12,15 @@ const columns: StatsTableColumn<TaskTimingStats>[] = [
     header: 'Task',
     align: 'left',
     className: 'font-mono',
-    render: (task) => task.name,
+    // A task stuck now and kept running (its "Stop PLC if stuck" is No) says so.
+    render: (task) =>
+      task.stuck ? (
+        <span title='Stuck in one scan; set not to stop the PLC, so the PLC and the other tasks keep running'>
+          {task.name} <span className='font-sans text-amber-700 dark:text-amber-400'>stuck</span>
+        </span>
+      ) : (
+        task.name
+      ),
   },
   {
     key: 'scan-count',

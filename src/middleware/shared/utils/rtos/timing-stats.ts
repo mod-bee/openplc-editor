@@ -24,6 +24,7 @@ export function rtosStatsToTimingStats(stats: RtosStats): TimingStats {
         cycle_latency_max: ran ? task.latencyMaxUs : null,
         cycle_latency_avg: ran ? task.latencyAvgUs : null,
         overruns: task.overruns,
+        ...(task.stuckNow ? { stuck: true } : {}),
       }
     }),
   }
@@ -33,8 +34,8 @@ export function rtosStatsToTimingStats(stats: RtosStats): TimingStats {
  * A task inside one scan for more than twice its period (and at least 20 ms):
  * stuck in a block, as the board itself judges a stalled task.
  */
-export function isRtosTaskStuck(task: Pick<RtosTaskStats, 'busyUs' | 'periodUs'>): boolean {
-  return task.busyUs > Math.max(2 * task.periodUs, 20000)
+export function isRtosTaskStuck(task: Pick<RtosTaskStats, 'busyUs' | 'periodUs' | 'stuckNow'>): boolean {
+  return task.stuckNow === true || task.busyUs > Math.max(2 * task.periodUs, 20000)
 }
 
 /**
@@ -42,12 +43,15 @@ export function isRtosTaskStuck(task: Pick<RtosTaskStats, 'busyUs' | 'periodUs'>
  * the window, with what they are doing instead: stuck in one scan, or skipped
  * (released while still busy) without one completing.
  */
-export function rtosTasksWithoutScans(stats: RtosStats): Array<{ name: string; stuckForUs?: number; skipped: number }> {
+export function rtosTasksWithoutScans(
+  stats: RtosStats,
+): Array<{ name: string; stuckForUs?: number; keptRunning?: boolean; skipped: number }> {
   return stats.tasks
     .filter((task) => task.releases === 0 && (task.overruns > 0 || isRtosTaskStuck(task)))
     .map((task) => ({
       name: task.name,
       ...(isRtosTaskStuck(task) ? { stuckForUs: task.busyUs } : {}),
+      ...(task.stuckNow ? { keptRunning: true } : {}),
       skipped: task.overruns,
     }))
 }

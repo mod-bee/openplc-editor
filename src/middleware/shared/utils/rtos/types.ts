@@ -80,6 +80,17 @@ export interface RtosTargetProfile {
   fixedHeap?: boolean
 }
 
+/**
+ * A target that runs each IEC task on a thread of its own and watches it for a
+ * stuck scan, so the per-task "Stop PLC if stuck" and "Stack" settings apply:
+ * firmware in RTOS mode, and a Linux runtime. The stack range is the sizes, in
+ * bytes, the build accepts for a task's Stack setting.
+ */
+export interface TaskThreadsProfile {
+  stackMin: number
+  stackMax: number
+}
+
 /** The user's choice for one board, kept in `vendorScreenData.rtos`. */
 export interface RtosSettings {
   enabled: boolean

@@ -98,6 +98,32 @@ uses the single loop and says why; set by hand, the build stops and tells you.
   The core is written to the program as `TASK t(...) {CORE := n};`, an IEC
   61131-3 §6.2 pragma, so the ST stays IEC.
 
+- **A task that may wait on the network: Stop PLC if stuck = No.** A task
+  still in one scan after 10 of its periods (or a first scan past 10 s) is
+  stuck, and by default that stops the PLC (ERROR). A communications task whose
+  block can wait seconds on a Wi-Fi or TCP connect can be set to **No** in the
+  task table's **Stop PLC if stuck** column: it is still watched, and when it is
+  stuck the status says so (`task-stuck-running`), the statistics flag it and
+  count it, and its skipped releases count as overruns, but the PLC and the
+  other tasks keep running. When the PLC is stopped (Stop, or an upload), such a
+  task gets at least 10 s to finish its scan, so a stop during a connect ends
+  as a normal stop. Leave the machine task on **Yes**.
+
+- **Stack: Default unless a task needs another size.** Every task gets the
+  board's own stack size (16 KB on most boards; a board package may set
+  another). The **Stack** column gives one task its own size, for example 8 KB
+  for a machine task that calls no network block and 16 KB for a communications
+  task, so the RAM is not spent where it is not used. The board's range is
+  offered (ESP32 4-64 KB, other boards 2-64 KB, a Linux runtime 64 KB-64 MB);
+  `debug stats` shows each task's stack beside what it has left. Too small a
+  stack crashes the board, so measure before going below the default.
+
+  Both settings are written to the program with the core, as
+  `TASK t(...) {CORE := 0, STOP_ON_STUCK := FALSE, STACK := 16384};`; a task on
+  the defaults is written as before. They need RTOS mode on a board (the build
+  refuses them with RTOS mode off), and a project with either set is never built
+  as the single loop.
+
 **Projects written for the single loop.** The single loop runs tasks one after
 another, so two tasks updating the same global never interrupt each other. In
 RTOS mode they can. Check such globals against the rules above, or switch RTOS

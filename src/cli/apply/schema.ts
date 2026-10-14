@@ -314,6 +314,15 @@ const taskSchema = z
      *  back on Auto). Offered in RTOS mode on a multi-core board, and on a
      *  Linux runtime; the build refuses a core the board does not have. */
     core: z.number().int().min(0).max(63).optional(),
+    /** Whether the task stuck in one scan (10 of its periods, or a first scan
+     *  past 10 s) stops the PLC. Omitted or true = it stops (the default);
+     *  false = it is reported and the PLC and the other tasks keep running.
+     *  Firmware in RTOS mode and Linux runtimes only. */
+    stopOnStuck: z.boolean().optional(),
+    /** The task's stack in bytes. Omitted = the target's default. The build
+     *  refuses a size outside the board's range (firmware in RTOS mode
+     *  2048/4096-65536, Linux runtime 65536-67108864). */
+    stack: z.number().int().min(1024).max(67108864).optional(),
   })
   .strict()
 

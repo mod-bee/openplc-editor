@@ -5,7 +5,13 @@ import { usePouSnapshot } from '../../../hooks/use-pou-snapshot'
 import { useOpenPLCStore } from '../../../store'
 import { GenericTable } from '../../_atoms/generic-table'
 import { EditableNameCell, EditablePriorityCell } from './editable-cell'
-import { SelectableCoreCell, SelectableIntervalCell, SelectableTriggerCell } from './selectable-cell'
+import {
+  SelectableCoreCell,
+  SelectableIntervalCell,
+  SelectableStackCell,
+  SelectableStopOnStuckCell,
+  SelectableTriggerCell,
+} from './selectable-cell'
 
 const columnHelper = createColumnHelper<PLCTask>()
 const columns = [
@@ -50,6 +56,24 @@ const columns = [
     minSize: 100,
     maxSize: 150,
     cell: (props) => SelectableCoreCell(props),
+  }),
+  // Whether the task stuck in one scan stops the PLC (Yes, the default), and its
+  // stack (Default): vendor extensions written to the build as the same pragma.
+  columnHelper.accessor('stopOnStuck', {
+    header: 'Stop PLC if stuck',
+    enableResizing: false,
+    size: 150,
+    minSize: 100,
+    maxSize: 150,
+    cell: (props) => SelectableStopOnStuckCell(props),
+  }),
+  columnHelper.accessor('stack', {
+    header: 'Stack',
+    enableResizing: false,
+    size: 150,
+    minSize: 100,
+    maxSize: 150,
+    cell: (props) => SelectableStackCell(props),
   }),
 ]
 

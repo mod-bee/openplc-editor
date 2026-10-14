@@ -234,6 +234,11 @@ const RtosStatsSchema = z.object({
       /** The core the task runs on, and the one the project set (firmware since the Core setting). */
       core: z.number().optional(),
       coreWanted: z.number().optional(),
+      /** Its "Stop PLC if stuck", stuck now and kept running, times so, and its stack (firmware since those settings). */
+      stopsOnStuck: z.boolean().optional(),
+      stuckNow: z.boolean().optional(),
+      stuckCount: z.number().optional(),
+      stackBytes: z.number().optional(),
     }),
   ),
   services: z.array(z.object({ iterationMaxUs: z.number(), busyReplies: z.number(), stackFreeBytes: z.number() })),

@@ -182,7 +182,11 @@ extern "C" void runtime_get_fault(runtime_fault_t* out)
 // Keeps the first fault since the last STOP -> RUN and counts every one.
 static void fault_record(uint8_t code, uint8_t task, uint32_t detail, bool safe)
 {
-    if (__atomic_load_n(&s_fault.code, __ATOMIC_ACQUIRE) == RUNTIME_FAULT_NONE) {
+    // A stuck task kept running (Stop PLC if stuck: No) is reported only; any
+    // later fault takes its place, so the status always says why the PLC stopped.
+    const uint8_t held = __atomic_load_n(&s_fault.code, __ATOMIC_ACQUIRE);
+    if (held == RUNTIME_FAULT_NONE ||
+        (held == RUNTIME_FAULT_TASK_STUCK_RUNNING && code != RUNTIME_FAULT_TASK_STUCK_RUNNING)) {
         __atomic_store_n(&s_fault.task, task, __ATOMIC_RELAXED);
         __atomic_store_n(&s_fault.detail, detail, __ATOMIC_RELAXED);
         __atomic_store_n(&s_fault.safe_mode, (uint8_t)safe, __ATOMIC_RELAXED);
@@ -1203,6 +1207,7 @@ void runtime_plc_cycle()
 }
 
 #if OPENPLC_RTOS
+#include "plc_rtos.h"   // OPENPLC_RTOS_WORK_STACK, for the one worker of an unthreaded build
 // ===========================================================================
 // RTOS mode
 //
@@ -1260,6 +1265,14 @@ extern "C" void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms)
     __atomic_store_n(&software_stop, true, __ATOMIC_RELEASE);
 }
 
+// A task stuck in one scan that is set not to stop the PLC (`{STOP_ON_STUCK :=
+// FALSE}`): reported, and the PLC and the other tasks keep running (v4 the same).
+extern "C" void runtime_rtos_task_stuck_running(uint32_t w, uint32_t ms)
+{
+    fault_record(RUNTIME_FAULT_TASK_STUCK_RUNNING, (uint8_t)(w < RUNTIME_FAULT_NO_TASK ? w : RUNTIME_FAULT_NO_TASK - 1),
+                 ms, false);
+}
+
 // A runtime error ended a task (v4: that task ends, the others keep running).
 extern "C" void runtime_rtos_task_ended(uint32_t w, uint8_t reason)
 {
@@ -1294,6 +1307,8 @@ struct RtosWorker {
     const char*            name;
     int32_t                priority;          // IEC PRIORITY (0 is highest)
     int32_t                core;              // the task's CPU core, -1 = Auto
+    bool                   stop_on_stuck;     // a stuck scan stops the PLC (the default)
+    uint32_t               stack;             // the task's stack in bytes, 0 = the default
     uint32_t               release_divisor;   // released every this many base ticks
     strucpp::ProgramBase** programs;
     const uint32_t*        program_divisors;  // per program, in base ticks; null = every release
@@ -1331,6 +1346,8 @@ extern "C" uint32_t    runtime_rtos_worker_count(void) { return s_worker_count; 
 extern "C" const char* runtime_rtos_worker_name(uint32_t w) { return s_workers[w].name; }
 extern "C" int32_t     runtime_rtos_worker_priority(uint32_t w) { return s_workers[w].priority; }
 extern "C" int32_t     runtime_rtos_worker_core(uint32_t w) { return s_workers[w].core; }
+extern "C" bool        runtime_rtos_worker_stop_on_stuck(uint32_t w) { return s_workers[w].stop_on_stuck; }
+extern "C" uint32_t    runtime_rtos_worker_stack(uint32_t w) { return s_workers[w].stack; }
 extern "C" uint32_t    runtime_rtos_worker_divisor(uint32_t w) { return s_workers[w].release_divisor; }
 
 // How long worker `w` has been in the scan it is in; 0 between scans.
@@ -1860,6 +1877,24 @@ static int32_t task_core(size_t resource, size_t task)
     return strucpp_task_core ? strucpp_task_core((uint32_t)resource, (uint32_t)task) : -1;
 }
 
+// Whether a stuck scan of the task stops the PLC (`{STOP_ON_STUCK := FALSE}`
+// keeps it running and reports it), and the task's stack in bytes
+// (`{STACK := n}`, 0 = the default). STruC++ emits each only when a task has
+// the setting; without it every task stops the PLC when stuck and has the
+// default stack, as before the settings existed.
+extern "C" int32_t  strucpp_task_stop_on_stuck(uint32_t resource, uint32_t task) __attribute__((weak));
+extern "C" uint32_t strucpp_task_stack(uint32_t resource, uint32_t task) __attribute__((weak));
+
+static bool task_stop_on_stuck(size_t resource, size_t task)
+{
+    return strucpp_task_stop_on_stuck ? strucpp_task_stop_on_stuck((uint32_t)resource, (uint32_t)task) != 0 : true;
+}
+
+static uint32_t task_stack(size_t resource, size_t task)
+{
+    return strucpp_task_stack ? strucpp_task_stack((uint32_t)resource, (uint32_t)task) : 0u;
+}
+
 // Called once from plc_rtos_start(), after runtime_discover_tasks(): one worker
 // per IEC task when the runtime is threaded, else one worker for all of them.
 extern "C" void runtime_rtos_prepare_workers(void)
@@ -1880,6 +1915,8 @@ extern "C" void runtime_rtos_prepare_workers(void)
             k.name             = task.name;
             k.priority         = task.priority;
             k.core             = task_core(r, t);
+            k.stop_on_stuck    = task_stop_on_stuck(r, t);
+            k.stack            = task_stack(r, t);
             k.release_divisor  = (uint32_t)(interval / base_tick_ns);
             if (k.release_divisor == 0) k.release_divisor = 1;
             k.programs         = task.programs;
@@ -1907,16 +1944,30 @@ extern "C" void runtime_rtos_prepare_workers(void)
         }
     }
     // One thread for every task: it goes where they all agree to, else Auto.
-    int32_t shared_core = -2;   // none seen yet
+    // It stops the PLC when stuck unless every task is set not to, and has the
+    // largest stack a task asks for, a task on Default counting as the default
+    // (the default when none asks).
+    int32_t  shared_core  = -2;   // none seen yet
+    bool     shared_stops = false;
+    uint32_t shared_stack = 0;
+    bool     stack_asked  = false;
     for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count; ++t) {
             const int32_t c = task_core(r, t);
             shared_core = (shared_core == -2 || shared_core == c) ? c : -1;
+            shared_stops = shared_stops || task_stop_on_stuck(r, t);
+            const uint32_t asked = task_stack(r, t);
+            stack_asked = stack_asked || asked != 0;
+            const uint32_t bytes = asked != 0 ? asked : (uint32_t)OPENPLC_RTOS_WORK_STACK;
+            if (bytes > shared_stack) shared_stack = bytes;
         }
     }
+    if (shared_core == -2) shared_stops = true;   // no task at all: the default
     s_workers[0].name             = "PLC";
     s_workers[0].priority         = 0;
     s_workers[0].core             = shared_core < 0 ? -1 : shared_core;
+    s_workers[0].stop_on_stuck    = shared_stops;
+    s_workers[0].stack            = stack_asked ? shared_stack : 0u;
     s_workers[0].release_divisor  = 1;
     s_workers[0].programs         = all_programs;
     s_workers[0].program_divisors = divisors;

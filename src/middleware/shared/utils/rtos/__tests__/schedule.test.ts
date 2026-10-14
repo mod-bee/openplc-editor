@@ -6,6 +6,7 @@ import {
   rtosRamNeed,
   rtosRamProblem,
   rtosScheduleProblem,
+  sharedWorkerStack,
 } from '../schedule'
 import type { RtosTargetProfile } from '../types'
 
@@ -132,6 +133,18 @@ describe('the RAM RTOS mode’s tasks take', () => {
     expect(need({ serviceB: true }) - one).toBe(16384 + 448)
     expect(need({ lockedGlobals: 10 }) - one).toBe(960)
     expect(one - need({ profile: heap })).toBe(8192 + 448 + 2700)
+  })
+
+  it('counts each task’s own Stack setting, the default for one without', () => {
+    expect(need({ workers: 2, workerStacks: [8192, undefined] }) - need({ workers: 2 })).toBe(8192 - 16384)
+    expect(need({ workers: 2, workerStacks: [8192, 32768] }) - need({ workers: 2 })).toBe(8192 + 32768 - 2 * 16384)
+  })
+
+  it('sizes the one worker of an unthreaded build to the largest a task asks for', () => {
+    expect(sharedWorkerStack([{}, {}])).toBeUndefined()
+    expect(sharedWorkerStack([{ stack: 8192 }, {}])).toBe(16384)
+    expect(sharedWorkerStack([{ stack: 8192 }, { stack: 32768 }])).toBe(32768)
+    expect(sharedWorkerStack([{ stack: 8192 }, { stack: 4096 }])).toBe(8192)
   })
 
   it('counts each located variable’s place in the process image', () => {

@@ -89,13 +89,19 @@ export function generateConfigurations(project: TranspileProject): ProgramChunk[
     out.push(['PRIORITY := ', []])
     out.push([`${task.priority}`, [resourceTagname, 'task', taskNumber, 'priority']])
     out.push([')', []])
-    // The task's CPU core: IEC 61131-3 §6.2 leaves a pragma's syntax and meaning
-    // to the Implementer, so the ST stays IEC. Auto writes nothing.
-    if (task.core !== undefined) {
-      out.push([' {CORE := ', []])
-      out.push([`${task.core}`, [resourceTagname, 'task', taskNumber, 'core']])
-      out.push(['}', []])
-    }
+    // The task's settings (Core, Stop PLC if stuck, Stack): IEC 61131-3 §6.2
+    // leaves a pragma's syntax and meaning to the Implementer, so the ST stays
+    // IEC. A task on the defaults writes nothing.
+    const settings = [
+      ...(task.core !== undefined ? [{ key: 'core', label: 'CORE := ', value: `${task.core}` }] : []),
+      ...(task.stopOnStuck === false ? [{ key: 'stopOnStuck', label: 'STOP_ON_STUCK := ', value: 'FALSE' }] : []),
+      ...(task.stack !== undefined ? [{ key: 'stack', label: 'STACK := ', value: `${task.stack}` }] : []),
+    ]
+    settings.forEach((setting, index) => {
+      out.push([`${index === 0 ? ' {' : ', '}${setting.label}`, []])
+      out.push([setting.value, [resourceTagname, 'task', taskNumber, setting.key]])
+    })
+    if (settings.length > 0) out.push(['}', []])
     out.push([';\n', []])
   })
 

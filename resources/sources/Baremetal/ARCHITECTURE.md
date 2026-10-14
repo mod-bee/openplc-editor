@@ -186,10 +186,17 @@ Zephyr) are listed in `middleware/shared/utils/rtos/support.ts`.
 pragma, read through STruC++'s `strucpp_task_core()`) runs it on that core
 instead: on the services' core it outranks the services, as every task outranks
 them. Auto, and a core the board lacks, is the PLC core (`plc_core_place.h`);
-the task statistics (FC 0x4e version 3) carry the core set and the core used.
+the task statistics (FC 0x4e version 3 and later) carry the core set and the core used.
 The rule is the same on every target; `plc_os.cpp` only gives the core count
 and pins a task (ESP32 by chip, RP2040/RP2350 both cores, every other backend
 one core). Runtime v4 pins the task thread with CPU affinity the same way.
+
+**Stacks.** Each IEC task gets `OPENPLC_RTOS_WORK_STACK` bytes, or its own
+**Stack** setting (`{STACK := n}`, `strucpp_task_stack()`) where that is within
+`OPENPLC_RTOS_TASK_STACK_MIN`..`_MAX` (2048..65536; `plc_task_stack` in
+`plc_core_place.h`). An unthreaded build's one worker gets the largest a task
+asks for, a task on Default counting as the default. The statistics (version 4)
+carry each task's stack.
 
 On a board with 32 KB of RAM or less (`PLC_OS_SMALL_STACKS`) the two services
 share one task (4 KB stack), each IEC task and the dispatcher have a 2 KB
@@ -300,11 +307,20 @@ Watchdog System, and task_policy.h):
   consecutive due ticks, replayed ones included, stops the PLC; the stop lands in
   ERROR (`runtime_rtos_fault_stop`). A first scan is not counted but is stopped
   past `OPENPLC_RTOS_FIRST_SCAN_TIMEOUT_US` (10 s).
+- A task whose **Stop PLC if stuck** is No (`{STOP_ON_STUCK := FALSE}`,
+  `strucpp_task_stop_on_stuck()`; `plc_task_stuck_action` in `plc_core_place.h`)
+  is not stopped for either: past the limit it is reported once, until it next
+  finishes a scan (fault `0x16` in the status, which any later fault replaces;
+  the statistics' stuck flag and count; its overruns), and the PLC and the other
+  tasks keep running. A stop while it is stuck is bounded as below. Runtime v4
+  does the same.
 - A runtime error in a task (a caught exception, or `iec_runtime_fault` where
   there are none) ends that task: its programs are skipped until the next
   STOP -> RUN; the other tasks keep running.
 - On a stop, an in-flight scan may run until 10 of its periods after its release
-  (10 s for a first scan) plus `OPENPLC_RTOS_ABORT_TIMEOUT_US` (2 s). A task this
+  (10 s for a first scan; a task whose Stop PLC if stuck is No, at least 10 s after
+  the stop: `plc_task_stop_deadline`, `PLC_STOP_WAIT_KEEP_RUNNING_US`) plus
+  `OPENPLC_RTOS_ABORT_TIMEOUT_US` (2 s). A task this
   board cannot abort past that, or a dispatcher with no frame for max(10 base
   ticks, `OPENPLC_RTOS_DISPATCH_STALL_MIN_US` 1 s) (watched by service A),
   restarts the board in safe mode (`plc_os_restart`, the reason kept in

@@ -283,6 +283,8 @@ function projectTask(task: PLCTask): TranspileTask {
     triggering: task.triggering,
     ...(task.triggering === 'Cyclic' ? { interval: task.interval } : { single: task.interval }),
     ...(task.core !== undefined ? { core: task.core } : {}),
+    ...(task.stopOnStuck === false ? { stopOnStuck: false } : {}),
+    ...(task.stack !== undefined ? { stack: task.stack } : {}),
   }
 }
 

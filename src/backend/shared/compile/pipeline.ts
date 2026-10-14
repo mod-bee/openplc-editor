@@ -45,7 +45,9 @@ import {
   rtosRamNeed,
   rtosRamProblem,
   rtosScheduleProblem,
+  sharedWorkerStack,
   taskCoreProblem,
+  taskSettingsProblem,
   withFqbnOptions,
 } from '../../../middleware/shared/utils/rtos'
 import { resolveTargetCapabilities } from '../../../middleware/shared/utils/target-capabilities'
@@ -605,16 +607,20 @@ async function runCompilePipelineInner(
   // before the long part of the build. On the default it falls back to the
   // single loop further down, with a warning.
   const rtosSettings = readRtosSettings(vendorScreenData)
-  // A task given a core needs RTOS mode as much as a switch set by hand: the
-  // single loop cannot place it, so nothing falls back to the loop either.
+  // A task given a core, a stack or "Stop PLC if stuck: No" needs RTOS mode as
+  // much as a switch set by hand: the single loop cannot give it, so nothing
+  // falls back to the loop either.
   const rtosRequired =
-    rtosSettings.chosen || processedData.configuration.resource.tasks.some((task) => task.core !== undefined)
+    rtosSettings.chosen ||
+    processedData.configuration.resource.tasks.some(
+      (task) => task.core !== undefined || task.stack !== undefined || task.stopOnStuck === false,
+    )
   if (targetCapabilities.rtos && rtosSettings.enabled && rtosRequired) {
     const problem = rtosScheduleProblem(processedData.configuration.resource.tasks, targetCapabilities.rtos)
     if (problem) {
       const way = rtosSettings.chosen
         ? 'RTOS mode can be switched off in Board Settings.'
-        : 'A task set to a core needs RTOS mode: set it to Auto to build the single scan loop.'
+        : 'A task set to a core, a stack or not to stop the PLC when stuck needs RTOS mode: set it to Auto, Default and Yes to build the single scan loop.'
       return bailError(emit, 'validate', `${problem} ${way}`)
     }
   }
@@ -627,6 +633,15 @@ async function runCompilePipelineInner(
     Boolean(targetCapabilities.rtos && rtosSettings.enabled),
   )
   if (coreProblem) return bailError(emit, 'validate', coreProblem)
+
+  // The same for "Stop PLC if stuck" and "Stack": refused where the target runs
+  // the single loop, and a stack outside the board's range.
+  const settingsProblem = taskSettingsProblem(
+    processedData.configuration.resource.tasks,
+    targetCapabilities,
+    Boolean(targetCapabilities.rtos && rtosSettings.enabled),
+  )
+  if (settingsProblem) return bailError(emit, 'validate', settingsProblem)
 
   // ---------------------------------------------------------------------
   // Step 0b: Reject blank FBD variable blocks before the ST transpile.
@@ -1381,6 +1396,7 @@ async function runCompilePipelineInner(
       rtosRamNeedBytes = rtosRamNeed({
         profile: rtosProfile,
         workers: strucppThreaded ? tasks.length : 1,
+        workerStacks: strucppThreaded ? tasks.map((task) => task.stack) : [sharedWorkerStack(tasks)],
         serviceB: [opcuaConfigH, s7commConfigH].some((header) =>
           /^#define (OPCUA|S7COMM)_ENABLED 1$/m.test(header ?? ''),
         ),

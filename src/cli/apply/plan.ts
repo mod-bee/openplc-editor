@@ -840,13 +840,21 @@ function applyTasks(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange
     const existing = tasks.findIndex((task) => task.name === wanted.name)
 
     if (existing >= 0) {
-      // The spec describes the task in full: no core is Auto, not "keep".
-      state.projectActions.updateTask({ data: { ...wanted, core: wanted.core }, rowId: existing })
+      // The spec describes the task in full: no core is Auto, no stopOnStuck
+      // or stack the default, not "keep".
+      state.projectActions.updateTask({
+        data: { ...wanted, core: wanted.core, stopOnStuck: wanted.stopOnStuck, stack: wanted.stack },
+        rowId: existing,
+      })
       changes.push({ kind: 'task', action: 'update', name: wanted.name })
       continue
     }
 
-    const response = state.projectActions.createTask({ data: wanted })
+    // stopOnStuck: true is the default, which a project stores as no setting.
+    const { stopOnStuck, ...rest } = wanted
+    const response = state.projectActions.createTask({
+      data: stopOnStuck === false ? { ...rest, stopOnStuck } : rest,
+    })
     if (!response.ok) {
       errors.push(`task "${wanted.name}": ${response.message ?? 'could not be created'}`)
       continue

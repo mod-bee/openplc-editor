@@ -89,6 +89,7 @@ const BoardTaskStatus = () => {
                 {task.stuckForUs !== undefined
                   ? `: stuck in one scan for ${formatS(task.stuckForUs)} (a block waiting, on the network perhaps)`
                   : ': has not finished a scan since the screen opened'}
+                {task.keptRunning ? '; set not to stop the PLC, so the PLC and the other tasks keep running' : ''}
                 {task.skipped > 0 ? `; ${task.skipped.toLocaleString()} releases skipped` : ''}
               </li>
             ))}

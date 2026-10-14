@@ -52,6 +52,14 @@
 #ifndef OPENPLC_RTOS_WORK_STACK
 #define OPENPLC_RTOS_WORK_STACK 16384
 #endif
+// A task's own Stack setting is used within these bounds; outside them the
+// task gets OPENPLC_RTOS_WORK_STACK (the editor refuses such a size first).
+#ifndef OPENPLC_RTOS_TASK_STACK_MIN
+#define OPENPLC_RTOS_TASK_STACK_MIN 2048
+#endif
+#ifndef OPENPLC_RTOS_TASK_STACK_MAX
+#define OPENPLC_RTOS_TASK_STACK_MAX 65536
+#endif
 #ifndef OPENPLC_RTOS_SERVICE_A_STACK
 #define OPENPLC_RTOS_SERVICE_A_STACK 8192
 #endif

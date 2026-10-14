@@ -80,6 +80,10 @@ export interface PLCTask {
   priority: number
   /** CPU core the task runs on; absent = Auto. See `PLCTaskSchema`. */
   core?: number
+  /** A stuck scan stops the PLC; absent = true. See `PLCTaskSchema`. */
+  stopOnStuck?: boolean
+  /** Stack in bytes; absent = the target's default. See `PLCTaskSchema`. */
+  stack?: number
 }
 
 export interface PLCInstance {
@@ -1034,6 +1038,9 @@ export interface TaskTimingStats {
   cycle_latency_max: number | null
   cycle_latency_avg: number | null
   overruns: number
+  /** Stuck in one scan past its limit now, and kept running (the task's "Stop
+   *  PLC if stuck" is No). Absent from runtimes and firmware without the setting. */
+  stuck?: boolean
 }
 
 export interface PluginStatsField {
@@ -1080,6 +1087,16 @@ export interface RtosTaskStats {
   /** The core the project set; absent = Auto. One that differs from `core` is
    *  a core the board lacks, which the firmware placed on Auto. */
   coreWanted?: number
+  /** A stuck scan stops the PLC (the task's "Stop PLC if stuck"); firmware
+   *  since that setting. */
+  stopsOnStuck?: boolean
+  /** Stuck in one scan past the limit now, and kept running because the task
+   *  is set not to stop the PLC. */
+  stuckNow?: boolean
+  /** Times the task went stuck and was kept running, since the board started. */
+  stuckCount?: number
+  /** The task's stack size in bytes. */
+  stackBytes?: number
 }
 
 /** A service task: [0] Modbus, the debugger and discovery; [1] OPC-UA and S7. */

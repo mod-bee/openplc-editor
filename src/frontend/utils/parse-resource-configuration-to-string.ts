@@ -1,4 +1,5 @@
 import type { PLCInstance, PLCTask } from '../../middleware/shared/ports/types'
+import { taskPragmaText } from '../../middleware/shared/utils/rtos'
 
 const DEFAULT_INTERVAL = 'T#20ms'
 const DEFAULT_PRIORITY = 1
@@ -18,9 +19,9 @@ export function parseResourceConfigurationToString(taskList: PLCTask[], instance
   for (const task of usedTasks) {
     const interval = (task.interval ?? '').trim() || DEFAULT_INTERVAL
     const priority = task.priority ?? DEFAULT_PRIORITY
-    // The task's CPU core, as the build writes it: an IEC §6.2 pragma.
-    const core = task.core !== undefined ? ` {CORE := ${task.core}}` : ''
-    out += `\t\tTASK ${task.name}(INTERVAL := ${interval}, PRIORITY := ${priority})${core};\n`
+    // The task's settings (Core, Stop PLC if stuck, Stack), as the build writes
+    // them: an IEC §6.2 pragma.
+    out += `\t\tTASK ${task.name}(INTERVAL := ${interval}, PRIORITY := ${priority})${taskPragmaText(task)};\n`
   }
 
   if (usedTasks.length) out += '\n'

@@ -310,7 +310,9 @@ describe('the default retain commit period', () => {
   })
 
   it('is 60 s on ESP32, whose NVS spreads writes across its pages', () => {
-    expect(resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'esp32:esp32' }).retainDefaultFlushSeconds).toBe(60)
+    expect(resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'esp32:esp32' }).retainDefaultFlushSeconds).toBe(
+      60,
+    )
     expect(
       resolveTargetCapabilities({ compiler: 'arduino-cli', platform: 'esp32:esp32:esp32s3' }).retainDefaultFlushSeconds,
     ).toBe(60)
@@ -339,7 +341,11 @@ describe('resolveTargetCapabilities — cpuCores', () => {
   })
 
   it('has one core on a board with no RTOS backend, whatever a manifest says', () => {
-    const caps = resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'arduino:avr', capabilities: { cpuCores: 2 } })
+    const caps = resolveTargetCapabilities({
+      compiler: 'arduino-cli',
+      core: 'arduino:avr',
+      capabilities: { cpuCores: 2 },
+    })
     expect(caps.cpuCores ?? 1).toBe(1)
   })
 
@@ -360,5 +366,50 @@ describe('resolveTargetCapabilities — cpuCores', () => {
 
   it('has one core in the simulator', () => {
     expect(resolveTargetCapabilities({ compiler: 'simulator' }).cpuCores ?? 1).toBe(1)
+  })
+})
+
+// Where a task's "Stop PLC if stuck" and "Stack" apply, and the stack range:
+// firmware with an RTOS backend (ESP32 4-64 KB, the others 2-64 KB), a Linux
+// runtime (64 KB-64 MB); nowhere else. A package may declare its own.
+describe('resolveTargetCapabilities — taskThreads', () => {
+  it('gives an RTOS backend its stack range', () => {
+    const esp = resolveTargetCapabilities({
+      compiler: 'arduino-cli',
+      core: 'esp32:esp32',
+      platform: 'esp32:esp32:esp32s3',
+    })
+    expect(esp.taskThreads).toEqual({ stackMin: 4096, stackMax: 65536 })
+    expect(resolveTargetCapabilities({ compiler: 'arduino-cli', core: 'rp2040:rp2040' }).taskThreads).toEqual({
+      stackMin: 2048,
+      stackMax: 65536,
+    })
+  })
+
+  it('has none on a board with no RTOS backend, whatever a manifest says', () => {
+    const caps = resolveTargetCapabilities({
+      compiler: 'arduino-cli',
+      core: 'arduino:avr',
+      capabilities: { taskThreads: { stackMin: 1024, stackMax: 4096 } },
+    })
+    expect(caps.taskThreads).toBeUndefined()
+  })
+
+  it('takes a package declaration on an RTOS board', () => {
+    const caps = resolveTargetCapabilities({
+      compiler: 'arduino-cli',
+      core: 'esp32:esp32',
+      platform: 'esp32:esp32:custom_board',
+      capabilities: { taskThreads: { stackMin: 6144, stackMax: 32768 } },
+    })
+    expect(caps.taskThreads).toEqual({ stackMin: 6144, stackMax: 32768 })
+  })
+
+  it('gives a Linux runtime its own, and the simulator none', () => {
+    expect(resolveTargetCapabilities({ compiler: 'openplc-compiler' }).taskThreads).toEqual({
+      stackMin: 65536,
+      stackMax: 67108864,
+    })
+    expect(resolveTargetCapabilities({ compiler: 'simulator' }).taskThreads).toBeUndefined()
   })
 })

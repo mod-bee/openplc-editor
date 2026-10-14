@@ -1797,8 +1797,11 @@ const createProjectSlice: StateCreator<ProjectSliceRoot, [], [], ProjectSlice> =
           const tasks = slice.project.data.configurations.resource.tasks
           if (dto.rowId >= 0 && dto.rowId < tasks.length) {
             const task = { ...tasks[dto.rowId], ...dto.data }
-            // Auto is no core at all, so a project on Auto saves as it always did.
+            // Auto is no core at all, and the defaults (stop when stuck, the
+            // target's stack) no setting, so such a project saves as it always did.
             if (task.core === undefined) delete task.core
+            if (task.stopOnStuck !== false) delete task.stopOnStuck
+            if (task.stack === undefined) delete task.stack
             tasks[dto.rowId] = task
           }
         }),

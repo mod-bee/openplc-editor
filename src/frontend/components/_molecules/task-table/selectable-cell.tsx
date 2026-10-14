@@ -3,7 +3,15 @@ import _ from 'lodash'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { PLCTask } from '../../../../middleware/shared/ports/types'
-import { findIntervalsOffTick, taskCoreCount, taskCoreProblem } from '../../../../middleware/shared/utils/rtos'
+import {
+  findIntervalsOffTick,
+  taskCoreCount,
+  taskCoreProblem,
+  taskSettingsProblem,
+  taskStackChoices,
+  taskStackLabel,
+  taskThreadsFor,
+} from '../../../../middleware/shared/utils/rtos'
 import { useRtosMode } from '../../../hooks/use-rtos-mode'
 import { useTargetCapabilities } from '../../../hooks/use-target-capabilities'
 import { LocationWarningGlyph } from '../../_atoms/location-warning-glyph'
@@ -280,4 +288,116 @@ const SelectableCoreCell = ({ row: { index, original }, table }: ISelectableCell
   )
 }
 
-export { SelectableCoreCell, SelectableIntervalCell, SelectableTriggerCell }
+const settingTriggerClass =
+  'flex h-full w-full justify-center p-2 font-caption text-cp-sm font-medium text-neutral-850 outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:text-neutral-300'
+const settingContentClass = 'box h-fit w-[200px] overflow-hidden rounded-lg bg-white outline-none dark:bg-neutral-950'
+const settingItemClass =
+  'flex w-full cursor-pointer items-center justify-center py-1 outline-none hover:bg-neutral-100 dark:hover:bg-neutral-900'
+const NO_THREADS_TIP =
+  'This board runs every task in one loop (RTOS mode off): a stuck task stops the PLC, and every task has the default stack.'
+
+/**
+ * Whether the task stuck in one scan stops the PLC: Yes (the default, as
+ * always) or No (it is reported, and the PLC and the other tasks keep running),
+ * for a communications task whose block can wait seconds on the network.
+ * Offered where each task is a thread of its own (RTOS mode, a Linux runtime).
+ */
+const SelectableStopOnStuckCell = ({ row: { index, original }, table }: ISelectableCellProps) => {
+  const capabilities = useTargetCapabilities()
+  const rtosOn = useRtosMode() !== undefined
+  const threads = taskThreadsFor(capabilities, rtosOn)
+  const stops = original.stopOnStuck !== false
+  const problem = original.stopOnStuck === false ? taskSettingsProblem([original], capabilities, rtosOn) : undefined
+
+  const onValueChange = (value: string) => {
+    table.options.meta?.updateData(index, 'stopOnStuck', value === 'no' ? false : undefined)
+  }
+
+  return (
+    <div className='flex h-full w-full items-center justify-center gap-1'>
+      <Select value={stops ? 'yes' : 'no'} onValueChange={onValueChange} disabled={!threads && stops}>
+        <SelectTrigger
+          aria-label={`Stop PLC if ${original.name} is stuck`}
+          title={
+            !threads
+              ? NO_THREADS_TIP
+              : 'No: when this task is stuck in one scan, it is reported and the PLC and the other tasks keep running.'
+          }
+          placeholder={stops ? 'Yes' : 'No'}
+          className={settingTriggerClass}
+        />
+        <SelectContent position='popper' side='bottom' sideOffset={-20} className={settingContentClass}>
+          {(['yes', 'no'] as const).map((option) => (
+            <SelectItem key={option} value={option} className={settingItemClass}>
+              <span className='text-center font-caption text-xs font-normal text-neutral-700 dark:text-neutral-500'>
+                {option === 'yes' ? 'Yes' : 'No'}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {problem && <LocationWarningGlyph label='Setting this board cannot give the task' tooltip={problem} />}
+    </div>
+  )
+}
+
+/**
+ * The task's stack: Default (the target's size) or a size in the board's
+ * range. A size set elsewhere (the CLI) is shown as it is, flagged when the
+ * build will refuse it.
+ */
+const SelectableStackCell = ({ row: { index, original }, table }: ISelectableCellProps) => {
+  const capabilities = useTargetCapabilities()
+  const rtosOn = useRtosMode() !== undefined
+  const threads = taskThreadsFor(capabilities, rtosOn)
+  const stack = original.stack
+  const problem = stack !== undefined ? taskSettingsProblem([original], capabilities, rtosOn) : undefined
+  const choices = taskStackChoices(threads, stack)
+
+  const onValueChange = (value: string) => {
+    table.options.meta?.updateData(index, 'stack', value === 'default' ? undefined : Number(value))
+  }
+
+  return (
+    <div className='flex h-full w-full items-center justify-center gap-1'>
+      <Select
+        value={stack === undefined ? 'default' : String(stack)}
+        onValueChange={onValueChange}
+        disabled={!threads && stack === undefined}
+      >
+        <SelectTrigger
+          aria-label={`Stack of ${original.name}`}
+          title={
+            !threads
+              ? NO_THREADS_TIP
+              : `Default is the board's own size; this board takes ${taskStackLabel(threads.stackMin)} to ${taskStackLabel(threads.stackMax)}.`
+          }
+          placeholder={taskStackLabel(stack)}
+          className={settingTriggerClass}
+        />
+        <SelectContent position='popper' side='bottom' sideOffset={-20} className={settingContentClass}>
+          {[undefined, ...choices].map((option) => (
+            <SelectItem
+              key={option ?? 'default'}
+              value={option === undefined ? 'default' : String(option)}
+              className={settingItemClass}
+            >
+              <span className='text-center font-caption text-xs font-normal text-neutral-700 dark:text-neutral-500'>
+                {taskStackLabel(option)}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {problem && <LocationWarningGlyph label='Stack this board cannot give the task' tooltip={problem} />}
+    </div>
+  )
+}
+
+export {
+  SelectableCoreCell,
+  SelectableIntervalCell,
+  SelectableStackCell,
+  SelectableStopOnStuckCell,
+  SelectableTriggerCell,
+}

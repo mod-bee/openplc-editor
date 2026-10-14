@@ -28,3 +28,30 @@ describe('configuration — task core', () => {
     )
   })
 })
+
+describe('configuration — Stop PLC if stuck and Stack', () => {
+  it('writes a task on the defaults exactly as before', () => {
+    expect(
+      text([{ name: 'MAIN', triggering: 'Cyclic', interval: 'T#50ms', priority: 0, stopOnStuck: true }]),
+    ).toContain('TASK MAIN(INTERVAL := T#50ms,PRIORITY := 0);\n')
+  })
+
+  it('writes them after the core in the one pragma', () => {
+    expect(
+      text([
+        {
+          name: 'COMMS',
+          triggering: 'Cyclic',
+          interval: 'T#100ms',
+          priority: 5,
+          core: 0,
+          stopOnStuck: false,
+          stack: 16384,
+        },
+      ]),
+    ).toContain('TASK COMMS(INTERVAL := T#100ms,PRIORITY := 5) {CORE := 0, STOP_ON_STUCK := FALSE, STACK := 16384};\n')
+    expect(text([{ name: 'LOGIC', triggering: 'Cyclic', interval: 'T#50ms', priority: 0, stack: 8192 }])).toContain(
+      'TASK LOGIC(INTERVAL := T#50ms,PRIORITY := 0) {STACK := 8192};\n',
+    )
+  })
+})

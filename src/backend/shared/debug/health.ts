@@ -75,6 +75,9 @@ export function describeFault(fault: RuntimeFault, names: readonly string[]): Fa
     case 'task-stuck':
       text = `task ${task} stuck in one scan for 10 periods (${fault.detail} ms): PLC stopped, ERROR`
       break
+    case 'task-stuck-running':
+      text = `task ${task} stuck in one scan (${fault.detail} ms); set not to stop the PLC, so the PLC and the other tasks keep running`
+      break
     case 'first-scan-stuck':
       text = `task ${task}: first scan still running after ${fault.detail} ms: PLC stopped, ERROR`
       break

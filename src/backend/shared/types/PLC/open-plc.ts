@@ -187,6 +187,13 @@ const PLCTaskSchema = z.object({
   /** CPU core the task runs on; absent = Auto (the runtime places it). A vendor
    *  extension: the build writes it as an IEC §6.2 pragma, `{CORE := n}`. */
   core: z.number().int().min(0).max(63).optional(),
+  /** Whether a scan stuck past the runtime's limit stops the PLC; absent = true
+   *  (it stops, as always). false: the stuck task is reported and the PLC and
+   *  the other tasks keep running. Written as `{STOP_ON_STUCK := FALSE}`. */
+  stopOnStuck: z.boolean().optional(),
+  /** The task's stack in bytes; absent = the target's default. Written as
+   *  `{STACK := n}`. The build checks it against the target's range. */
+  stack: z.number().int().min(1024).max(67108864).optional(),
 })
 
 type PLCTask = z.infer<typeof PLCTaskSchema>

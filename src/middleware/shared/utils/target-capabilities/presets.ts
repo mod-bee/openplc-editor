@@ -171,6 +171,9 @@ export const RUNTIME_V4_CAPABILITIES: TargetCapabilities = {
   // declares nothing is offered four (Raspberry Pi), and the runtime places a
   // core the machine lacks on Auto.
   cpuCores: 4,
+  // Each task is a thread of its own, stopped when stuck unless set not to; a
+  // Stack setting sizes the thread (the runtime's floor is 64 KB).
+  taskThreads: { stackMin: 65536, stackMax: 67108864 },
   plcStateControl: true,
   directUsbUpload: false,
   // Licensing is never a property of a TARGET FAMILY: a VPP is what is

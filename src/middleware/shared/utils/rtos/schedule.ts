@@ -112,6 +112,8 @@ export interface RtosRamNeedArgs {
   profile: RtosTargetProfile
   /** IEC task workers: one per task when threaded, else one. */
   workers: number
+  /** Each worker's stack (its task's Stack setting), undefined = the default. */
+  workerStacks?: readonly (number | undefined)[]
   /** An OPC-UA or S7 server is enabled (a second service task). */
   serviceB: boolean
   /** Shared globals that take a lock each (a threaded build on a `platform` backend). */
@@ -127,6 +129,7 @@ export interface RtosRamNeedArgs {
 export function rtosRamNeed({
   profile,
   workers,
+  workerStacks,
   serviceB,
   lockedGlobals,
   locatedVariables,
@@ -139,7 +142,7 @@ export function rtosRamNeed({
   // port locks and the globals'.
   const mutexes = workers + 2 + 4 + SERIAL_LOCKS + lockedGlobals
   return (
-    workers * STACKS.work +
+    Array.from({ length: workers }, (_, w) => workerStacks?.[w] ?? STACKS.work).reduce((sum, bytes) => sum + bytes, 0) +
     STACKS.serviceA +
     serviceBBytes +
     dispatcherBytes +
@@ -150,6 +153,17 @@ export function rtosRamNeed({
     (profile.ownDispatcher ? RTOS_OWN_TASKS_BYTES : 0) +
     MAIN_STACK_BYTES
   )
+}
+
+/**
+ * The stack of the one worker that runs every task (a build that is not
+ * threaded), as the firmware sizes it (arduino_runtime_glue.cpp): the largest a
+ * task asks for, a task on Default counting as the default; undefined (the
+ * default) when no task asks.
+ */
+export function sharedWorkerStack(tasks: readonly { stack?: number }[]): number | undefined {
+  if (!tasks.some((task) => task.stack !== undefined)) return undefined
+  return Math.max(...tasks.map((task) => task.stack ?? STACKS.work))
 }
 
 const LOCATED_COUNT = /\bconstexpr\s+uint32_t\s+locatedVarsCount\s*=\s*(\d+)\s*;/

@@ -55,6 +55,8 @@ void runtime_rtos_fail(uint8_t code, uint8_t task);
 // program, outputs off).
 void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms);
 void runtime_rtos_task_ended(uint32_t worker, uint8_t reason);
+// A task stuck in one scan, set not to stop the PLC: reported, the rest runs on.
+void runtime_rtos_task_stuck_running(uint32_t worker, uint32_t ms);
 void runtime_rtos_safe_mode(uint8_t code, uint8_t task, uint32_t ms);
 bool runtime_rtos_in_safe_mode(void);
 bool runtime_rtos_fault_stopped(void);   // ERROR from a fault stop: RUN may leave it
@@ -66,6 +68,8 @@ uint32_t    runtime_rtos_worker_count(void);
 const char* runtime_rtos_worker_name(uint32_t worker);
 int32_t     runtime_rtos_worker_priority(uint32_t worker);   // IEC PRIORITY, 0 highest
 int32_t     runtime_rtos_worker_core(uint32_t worker);       // the task's CPU core, -1 = Auto
+bool        runtime_rtos_worker_stop_on_stuck(uint32_t worker); // a stuck scan stops the PLC
+uint32_t    runtime_rtos_worker_stack(uint32_t worker);      // the task's stack in bytes, 0 = default
 uint32_t    runtime_rtos_worker_divisor(uint32_t worker);    // released every N base ticks
 // How long the worker has been inside its current scan, in microseconds; 0
 // when it is between scans. A task stuck in a block shows here.
@@ -139,6 +143,8 @@ uint32_t runtime_rtos_retain_late_max_us(bool reset);
 #define RUNTIME_FAULT_FIRST_SCAN_STUCK   0x12  // `task`'s first scan past 10 s: PLC stopped, ERROR
 #define RUNTIME_FAULT_STOP_TIMEOUT       0x13  // `task` did not finish its scan on a stop: safe-mode restart
 #define RUNTIME_FAULT_TASK_ENDED         0x14  // a runtime error ended `task`; the others keep running
+#define RUNTIME_FAULT_TASK_STUCK_RUNNING 0x16  // `task` stuck in one scan, set not to stop the PLC:
+                                               // reported, the PLC keeps running; a later fault replaces it
 #define RUNTIME_FAULT_NO_TASK            0xFF
 
 // TASK_ENDED reasons (strucpp::IecFault values, then the catch-alls).

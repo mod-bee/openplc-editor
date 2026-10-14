@@ -426,6 +426,7 @@ export const RUNTIME_FAULT_KINDS: Readonly<Record<number, string>> = {
   0x12: 'first-scan-stuck',
   0x13: 'stop-timeout',
   0x14: 'task-ended',
+  0x16: 'task-stuck-running',
 }
 
 /** RUNTIME_RETAIN_* codes by their machine names. */
@@ -729,10 +730,13 @@ export function parsePlcSetStateResponse(data: Uint8Array): PlcControlResult {
 //
 //   request:  [FC=0x4e] [flags: U8] [firstTask: U8]
 //             (flags bit 0: start a new window once the last task has been read)
-//   response: [FC=0x4e] [status] [version=2|3: U8]
+//   response: [FC=0x4e] [status] [version=2|3|4: U8]
 //             [taskTotal: U8] [firstTask: U8] [taskCount: U8]
 //             then per task [nameLen: U8] [name...] [12 x U32BE]
-//             (version 3:) [core: U8] [coreWanted: U8], 0xFF = Auto
+//             (version 3+:) [core: U8] [coreWanted: U8], 0xFF = Auto
+//             (version 4:) [flags: U8] [stuckCount: U16BE] [stackBytes: U32BE]
+//               flags bit 0: a stuck scan stops the PLC; bit 1: stuck now,
+//               kept running (Stop PLC if stuck: No)
 //             [serviceCount: U8] then per service [3 x U32BE]
 //             [dispatcherStack, heapFree, heapMinFree, baseTickUs,
 //              retainLateMaxUs: 5 x U32BE]
@@ -742,11 +746,14 @@ export function parsePlcSetStateResponse(data: Uint8Array): PlcControlResult {
 // ---------------------------------------------------------------------------
 
 const MODBUS_EXCEPTION_ILLEGAL_FUNCTION = 0x01
-/** Version 2, and version 3 with each task's core (firmware since the Core setting). */
-const TASK_STATS_VERSIONS = [2, 3]
+/** Version 2, 3 with each task's core (firmware since the Core setting), and 4
+ *  with its stuck setting, state and count and its stack (since those settings). */
+const TASK_STATS_VERSIONS = [2, 3, 4]
 const TASK_STATS_TASK_U32S = 12
 /** Bytes after a task's values: none in version 2, its core and the one set in 3. */
 const taskStatsCoreBytes = (version: number): number => (version >= 3 ? 2 : 0)
+/** Bytes after those in version 4: flags, stuck count (U16), stack (U32). */
+const taskStatsStuckBytes = (version: number): number => (version >= 4 ? 7 : 0)
 const CORE_AUTO = 0xff
 const TASK_STATS_TAIL_U32S = 5
 /** The most tasks a board has (OPENPLC_RTOS_MAX_WORKERS), so the most pages. */
@@ -769,7 +776,7 @@ export function taskStatsPduLength(pdu: Uint8Array): number | null {
   if (pdu.length < 2) return null
   if (readU8(pdu, 0) & 0x80 || readU8(pdu, 1) !== (ModbusDebugResponse.SUCCESS as number)) return 2
   if (pdu.length < 6) return null
-  const coreBytes = taskStatsCoreBytes(readU8(pdu, 2))
+  const coreBytes = taskStatsCoreBytes(readU8(pdu, 2)) + taskStatsStuckBytes(readU8(pdu, 2))
   let length = 6
   for (let task = 0; task < readU8(pdu, 5); task++) {
     if (pdu.length <= length) return null
@@ -851,6 +858,18 @@ export function parseGetTaskStatsPage(data: Uint8Array): TaskStatsPageResult {
         ...(wanted !== CORE_AUTO ? { coreWanted: wanted } : {}),
       }
     }
+    let stuck: { stopsOnStuck?: boolean; stuckNow?: boolean; stuckCount?: number; stackBytes?: number } = {}
+    if (taskStatsStuckBytes(version) > 0) {
+      if (data.length < offset + 7) return truncated
+      const flags = readU8(data, offset)
+      stuck = {
+        stopsOnStuck: (flags & 0x01) !== 0,
+        stuckNow: (flags & 0x02) !== 0,
+        stuckCount: (readU8(data, offset + 1) << 8) | readU8(data, offset + 2),
+        stackBytes: readU32BE(data, offset + 3),
+      }
+      offset += 7
+    }
     const [
       releases,
       overruns,
@@ -880,6 +899,7 @@ export function parseGetTaskStatsPage(data: Uint8Array): TaskStatsPageResult {
       busyUs,
       periodUs,
       ...cores,
+      ...stuck,
     })
   }
 

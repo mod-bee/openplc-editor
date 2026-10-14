@@ -98,3 +98,27 @@ describe('parseResourceConfigurationToString — task core', () => {
     expect(result).toContain('TASK Net(INTERVAL := T#20ms, PRIORITY := 1) {CORE := 0};')
   })
 })
+
+describe('parseResourceConfigurationToString — Stop PLC if stuck and Stack', () => {
+  it('writes them with the core in one pragma, and nothing for the defaults', () => {
+    const tasks: PLCTask[] = [
+      { name: 'Logic', triggering: 'Cyclic', interval: 'T#50ms', priority: 0, stack: 8192 },
+      {
+        name: 'Comms',
+        triggering: 'Cyclic',
+        interval: 'T#100ms',
+        priority: 5,
+        core: 0,
+        stopOnStuck: false,
+        stack: 16384,
+      },
+      { name: 'Other', triggering: 'Cyclic', interval: 'T#100ms', priority: 6, stopOnStuck: true },
+    ]
+    const result = parseResourceConfigurationToString(tasks, [])
+    expect(result).toContain('TASK Logic(INTERVAL := T#50ms, PRIORITY := 0) {STACK := 8192};')
+    expect(result).toContain(
+      'TASK Comms(INTERVAL := T#100ms, PRIORITY := 5) {CORE := 0, STOP_ON_STUCK := FALSE, STACK := 16384};',
+    )
+    expect(result).toContain('TASK Other(INTERVAL := T#100ms, PRIORITY := 6);')
+  })
+})

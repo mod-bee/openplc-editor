@@ -89,3 +89,13 @@ describe('retain', () => {
     expect(describeRetain({ code: 0, kind: 'none', bytes: 0 }).text).toBe('nothing retained')
   })
 })
+
+describe('describeFault — a stuck task kept running', () => {
+  it('says the PLC and the other tasks keep running', () => {
+    const fault = describeFault(
+      { code: 0x16, kind: 'task-stuck-running', task: 1, safeMode: false, count: 1, detail: 3200 },
+      ['LOGIC', 'COMMS'],
+    )
+    expect(fault.text).toMatch(/COMMS stuck in one scan \(3200 ms\).*keep running/)
+  })
+})

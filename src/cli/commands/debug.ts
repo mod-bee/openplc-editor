@@ -546,6 +546,14 @@ function taskCoreText(task: { core?: number; coreWanted?: number }): string {
   return `${task.core}`
 }
 
+/** What a stuck scan of the task does (its "Stop PLC if stuck"), and how often it
+ *  was kept running. Blank from firmware without the setting. */
+function taskStuckText(task: { stopsOnStuck?: boolean; stuckCount?: number }): string {
+  if (task.stopsOnStuck === undefined) return ''
+  if (task.stopsOnStuck) return 'stop PLC'
+  return task.stuckCount ? `keep running (stuck ${task.stuckCount}x)` : 'keep running'
+}
+
 function report(reporter: Reporter, response: Response): CliResult {
   if (!response.ok) {
     return reporter.failure(
@@ -636,6 +644,7 @@ export function renderOk(response: OkResponse): string {
             'LATENCY us avg/max',
             'STACK FREE',
             'CORE',
+            'IF STUCK',
             'NOW',
           ],
           stats.tasks.map((task) => [
@@ -646,9 +655,16 @@ export function renderOk(response: OkResponse): string {
             `${us(task.scanMinUs)} / ${us(task.scanAvgUs)} / ${us(task.scanMaxUs)}`,
             `${us(task.cycleMinUs)} / ${us(task.cycleMaxUs)}`,
             `${us(task.latencyAvgUs)} / ${us(task.latencyMaxUs)}`,
-            `${us(task.stackFreeBytes)} B`,
+            task.stackBytes ? `${us(task.stackFreeBytes)} of ${us(task.stackBytes)} B` : `${us(task.stackFreeBytes)} B`,
             taskCoreText(task),
-            isRtosTaskStuck(task) ? `STUCK ${us(task.busyUs)} us` : task.busyUs > 0 ? 'scanning' : 'idle',
+            taskStuckText(task),
+            task.stuckNow
+              ? `STUCK ${us(task.busyUs)} us, PLC kept running`
+              : isRtosTaskStuck(task)
+                ? `STUCK ${us(task.busyUs)} us`
+                : task.busyUs > 0
+                  ? 'scanning'
+                  : 'idle',
           ]),
         ),
         `base tick ${us(stats.baseTickUs)} us`,

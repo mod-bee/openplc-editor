@@ -158,6 +158,10 @@ export interface TranspileTask {
   single?: string
   /** CPU core; absent = Auto. Emitted as the IEC §6.2 pragma `{CORE := n}`. */
   core?: number
+  /** false: a stuck scan does not stop the PLC (`{STOP_ON_STUCK := FALSE}`); absent = true. */
+  stopOnStuck?: boolean
+  /** Stack in bytes (`{STACK := n}`); absent = the target's default. */
+  stack?: number
 }
 
 export interface TranspileInstance {

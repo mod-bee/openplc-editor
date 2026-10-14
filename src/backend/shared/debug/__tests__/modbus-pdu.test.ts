@@ -782,4 +782,65 @@ describe('FC 0x4e — task statistics', () => {
     const result = parseGetTaskStatsPage(page(1, 0, [main]))
     expect(result.success && result.page.stats.tasks[0].core).toBeUndefined()
   })
+
+  // Version 4 adds, after the core bytes, the task's "Stop PLC if stuck"
+  // (flags bit 0), whether it is stuck now and kept running (bit 1), how often it
+  // was (U16) and its stack (U32).
+  const pageV4 = (
+    total: number,
+    first: number,
+    tasks: (Task & { flags: number; stuckCount: number; stack: number })[],
+  ) =>
+    Uint8Array.from([
+      0x4e,
+      0x7e,
+      4,
+      total,
+      first,
+      tasks.length,
+      ...tasks.flatMap((entry) => [
+        entry.name.length,
+        ...Buffer.from(entry.name),
+        ...entry.values.flatMap(u32),
+        1,
+        0xff,
+        entry.flags,
+        entry.stuckCount >> 8,
+        entry.stuckCount & 0xff,
+        ...u32(entry.stack),
+      ]),
+      2,
+      ...[4500, 3, 2048, 900, 0, 4096].flatMap(u32),
+      ...[0x1000, 0x3d440, 0x3d324, 10_000, 250].flatMap(u32),
+    ])
+
+  it('reads each task stuck setting, state, count and stack from version 4', () => {
+    const reply = pageV4(2, 0, [
+      { ...main, flags: 0x01, stuckCount: 0, stack: 8192 },
+      { ...net, flags: 0x02, stuckCount: 300, stack: 16384 },
+    ])
+    expect(taskStatsPduLength(reply)).toBe(reply.length)
+    const result = parseGetTaskStatsPage(reply)
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(
+      result.page.stats.tasks.map(({ core, stopsOnStuck, stuckNow, stuckCount, stackBytes }) => ({
+        core,
+        stopsOnStuck,
+        stuckNow,
+        stuckCount,
+        stackBytes,
+      })),
+    ).toEqual([
+      { core: 1, stopsOnStuck: true, stuckNow: false, stuckCount: 0, stackBytes: 8192 },
+      { core: 1, stopsOnStuck: false, stuckNow: true, stuckCount: 300, stackBytes: 16384 },
+    ])
+    expect(result.page.stats.retainLateMaxUs).toBe(250)
+  })
+
+  it('has no stuck setting or stack from version 3', () => {
+    const result = parseGetTaskStatsPage(page(1, 0, [main]))
+    expect(result.success && result.page.stats.tasks[0].stackBytes).toBeUndefined()
+    expect(result.success && result.page.stats.tasks[0].stopsOnStuck).toBeUndefined()
+  })
 })
