@@ -93,6 +93,24 @@ export const setOopTypeAssignability = (assignability?: OopTypeAssignability): v
   oopAssignability = assignability
 }
 
+/** `ARRAY [d1, d2] OF T` split into its dimensions (spaces dropped) and T. */
+const parseArrayType = (type: string): { dims: string[]; element: string } | undefined => {
+  const match = /^ARRAY\s*\[(.*?)\]\s*OF\s+(.+)$/.exec(type.trim())
+  if (!match) return undefined
+  return { dims: match[1].split(',').map((d) => d.replace(/\s+/g, '')), element: match[2].trim() }
+}
+
+/** Whether array type `selected` fits array type `expected`; undefined when
+ *  `expected` is not an array type. */
+const arrayTypesFit = (selected: string, expected: string): boolean | undefined => {
+  const want = parseArrayType(expected)
+  if (!want) return undefined
+  const have = parseArrayType(selected)
+  if (!have || have.dims.length !== want.dims.length) return false
+  if (!want.dims.every((d, i) => d === '*' || d === have.dims[i])) return false
+  return validateVariableType(have.element, want.element).isValid
+}
+
 export const validateVariableType = (
   selectedType: string,
   expectedType: string,
@@ -129,6 +147,17 @@ export const validateVariableType = (
   // expected (IEC 61131-3 6.6.6.5.1, 6.6.5.5).
   if (upperSelectedType !== upperExpectedType && oopAssignability?.(selectedType, expectedType) === true) {
     return { isValid: true, error: undefined }
+  }
+
+  // An array where an array is expected: a variable-length ARRAY[*] OF T pin
+  // takes any array of T with as many dimensions (IEC 61131-3 Ed.3 6.5.3,
+  // Table 15); a fixed one takes the same bounds, however the type is spaced.
+  const arrayFit = arrayTypesFit(upperSelectedType, upperExpectedType)
+  if (arrayFit !== undefined) {
+    return {
+      isValid: arrayFit,
+      error: arrayFit ? undefined : `Expected: ${upperExpectedType}, Got: ${upperSelectedType}`,
+    }
   }
 
   // Handle specific types

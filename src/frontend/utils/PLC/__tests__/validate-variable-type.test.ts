@@ -11,6 +11,20 @@ describe('validateVariableType', () => {
     expect(validateVariableType('REAL', 'ANY').isValid).toBe(true)
   })
 
+  it('takes an array of the element type at a variable-length ARRAY[*] pin (IEC 61131-3 6.5.3)', () => {
+    expect(validateVariableType('ARRAY [1..2] OF UT_ZONE', 'ARRAY[*] OF UT_ZONE').isValid).toBe(true)
+    expect(validateVariableType('array[0..31] of int', 'ARRAY[*] OF INT').isValid).toBe(true)
+    expect(validateVariableType('ARRAY[1..2, 1..3] OF REAL', 'ARRAY[*, *] OF REAL').isValid).toBe(true)
+    expect(validateVariableType('ARRAY[1..2] OF UT_VALVE', 'ARRAY[*] OF UT_ZONE').isValid).toBe(false)
+    expect(validateVariableType('ARRAY[1..2, 1..3] OF REAL', 'ARRAY[*] OF REAL').isValid).toBe(false)
+    expect(validateVariableType('UT_ZONE', 'ARRAY[*] OF UT_ZONE').isValid).toBe(false)
+  })
+
+  it('matches a fixed array type however it is spaced', () => {
+    expect(validateVariableType('ARRAY [1..2] OF INT', 'ARRAY[1..2] OF INT').isValid).toBe(true)
+    expect(validateVariableType('ARRAY[1..3] OF INT', 'ARRAY[1..2] OF INT').isValid).toBe(false)
+  })
+
   it('case-insensitively matches concrete types', () => {
     expect(validateVariableType('bool', 'BOOL').isValid).toBe(true)
     expect(validateVariableType('BOOL', 'bool').isValid).toBe(true)

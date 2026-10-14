@@ -598,11 +598,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
 
     const variable = freshVariables.selected
     if (!variable) {
-      // A qualified name is a global variable list member (`NET.node`), which
-      // is not in this POU's interface under any spelling. Ask the LSP, which
-      // knows the lists, instead of calling it wrong.
+      // A qualified name is a global variable list member (`NET.node`), and a
+      // subscripted one an element of an array of instances (`zones[1]`, IEC
+      // 61131-3 6.4.4.1); neither is in this POU's interface under that
+      // spelling. Ask the LSP, which resolves both, instead of calling it wrong.
       const instanceName = data.variable.name
-      if (instanceName.includes('.')) {
+      if (instanceName.includes('.') || instanceName.includes('[')) {
         const blockTypeName = (freshNode.data as BlockNodeData<BlockVariant>).variant.name
         let cancelled = false
         void isBlockInstanceInScope(pouName, instanceName, blockTypeName).then((inScope) => {
