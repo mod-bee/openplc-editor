@@ -51,6 +51,7 @@
 import { parseHybridPouFromString } from '../../../frontend/utils/PLC/pou-text-parser'
 import type { StlibArchiveDTO } from '../../../middleware/shared/ports/library-port'
 import type { PLCPou, PLCProjectData } from '../../../middleware/shared/ports/types'
+import type { TranspileLibraryType } from '../transpilers/st-transpiler/types'
 
 /** One native block an archive ships, resolved to its authored source. */
 type ResolvedNativeBlock = {
@@ -187,6 +188,40 @@ export function projectAndLibraryTypeNames(
     }
   }
   return names
+}
+
+/**
+ * The STRUCT types of the *enabled* libraries, each member's type as ST text.
+ *
+ * The ladder / FBD transpiler types a generic block's temporary from the wire it
+ * drives or reads; a wire reaching into a library type (`DEV.limit.set.sp`, the
+ * project's struct holding a library's) needs the library's members to resolve,
+ * or the temporary is declared `ANY` and the program does not compile.
+ */
+export function libraryStructTypes(
+  projectData: { libraries?: { name: string }[] },
+  archives: readonly unknown[],
+): TranspileLibraryType[] {
+  const enabled = new Set((projectData.libraries ?? []).map((ref) => ref.name))
+  const out: TranspileLibraryType[] = []
+  for (const archive of archives as StlibArchiveDTO[]) {
+    const libraryName = archive?.manifest?.name
+    if (!libraryName || !enabled.has(libraryName)) continue
+    for (const type of archive.manifest.types ?? []) {
+      if (type.kind !== 'struct' || !type.fields) continue
+      out.push({
+        name: type.name,
+        fields: type.fields.map((f) => ({
+          name: f.declaredName ?? f.name,
+          type:
+            f.elementTypeName && f.arrayDimensions?.length
+              ? `ARRAY [${f.arrayDimensions.map((d) => `${d.start}..${d.end}`).join(', ')}] OF ${f.elementTypeName}`
+              : f.type,
+        })),
+      })
+    }
+  }
+  return out
 }
 
 /**

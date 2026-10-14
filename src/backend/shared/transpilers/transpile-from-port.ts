@@ -42,6 +42,8 @@ export function fromPortShape(data: PLCProjectData): TranspileProject {
   return {
     pous: data.pous.map((pou) => withGlobalListExternals(projectPou(pou), lists)),
     dataTypes: [...(data.dataTypes ?? []).map(projectDataType), ...lists.map(globalListStruct)],
+    // The enabled libraries' STRUCTs, when the compile path attached them (see `libraryStructTypes`).
+    libraryTypes: (data as { libraryTypes?: TranspileProject['libraryTypes'] }).libraryTypes,
     configuration: {
       tasks: (resource?.tasks ?? []).map(projectTask),
       instances: (resource?.instances ?? []).map(projectInstance),

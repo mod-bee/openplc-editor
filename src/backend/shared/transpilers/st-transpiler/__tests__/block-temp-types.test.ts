@@ -163,3 +163,56 @@ describe('function-call temporaries take the type of the variable their output d
     ).toMatch(/_TMP_SEL7001_OUT : E1;/)
   })
 })
+
+/**
+ * A structure member whose type comes from a LIBRARY (its .stlib manifest), e.g.
+ * `DEV.levelLimit.set.meas.hiHi.sp` through UT_LIMIT_DATA: IEC 61131-3 types the
+ * access by the member's declaration wherever the type was declared, and MOVE's
+ * OUT takes IN's type (Table 22 note g, 6.4.3 overloading). It used to resolve to
+ * nothing past the first library type, leaving the temporary `ANY`.
+ */
+describe('function-call temporaries through a library structure type', () => {
+  const libProject = (pou: TranspilePou): TranspileProject => {
+    const base = project(pou)
+    return {
+      ...base,
+      dataTypes: [
+        ...base.dataTypes,
+        {
+          name: 'Dev',
+          derivation: 'structure',
+          variable: [{ name: 'lim', type: { definition: 'derived', value: 'LIB_DATA' } }],
+        },
+      ],
+      libraryTypes: [
+        { name: 'LIB_DATA', fields: [{ name: 'SET', type: 'LIB_SET' }] },
+        {
+          name: 'LIB_SET',
+          fields: [
+            { name: 'SP', type: 'REAL' },
+            { name: 'STAGE', type: 'ARRAY [1..4] OF LIB_STAGE' },
+          ],
+        },
+        { name: 'LIB_STAGE', fields: [{ name: 'START', type: 'LREAL' }] },
+      ],
+    } as TranspileProject
+  }
+  const libText = (pou: TranspilePou): string =>
+    generateGraphicalPou(pou, libProject(pou))
+      .map(([chunk]) => chunk)
+      .join('')
+  const devVars: TranspilePou['interface']['variables'] = [
+    { name: 'D', class: 'external', type: { definition: 'derived', value: 'Dev' } },
+    { name: 'sw', class: 'local', type: { definition: 'base-type', value: 'BOOL' } },
+  ]
+
+  it('types the temporary from a member of a library structure', () => {
+    const st = libText(pouWithSel('D.lim.set.sp', '3', '4', devVars))
+    expect(st).toMatch(/_TMP_SEL7001_OUT : REAL;/)
+    expect(st).not.toMatch(/: ANY;/)
+  })
+
+  it('reaches through an array of a library structure, in any case', () => {
+    expect(libText(pouWithSel('d.LIM.Set.stage[2].start', '3', '4', devVars))).toMatch(/_TMP_SEL7001_OUT : LREAL;/)
+  })
+})

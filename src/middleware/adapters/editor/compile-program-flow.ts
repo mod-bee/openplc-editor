@@ -18,7 +18,9 @@
 import {
   findLibrariesMissingNativeSources,
   injectLibraryBlocks,
+  libraryStructTypes,
 } from '../../../backend/shared/library/inject-library-blocks'
+import type { TranspileLibraryType } from '../../../backend/shared/transpilers/st-transpiler/types'
 import { preprocessPous } from '../../../backend/shared/utils/PLC/preprocess-pous'
 import type { CompileProgramArgs } from '../../shared/ports/compiler-port'
 import type { StlibArchiveDTO } from '../../shared/ports/library-port'
@@ -112,8 +114,9 @@ export interface CompileProgramTransport {
  * than no check.
  */
 export interface PreparedProject {
-  /** POUs after the library graft and preprocessing — schema shape. */
-  processedData: PLCProjectData
+  /** POUs after the library graft and preprocessing — schema shape. `libraryTypes`: the enabled
+   *  libraries' STRUCTs, which the transpiler needs to type a wire reaching into one. */
+  processedData: PLCProjectData & { libraryTypes?: TranspileLibraryType[] }
   boardInfo: BoardInfo | undefined
   boardCore: string | null
   isSimulator: boolean
@@ -211,7 +214,14 @@ export async function prepareProjectForCompile(
 
   return {
     ok: true,
-    prepared: { processedData, boardInfo, boardCore, isSimulator, pythonSupport, archives },
+    prepared: {
+      processedData: { ...processedData, libraryTypes: libraryStructTypes(args.projectData, archives) },
+      boardInfo,
+      boardCore,
+      isSimulator,
+      pythonSupport,
+      archives,
+    },
   }
 }
 

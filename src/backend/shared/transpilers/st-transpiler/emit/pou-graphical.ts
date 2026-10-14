@@ -197,7 +197,13 @@ function buildTypeContext(pou: TranspilePou, project: TranspileProject): TypeCon
       return io?.type ?? null
     }
     const dt = findDataType(typeName)
-    if (dt === undefined || dt.derivation !== 'structure') return null
+    if (dt === undefined) {
+      // A library's structure: its members come from the library's manifest.
+      const lib = (project.libraryTypes ?? []).find((t) => same(t.name, typeName))
+      const field = lib?.fields.find((f) => same(f.name, name))
+      return field === undefined ? null : field.type
+    }
+    if (dt.derivation !== 'structure') return null
     const el = dt.variable.find((m) => same(m.name, name))
     return el === undefined ? null : getTypeAsText(el)
   }

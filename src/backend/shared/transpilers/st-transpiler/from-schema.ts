@@ -41,6 +41,8 @@ export function fromSchemaShape(data: SchemaPLCProjectData): TranspileProject {
   return {
     pous: data.pous.map((pou) => withGlobalListExternals(projectPou(pou), usableLists)),
     dataTypes: [...(data.dataTypes ?? []).map(projectDataType), ...usableLists.map(globalListStruct)],
+    // The enabled libraries' STRUCTs, when the compile path attached them (see `libraryStructTypes`).
+    libraryTypes: (data as { libraryTypes?: TranspileProject['libraryTypes'] }).libraryTypes,
     configuration: {
       tasks: (data.configuration?.resource?.tasks ?? []).map(projectTask),
       instances: (data.configuration?.resource?.instances ?? []).map(projectInstance),

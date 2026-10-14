@@ -14,9 +14,11 @@
 import {
   findLibrariesMissingNativeSources,
   injectLibraryBlocks,
+  libraryStructTypes,
 } from '../../../backend/shared/library/inject-library-blocks'
 import { libraryVerifyProject } from '../../../backend/shared/library/library-verify-data'
 import { collectNativePous, type NativePouRef } from '../../../backend/shared/library/native-pou-list'
+import type { TranspileLibraryType } from '../../../backend/shared/transpilers/st-transpiler/types'
 import { preprocessPous } from '../../../backend/shared/utils/PLC/preprocess-pous'
 import type {
   CompileLibraryArgs,
@@ -67,6 +69,8 @@ export interface IpcProjectData {
   remoteDevices?: PLCProjectData['remoteDevices']
   libraries?: PLCProjectData['libraries']
   originalCppPous?: Array<{ name: string; code: string; variables: unknown[] }>
+  /** The enabled libraries' STRUCTs (see `libraryStructTypes`), for the transpiler's wire types. */
+  libraryTypes?: TranspileLibraryType[]
 }
 
 /** Converts a flat port POU to the editor's discriminated-union IPC format. */
@@ -93,7 +97,9 @@ function portPouToIpcPou(pou: PLCPou) {
 // Exported so the headless CLI can run the SAME pre-compile chain the renderer
 // runs (inject library C++ blocks -> preprocess POUs -> convert to the IPC/schema
 // shape). Skipping any step compiles a different program from the same sources.
-function toIpcProjectData(data: PLCProjectData & { originalCppPous?: unknown[] }): IpcProjectData {
+function toIpcProjectData(
+  data: PLCProjectData & { originalCppPous?: unknown[]; libraryTypes?: TranspileLibraryType[] },
+): IpcProjectData {
   return {
     dataTypes: data.dataTypes,
     // Without this the main process never sees a Global Variable List, and every
@@ -107,6 +113,7 @@ function toIpcProjectData(data: PLCProjectData & { originalCppPous?: unknown[] }
     remoteDevices: data.remoteDevices,
     libraries: data.libraries,
     ...(data.originalCppPous ? { originalCppPous: data.originalCppPous as IpcProjectData['originalCppPous'] } : {}),
+    ...(data.libraryTypes ? { libraryTypes: data.libraryTypes } : {}),
   }
 }
 
@@ -254,7 +261,11 @@ export function createEditorCompilerAdapter(deps: EditorCompilerAdapterDeps = {}
         return { success: false, error: validationError ?? 'POU validation failed.' }
       }
 
-      const ipcData = toIpcProjectData(processedData)
+      // The library STRUCTs too, as the build path carries them: the debug build must be the same program.
+      const ipcData = toIpcProjectData({
+        ...processedData,
+        libraryTypes: libraryStructTypes(args.projectData, archives),
+      })
 
       return new Promise<DebugCompileResult>((resolve) => {
         let hasError = false

@@ -120,6 +120,15 @@ export interface StlibArchiveDTO {
       baseType?: string
       documentation?: string
       category?: string
+      /** A STRUCT's members (absent in an archive built before strucpp exported them). An inline
+       *  array member carries its element type and dimensions. */
+      fields?: Array<{
+        name: string
+        type: string
+        declaredName?: string
+        elementTypeName?: string
+        arrayDimensions?: Array<{ start: number; end: number }>
+      }>
     }>
   }
   globalConstants?: Record<string, number>

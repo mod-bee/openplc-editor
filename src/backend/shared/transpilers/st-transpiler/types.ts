@@ -8,12 +8,21 @@
 
 export interface TranspileProject {
   dataTypes: TranspileDataType[]
+  /** The enabled libraries' STRUCT types, from their .stlib manifests. Only read to type a wire that
+   *  reaches into a library type (`DEV.limit.set.sp`); they are emitted by the library, not here. */
+  libraryTypes?: TranspileLibraryType[]
   pous: TranspilePou[]
   configuration: {
     tasks: TranspileTask[]
     instances: TranspileInstance[]
     globalVariables: TranspileVariable[]
   }
+}
+
+/** A library's STRUCT: each member's name and its type as ST text (`REAL`, `UT_SET`, `ARRAY [1..4] OF UT_STAGE`). */
+export interface TranspileLibraryType {
+  name: string
+  fields: Array<{ name: string; type: string }>
 }
 
 /* ─────────────────────────── pou ────────────────────────────────────────── */
