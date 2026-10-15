@@ -155,6 +155,16 @@ describe('status read carries run/stop state (FC 0x46)', () => {
     expect(r.retain).toEqual({ code: 1, kind: 'ok', bytes: 21756 })
   })
 
+  it('reads the PLC data block appended by firmware built with one', () => {
+    const base = Array.from(statusFrame(PlcRuntimeState.RUNNING, PlcSwitchPosition.RUN))
+    const health = [0, 0xff, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0x54, 0xfc]
+    // plc data: external RAM, 171,000 bytes
+    const r = parseGetStatusResponse(new Uint8Array([...base, ...health, 2, 0, 0x02, 0x9b, 0xf8]))
+    expect(r.plcData).toEqual({ code: 2, kind: 'external', bytes: 171000 })
+    // Every other firmware stops at the retain field: the data is static.
+    expect(parseGetStatusResponse(new Uint8Array([...base, ...health])).plcData).toBeUndefined()
+  })
+
   it('a fault naming no task (0xff) and no fault at all', () => {
     const base = Array.from(statusFrame(PlcRuntimeState.ERROR, PlcSwitchPosition.RUN))
     const setup = parseGetStatusResponse(new Uint8Array([...base, 0x01, 0xff, 1, 1, 0, 0, 0, 0]))

@@ -70,6 +70,8 @@ export function resolveBoardSelection(resolver: BoardInfoResolver, boardTarget: 
       ...(boardInfo.coreVersion ? { coreVersion: boardInfo.coreVersion } : {}),
       // Upload transport ("ethernet" for the LOGO! 8.2; serial otherwise).
       ...(boardInfo.uploadMethod ? { uploadMethod: boardInfo.uploadMethod } : {}),
+      // Where the PLC data lives ("external": the PLC data block in PSRAM).
+      ...(boardInfo.plcDataMemory ? { plcDataMemory: boardInfo.plcDataMemory } : {}),
       // Vendor board-manager index, so a core outside arduino-cli's built-in
       // list can be auto-installed.  The resolver fills this from the VPP
       // manifest's `target.boardManagerUrl` (or hals.json `board_manager_url`);

@@ -408,6 +408,17 @@ void debugGetStatus()
     mb_frame[24] = (uint8_t)((retain_bytes >> 8) & 0xFF);
     mb_frame[25] = (uint8_t)(retain_bytes & 0xFF);
     mb_frame_len = 26;
+#if defined(STRUCPP_PLC_DATA_BLOCK) && STRUCPP_PLC_DATA_BLOCK
+    // Where the PLC data block is, and its size. Absent (a 26-byte reply) means
+    // the program's data is static, as on every firmware without the block.
+    uint32_t plc_data_bytes = 0;
+    mb_frame[26] = runtime_plc_data_status(&plc_data_bytes);
+    mb_frame[27] = (uint8_t)((plc_data_bytes >> 24) & 0xFF);
+    mb_frame[28] = (uint8_t)((plc_data_bytes >> 16) & 0xFF);
+    mb_frame[29] = (uint8_t)((plc_data_bytes >> 8) & 0xFF);
+    mb_frame[30] = (uint8_t)(plc_data_bytes & 0xFF);
+    mb_frame_len = 31;
+#endif
 }
 
 // PDU request:  [FC][state:u8]        (0 = STOP, 1 = RUN, 3 = COLD RESTART)

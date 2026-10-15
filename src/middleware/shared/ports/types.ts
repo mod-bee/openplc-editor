@@ -799,6 +799,13 @@ export interface PackageManifest {
        * in place of the FQBN's PartitionScheme.
        */
       partitions?: string
+      /**
+       * Where the PLC program's data lives. Absent/"static" (default): linked
+       * into internal RAM. "external": the configuration's globals and program
+       * instances are one block taken at start-up from external RAM (PSRAM),
+       * internal RAM when the board has none. arduino-cli targets only.
+       */
+      plcDataMemory?: 'static' | 'external'
     }
     specs?: Record<string, string>
     hal: {

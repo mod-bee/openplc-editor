@@ -13,7 +13,7 @@
  */
 
 import type { RuntimeApiClient } from '@root/backend/editor/runtime/runtime-api-client'
-import { describeFault, describeRetain } from '@root/backend/shared/debug/health'
+import { describeFault, describePlcData, describeRetain } from '@root/backend/shared/debug/health'
 import type { DeviceDebugChannel, PlcControlResult } from '@root/backend/shared/debug/types'
 import { PlcRuntimeState } from '@root/backend/shared/simulator/types'
 import type { TargetEndian } from '@root/frontend/utils/endian'
@@ -47,6 +47,7 @@ export interface PlcReport {
   state: 'running' | 'stopped' | 'error' | 'unknown'
   fault?: SessionStatus['fault']
   retain?: SessionStatus['retain']
+  plcData?: SessionStatus['plcData']
 }
 
 export interface SessionCoreOptions {
@@ -557,7 +558,7 @@ export class SessionCore {
     }
   }
 
-  private async plcReport(): Promise<Pick<SessionStatus, 'plcState' | 'fault' | 'retain'>> {
+  private async plcReport(): Promise<Pick<SessionStatus, 'plcState' | 'fault' | 'retain' | 'plcData'>> {
     const plc = this.options.plc
     if (!plc.report) return { plcState: await plc.state() }
     const report = await plc.report()
@@ -565,6 +566,7 @@ export class SessionCore {
       plcState: report.state,
       ...(report.fault ? { fault: report.fault } : {}),
       ...(report.retain ? { retain: report.retain } : {}),
+      ...(report.plcData ? { plcData: report.plcData } : {}),
     }
   }
 
@@ -761,11 +763,12 @@ export function channelPlcControl(channel: DeviceDebugChannel, taskNames: readon
       state,
       ...(result.fault && result.fault.code !== 0 ? { fault: describeFault(result.fault, taskNames) } : {}),
       ...(result.retain ? { retain: describeRetain(result.retain) } : {}),
+      ...(result.plcData ? { plcData: describePlcData(result.plcData) } : {}),
     }
   }
 }
 
-export { describeFault, describeRetain }
+export { describeFault, describePlcData, describeRetain }
 
 /** The wire byte as a state. ERROR is its own state, never "stopped". */
 export function plcStateOf(plcState: number | undefined, running: boolean | undefined): PlcReport['state'] {

@@ -292,6 +292,48 @@ describe('resolveBoardSelection', () => {
     if (result.ok) {
       expect(result.boardEntry.core).toBe('industrialshields:esp32')
       expect(result.boardEntry.boardManagerUrl).toBe(boardManagerUrl)
+      expect(result.boardEntry.plcDataMemory).toBeUndefined()
     }
+  })
+
+  it('carries target.plcDataMemory through to boardEntry', () => {
+    const pkg: InstalledPackage = {
+      packageId: 'com.example.node',
+      version: '1.0.0',
+      installedAt: '2026-01-01T00:00:00.000Z',
+      path: '/fake/packages/node',
+      devices: ['node'],
+    }
+    const manifest: PackageManifest = {
+      formatVersion: '1.0',
+      package: {
+        id: 'com.example.node',
+        name: 'Node',
+        version: '1.0.0',
+        vendor: { name: 'Example', logo: 'l.png' },
+        description: 'd',
+      },
+      devices: [
+        {
+          id: 'node',
+          name: 'Example Node',
+          preview: 'p.png',
+          target: {
+            type: 'arduino-cli',
+            core: 'esp32:esp32',
+            platform: 'esp32:esp32:esp32s3:PSRAM=enabled',
+            plcDataMemory: 'external',
+          },
+          hal: { type: 'arduino-hal', source: 'hal/arduino/esp32.cpp' },
+        },
+      ],
+    }
+    const packageManager: PackageManagerPort = {
+      listInstalled: () => [pkg],
+      getInstalledPackageManifest: (id) => (id === pkg.packageId ? manifest : null),
+    }
+    const result = resolveBoardSelection(makeResolver({}, { packageManager }), 'Example Node')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.boardEntry.plcDataMemory).toBe('external')
   })
 })

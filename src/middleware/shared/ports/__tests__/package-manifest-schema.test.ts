@@ -282,3 +282,38 @@ describe('PackageManifestSchema — target.uploadMethod', () => {
     }
   })
 })
+
+describe('PackageManifestSchema — target.plcDataMemory', () => {
+  /** A manifest whose single device declares `target.plcDataMemory`. */
+  const withPlcDataMemory = (plcDataMemory?: unknown) => ({
+    formatVersion: '1.0',
+    package: { id: 'vendor.board', name: 'Vendor Board', version: '1.0.0' },
+    devices: [
+      {
+        id: 'node',
+        name: 'Node',
+        ...(plcDataMemory === undefined ? {} : { target: { plcDataMemory } }),
+      },
+    ],
+  })
+
+  it('accepts a device that declares no plcDataMemory', () => {
+    expect(PackageManifestSchema.safeParse(withPlcDataMemory()).success).toBe(true)
+  })
+
+  it.each<[string]>([['static'], ['external']])('accepts plcDataMemory %p', (plcDataMemory) => {
+    expect(PackageManifestSchema.safeParse(withPlcDataMemory(plcDataMemory)).success).toBe(true)
+  })
+
+  // It changes how the program is compiled, so a typo must refuse the package
+  // rather than silently build the other way.
+  it.each<[unknown, string]>([
+    ['externl', 'a typo'],
+    ['External', 'the wrong case'],
+    ['psram', 'a value that is not one of the two'],
+    ['', 'an empty string'],
+    [true, 'a boolean'],
+  ])('rejects plcDataMemory %p (%s)', (plcDataMemory) => {
+    expect(PackageManifestSchema.safeParse(withPlcDataMemory(plcDataMemory)).success).toBe(false)
+  })
+})

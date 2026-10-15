@@ -188,6 +188,9 @@ export interface BoardBuildInfo {
    *  serial-port upload. "ethernet": network upload — the editor passes the
    *  device IP as arduino-cli's `--port`. From `target.uploadMethod`. */
   uploadMethod?: 'serial' | 'ethernet'
+  /** Where the PLC program's data lives ("external": one block from external
+   *  RAM, built at start-up). From `target.plcDataMemory`. */
+  plcDataMemory?: 'static' | 'external'
   /** Per-board capability overrides.  Merged by
    *  `resolveTargetCapabilities` on top of the compiler preset.
    *  Sourced from `hals.json` `capabilities` (static boards) or VPP
@@ -328,6 +331,7 @@ export class BoardInfoResolver {
     }
     if (device.target.coreVersion) info.coreVersion = device.target.coreVersion
     if (device.target.uploadMethod) info.uploadMethod = device.target.uploadMethod
+    if (device.target.plcDataMemory) info.plcDataMemory = device.target.plcDataMemory
 
     // The physical transport the board exposes, and which screens it ships.
     // The renderer's `BoardInfo` has carried these since the screen split; the

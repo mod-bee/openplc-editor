@@ -9,7 +9,10 @@
 // External linkage requirements:
 //   - `g_config` is referenced by name (with type) from generated_debug.cpp
 //     via `extern ::strucpp::Configuration_CONFIG0 g_config;`. The symbol
-//     name and type must match here.
+//     name and type must match here. Not with the PLC data block
+//     (STRUCPP_PLC_DATA_BLOCK): the configuration is then a member of the
+//     block strucpp builds at start-up (runtime_plc_data_init), and the debug
+//     tables hold offsets into it.
 //   - The buffer arrays (bool_input, int_input, etc.) are defined in the
 //     sketch's .ino and declared extern in openplc.h. We only read/write
 //     them here; the storage lives in the sketch's TU.
@@ -128,7 +131,47 @@ __attribute__((weak)) void strucpp::iec_runtime_fault(strucpp::IecFault reason,
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
+#if defined(STRUCPP_PLC_DATA_BLOCK) && STRUCPP_PLC_DATA_BLOCK
+// Every configuration VAR_GLOBAL and the configuration live in one block,
+// strucpp::PlcData, built by runtime_plc_data_init() before anything else runs.
+static inline strucpp::Configuration_CONFIG0& plc_config() { return strucpp::plc_data->plc__config; }
+#else
 strucpp::Configuration_CONFIG0 g_config;
+static inline strucpp::Configuration_CONFIG0& plc_config() { return g_config; }
+#endif
+
+#if defined(STRUCPP_PLC_DATA_BLOCK) && STRUCPP_PLC_DATA_BLOCK
+#if defined(ARDUINO_ARCH_ESP32)
+#include <cstddef>
+#include <esp_heap_caps.h>
+#include <esp_memory_utils.h>
+// External RAM (PSRAM) when the board has it, else internal RAM. Taken once,
+// at the start of setup(), when the heap is largest; never freed.
+extern "C" void* strucpp_platform_plc_data_alloc(size_t size)
+{
+    const size_t align = alignof(std::max_align_t);
+    void* p = heap_caps_aligned_alloc(align, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (p == nullptr) p = heap_caps_aligned_alloc(align, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    return p;
+}
+static bool plc_data_is_external(const void* p) { return esp_ptr_external_ram(p); }
+#else
+extern "C" void* strucpp_platform_plc_data_alloc(size_t size) { return malloc(size); }
+static bool plc_data_is_external(const void*) { return false; }
+#endif
+
+extern "C" bool runtime_plc_data_init(void)
+{
+    return strucpp::strucpp_plc_data_create();
+}
+
+extern "C" uint8_t runtime_plc_data_status(uint32_t* bytes)
+{
+    if (bytes) *bytes = (uint32_t)sizeof(strucpp::PlcData);
+    if (strucpp::plc_data == nullptr) return RUNTIME_PLC_DATA_NO_MEMORY;
+    return plc_data_is_external(strucpp::plc_data) ? RUNTIME_PLC_DATA_EXTERNAL : RUNTIME_PLC_DATA_INTERNAL;
+}
+#endif
 
 static strucpp::ProgramBase** all_programs = nullptr;
 static uint32_t*               task_divisors  = nullptr;
@@ -437,8 +480,8 @@ void runtime_discover_tasks()
     uint64_t gcd_ns    = 0;
     size_t   prog_count = 0;
 
-    auto* resources = g_config.get_resources();
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+    auto* resources = plc_config().get_resources();
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count; ++t) {
             auto& task = resources[r].tasks[t];
             prog_count += task.program_count;
@@ -457,7 +500,7 @@ void runtime_discover_tasks()
 
     size_t idx = 0;
     uint8_t task_no = 0;
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count; ++t, ++task_no) {
             auto&    task    = resources[r].tasks[t];
             uint64_t interval = task.interval_ns > 0 ? task.interval_ns : gcd_ns;
@@ -567,7 +610,9 @@ static void runtime_zero_output_image()
 // storage with the same layout: locatedVars[i].pointer, the image-table slots,
 // the ProgramBase* entries cached in all_programs[] and in the configuration's
 // own task_programs_storage[], and the flash-resident Entry tables in
-// generated_debug.cpp that hold raw void* into g_config members.
+// generated_debug.cpp that hold raw void* into g_config members. With the PLC
+// data block the configuration is the block's member instead: the same holds
+// (same storage, same layout), and the debug tables hold offsets into the block.
 //
 // runtime_discover_tasks() is deliberately NOT re-run: it new[]-allocates
 // all_programs / task_divisors, so calling it twice would leak. The tables it
@@ -588,8 +633,8 @@ static void runtime_reinit_program(bool restore)
     // for a defaulted virtual destructor it compiles to nothing, and if a
     // future strucpp change adds a genuinely owning member it runs that
     // member's cleanup instead of leaking it. Neither call allocates.
-    g_config.~Configuration_CONFIG0();
-    new (&g_config) strucpp::Configuration_CONFIG0();
+    plc_config().~Configuration_CONFIG0();
+    new (&plc_config()) strucpp::Configuration_CONFIG0();
 
     runtime_zero_output_image();
     runtime_bind_located_vars();   // idempotent, allocation-free
@@ -1899,15 +1944,15 @@ static uint32_t task_stack(size_t resource, size_t task)
 // per IEC task when the runtime is threaded, else one worker for all of them.
 extern "C" void runtime_rtos_prepare_workers(void)
 {
-    auto* resources = g_config.get_resources();
+    auto* resources = plc_config().get_resources();
 #ifdef STRUCPP_THREADED
     uint32_t count = 0;
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) count += (uint32_t)resources[r].task_count;
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) count += (uint32_t)resources[r].task_count;
     if (count == 0) count = 1;
     if (count > OPENPLC_RTOS_MAX_WORKERS) count = OPENPLC_RTOS_MAX_WORKERS;
     s_workers = new RtosWorker[count]();
     s_worker_count = 0;
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count && s_worker_count < count; ++t) {
             auto&          task     = resources[r].tasks[t];
             const uint64_t interval = task.interval_ns > 0 ? (uint64_t)task.interval_ns : RTOS_DEFAULT_INTERVAL_NS;
@@ -1934,7 +1979,7 @@ extern "C" void runtime_rtos_prepare_workers(void)
     s_worker_count = 1;
     uint32_t* divisors = new uint32_t[total_programs > 0 ? total_programs : 1];
     size_t    p        = 0;
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count; ++t) {
             auto&          task     = resources[r].tasks[t];
             const uint64_t interval = task.interval_ns > 0 ? (uint64_t)task.interval_ns : RTOS_DEFAULT_INTERVAL_NS;
@@ -1951,7 +1996,7 @@ extern "C" void runtime_rtos_prepare_workers(void)
     bool     shared_stops = false;
     uint32_t shared_stack = 0;
     bool     stack_asked  = false;
-    for (size_t r = 0; r < g_config.get_resource_count(); ++r) {
+    for (size_t r = 0; r < plc_config().get_resource_count(); ++r) {
         for (size_t t = 0; t < resources[r].task_count; ++t) {
             const int32_t c = task_core(r, t);
             shared_core = (shared_core == -2 || shared_core == c) ? c : -1;

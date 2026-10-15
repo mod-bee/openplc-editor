@@ -4,7 +4,7 @@
  */
 import { z } from 'zod'
 
-import type { RetainHealth, RuntimeFault } from './types'
+import type { PlcDataHealth, RetainHealth, RuntimeFault } from './types'
 
 /** Runtime v4's `fault` in `/api/status` (plc_fault_json). */
 export const RuntimeV4FaultSchema = z.object({
@@ -45,6 +45,12 @@ export interface FaultSummary {
 }
 
 export interface RetainSummary {
+  kind: string
+  bytes: number
+  text: string
+}
+
+export interface PlcDataSummary {
   kind: string
   bytes: number
   text: string
@@ -134,4 +140,14 @@ export function describeRetain(retain: RetainHealth): RetainSummary {
     'io-error': 'NOT KEPT: the store failed to save them',
   }
   return { kind: retain.kind, bytes: retain.bytes, text: texts[retain.kind] ?? `unknown (${retain.kind})` }
+}
+
+/** Where the PLC data block is, as one line for a person. */
+export function describePlcData(plcData: PlcDataHealth): PlcDataSummary {
+  const texts: Record<string, string> = {
+    internal: `internal RAM (${plcData.bytes} bytes)`,
+    external: `external RAM (${plcData.bytes} bytes)`,
+    'no-memory': `NO MEMORY: the program's data needs ${plcData.bytes} bytes, the program cannot run`,
+  }
+  return { kind: plcData.kind, bytes: plcData.bytes, text: texts[plcData.kind] ?? `unknown (${plcData.kind})` }
 }

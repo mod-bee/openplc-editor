@@ -291,6 +291,19 @@ static void rtos_service_protocols(void)
 // =============================================================================
 void setup()
 {
+#if defined(STRUCPP_PLC_DATA_BLOCK) && STRUCPP_PLC_DATA_BLOCK
+    // The program's data block comes first: everything below binds to or reads
+    // it. With no storage for it no program can run: stay here with the HAL not
+    // started (outputs untouched) and say why, rather than reboot over and over.
+    if (!runtime_plc_data_init()) {
+        Serial.begin(115200);
+        for (;;) {
+            Serial.println("OpenPLC: no memory for the PLC data block, the program cannot run");
+            delay(5000);
+        }
+    }
+#endif
+
     // Turn off WiFi radio on ESP32/ESP8266 if not using WiFi
     #ifndef MBTCP
         #if defined(BOARD_ESP8266) || defined(BOARD_ESP32)

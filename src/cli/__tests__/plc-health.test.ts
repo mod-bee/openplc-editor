@@ -5,7 +5,7 @@
  */
 import type { DebugStatusResult, DeviceDebugChannel } from '../../backend/shared/debug/types'
 import { PlcRuntimeState } from '../../backend/shared/simulator/types'
-import { channelPlcControl, describeFault, describeRetain, plcStateOf } from '../session/session-core'
+import { channelPlcControl, describeFault, describePlcData, describeRetain, plcStateOf } from '../session/session-core'
 
 function board(status: DebugStatusResult) {
   const channel = { getStatus: () => Promise.resolve(status) } as unknown as DeviceDebugChannel
@@ -87,6 +87,14 @@ describe('retain', () => {
     expect(describeRetain({ code: 4, kind: 'io-error', bytes: 100 }).text).toMatch(/^NOT KEPT: the store failed/)
     expect(describeRetain({ code: 2, kind: 'no-store', bytes: 100 }).text).toMatch(/^NOT KEPT: this board stores/)
     expect(describeRetain({ code: 0, kind: 'none', bytes: 0 }).text).toBe('nothing retained')
+  })
+})
+
+describe('plc data', () => {
+  it('says where the PLC data block is, and plainly when there is no memory for it', () => {
+    expect(describePlcData({ code: 2, kind: 'external', bytes: 171000 }).text).toBe('external RAM (171000 bytes)')
+    expect(describePlcData({ code: 1, kind: 'internal', bytes: 171000 }).text).toBe('internal RAM (171000 bytes)')
+    expect(describePlcData({ code: 3, kind: 'no-memory', bytes: 171000 }).text).toMatch(/^NO MEMORY: .*171000 bytes/)
   })
 })
 

@@ -1972,6 +1972,74 @@ describe('runCompilePipeline — RTOS mode, several tasks', () => {
     expect(entry?.cxx_flags).toEqual(expect.arrayContaining(['-fno-rtti', '-DconfigUSE_MUTEXES=1']))
   })
 
+  describe('PLC data in external memory (target.plcDataMemory)', () => {
+    const node = {
+      platform: 'esp32:esp32:esp32s3:PSRAM=enabled',
+      core: 'esp32:esp32',
+      compiler: 'arduino-cli',
+      cxx_flags: ['-DBOARD_FLAG=1'],
+    }
+    const DEFINE = '-DSTRUCPP_PLC_DATA_BLOCK=1'
+
+    it('compiles with the PLC data block and its define in every file', async () => {
+      const port = makePort()
+      const { emit } = captureEvents()
+      const result = await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          compileOnly: true,
+          boardEntry: { ...node, plcDataMemory: 'external' },
+        }),
+        port,
+        emit,
+      )
+      expect(result.success).toBe(true)
+      expect(mockedStrucpp.mock.calls[0]?.[0].plcDataBlock).toBe(true)
+      const entry = jest.mocked(buildArduinoCliCompileArgs).mock.calls.at(-1)?.[0]
+      expect(entry?.c_flags).toContain(DEFINE)
+      expect(entry?.cxx_flags).toEqual(expect.arrayContaining(['-DBOARD_FLAG=1', DEFINE]))
+      // The editor's port builds its flags from the board plus extraFlags.
+      expect(port.compileArduino.mock.calls[0]?.[0].extraFlags).toContain(DEFINE)
+    })
+
+    it.each<[string, 'static' | undefined]>([
+      ['absent', undefined],
+      ['"static"', 'static'],
+    ])('leaves the build as it was when plcDataMemory is %s', async (_label, plcDataMemory) => {
+      const port = makePort()
+      const { emit } = captureEvents()
+      await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          compileOnly: true,
+          boardEntry: { ...node, ...(plcDataMemory ? { plcDataMemory } : {}) },
+        }),
+        port,
+        emit,
+      )
+      expect(mockedStrucpp.mock.calls[0]?.[0]).not.toHaveProperty('plcDataBlock')
+      const entry = jest.mocked(buildArduinoCliCompileArgs).mock.calls.at(-1)?.[0]
+      expect(entry?.c_flags ?? []).not.toContain(DEFINE)
+      expect(entry?.cxx_flags).toEqual(['-DBOARD_FLAG=1'])
+      expect(port.compileArduino.mock.calls[0]?.[0].extraFlags ?? []).not.toContain(DEFINE)
+    })
+
+    it('refuses it on a target that is not an arduino-cli board', async () => {
+      const port = makePort()
+      const { events, emit } = captureEvents()
+      const result = await runCompilePipeline(
+        makeArgs({ boardEntry: { ...node, plcDataMemory: 'external' } }),
+        port,
+        emit,
+      )
+      expect(result.success).toBe(false)
+      expect(mockedStrucpp).not.toHaveBeenCalled()
+      expect(events.map((e) => e.message).join('\n')).toContain('only arduino-cli boards support')
+    })
+  })
+
   describe('a firmware too big for the board in RTOS mode', () => {
     const board = {
       platform: 'STMicroelectronics:stm32:GenF4:pnum=BLACKPILL_F401CC',

@@ -133,10 +133,12 @@ export const PackageManifestSchema = z
             // member of the union and simply not match 'ethernet' anywhere,
             // silently taking the serial path — on a board whose only link is
             // Ethernet. Refusing the manifest is the safer failure.
+            // `plcDataMemory` likewise: it changes how the program is compiled.
             target: z
               .object({
                 boardManagerUrl: boardManagerUrl.optional(),
                 uploadMethod: z.enum(['serial', 'ethernet']).optional(),
+                plcDataMemory: z.enum(['static', 'external']).optional(),
               })
               .passthrough()
               .optional(),

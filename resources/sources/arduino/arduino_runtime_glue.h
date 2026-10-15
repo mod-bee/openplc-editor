@@ -173,6 +173,21 @@ void runtime_get_fault(runtime_fault_t* out);
 // Retain health; `bytes` (may be NULL) gets the blob size this program needs.
 uint8_t runtime_retain_status(uint32_t* bytes);
 
+#if defined(STRUCPP_PLC_DATA_BLOCK) && STRUCPP_PLC_DATA_BLOCK
+// The PLC data block (built with STRUCPP_PLC_DATA_BLOCK): every configuration
+// VAR_GLOBAL and the configuration in one block taken at start-up, from
+// external RAM when the board has it. Without the block the data is static.
+#define RUNTIME_PLC_DATA_INTERNAL  1  // the block is in internal RAM
+#define RUNTIME_PLC_DATA_EXTERNAL  2  // the block is in external RAM (PSRAM)
+#define RUNTIME_PLC_DATA_NO_MEMORY 3  // no storage for the block: no program runs
+
+// Builds the block. Call first in setup(), before anything binds to or reads
+// the program's data. False: no storage for it.
+bool runtime_plc_data_init(void);
+// Where the block is; `bytes` (may be NULL) gets its size.
+uint8_t runtime_plc_data_status(uint32_t* bytes);
+#endif
+
 // Globals owned by arduino_runtime_glue.cpp, read by the sketch.
 extern unsigned long long base_tick_ns;
 extern uint32_t scan_counter;

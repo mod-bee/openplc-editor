@@ -464,6 +464,32 @@ describe('BoardInfoResolver', () => {
       expect(info.platformOptions).toBeUndefined()
     })
 
+    it('carries target.plcDataMemory, and leaves it absent when not declared', () => {
+      const device = (plcDataMemory?: 'static' | 'external') => ({
+        id: 'node',
+        name: 'Node',
+        preview: 'p.png',
+        target: {
+          type: 'arduino-cli',
+          core: 'esp32:esp32',
+          platform: 'esp32:esp32:esp32s3',
+          ...(plcDataMemory ? { plcDataMemory } : {}),
+        },
+        hal: { type: 'arduino-hal', source: 'hal/arduino/esp32.cpp' },
+      })
+      const pkg = makePkg()
+      const external = makeResolver(
+        {},
+        makePackageManager([pkg], { [pkg.packageId]: makeManifest({ devices: [device('external')] }) }),
+      )
+      expect(external.resolve('Node').plcDataMemory).toBe('external')
+      const absent = makeResolver(
+        {},
+        makePackageManager([pkg], { [pkg.packageId]: makeManifest({ devices: [device()] }) }),
+      )
+      expect(absent.resolve('Node').plcDataMemory).toBeUndefined()
+    })
+
     it('propagates device.debug (DebugSpec) onto BoardBuildInfo for VPP devices', () => {
       // Same renderer-side consumer as the hals branch above (Debug
       // button enable state); the VPP path goes through `#fromVppDevice`,

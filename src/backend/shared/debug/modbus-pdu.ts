@@ -70,6 +70,7 @@ import type {
   DebugVersionResult,
   Md5ProbeResult,
   PlcControlResult,
+  PlcDataHealth,
   RetainHealth,
   RuntimeFault,
 } from './types'
@@ -410,6 +411,8 @@ export function parseGetStatusResponse(data: Uint8Array): DebugStatusResult {
     // Appended by firmware with the watchdogs and retain health.
     ...(data.length >= 20 ? { fault: decodeRuntimeFault(data, 12) } : {}),
     ...(data.length >= 25 ? { retain: decodeRetainHealth(data, 20) } : {}),
+    // Appended only by firmware built with the PLC data block.
+    ...(data.length >= 30 ? { plcData: decodePlcDataHealth(data, 25) } : {}),
   }
 }
 
@@ -459,6 +462,19 @@ export function decodeRuntimeFault(data: Uint8Array, at: number): RuntimeFault {
 export function decodeRetainHealth(data: Uint8Array, at: number): RetainHealth {
   const code = readU8(data, at)
   return { code, kind: RETAIN_HEALTH_KINDS[code] ?? 'unknown', bytes: readU32BE(data, at + 1) }
+}
+
+/** RUNTIME_PLC_DATA_* codes by their machine names. */
+export const PLC_DATA_KINDS: Readonly<Record<number, string>> = {
+  1: 'internal',
+  2: 'external',
+  3: 'no-memory',
+}
+
+/** `[code][bytes:u32BE]` at `at`. */
+export function decodePlcDataHealth(data: Uint8Array, at: number): PlcDataHealth {
+  const code = readU8(data, at)
+  return { code, kind: PLC_DATA_KINDS[code] ?? 'unknown', bytes: readU32BE(data, at + 1) }
 }
 
 /**

@@ -172,6 +172,12 @@ export const PlcRetainSchema = z.object({
   text: z.string(),
 })
 
+export const PlcDataSchema = z.object({
+  kind: z.string(),
+  bytes: z.number(),
+  text: z.string(),
+})
+
 export const SessionStatusSchema = z.object({
   sessionId: z.string(),
   connected: z.boolean(),
@@ -189,6 +195,8 @@ export const SessionStatusSchema = z.object({
   fault: PlcFaultSchema.optional(),
   /** Retention health; absent when the target cannot say. */
   retain: PlcRetainSchema.optional(),
+  /** Where the PLC data block is; absent when the program's data is static. */
+  plcData: PlcDataSchema.optional(),
   /**
    * Paths this session forced and has not released — what `close` will unforce.
    *

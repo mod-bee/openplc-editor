@@ -189,6 +189,13 @@ describe('runProgramBuildPipeline — C-block include plumbing', () => {
     const options = strucppCompile.mock.calls[0][1]
     expect(options?.pouIncludes).toEqual([])
   })
+
+  it('asks strucpp for the PLC data block only when the board wants it', () => {
+    runProgramBuildPipeline({ ...baseOpts, pous: [], plcDataBlock: true })
+    expect(strucppCompile.mock.calls[0][1]?.plcDataBlock).toBe(true)
+    runProgramBuildPipeline({ ...baseOpts, pous: [] })
+    expect(strucppCompile.mock.calls[1][1]).not.toHaveProperty('plcDataBlock')
+  })
 })
 
 describe('runProgramBuildPipeline — emitting per-POU cpp files', () => {

@@ -54,6 +54,9 @@ export interface DebugStatusResult {
   fault?: RuntimeFault
   /** Whether retained values are being kept. Absent on older firmware. */
   retain?: RetainHealth
+  /** Where the PLC data block is, on a board built with one. Absent: the
+   *  program's data is static (linked in), as on every other firmware. */
+  plcData?: PlcDataHealth
   error?: string
 }
 
@@ -82,6 +85,16 @@ export interface RetainHealth {
   /** `none`, `ok`, `no-store`, `too-large`, `io-error`, `pending`, or `unknown`. */
   kind: string
   /** Blob size this program's retained values need, in bytes. */
+  bytes: number
+}
+
+/** The PLC data block as FC 0x46 reports it (RUNTIME_PLC_DATA_*). */
+export interface PlcDataHealth {
+  /** RUNTIME_PLC_DATA_* code. */
+  code: number
+  /** `internal`, `external`, `no-memory`, or `unknown`. */
+  kind: string
+  /** The block's size in bytes. */
   bytes: number
 }
 

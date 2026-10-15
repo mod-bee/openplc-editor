@@ -63,6 +63,9 @@ export interface ProgramBuildPipelineOptions {
   /** True when the project carries any C/C++ POUs.  Causes every
    *  generated TU to `#include "c_blocks.h"`. */
   hasCBlocks: boolean
+  /** The board keeps the PLC program's data in one block built at start-up
+   *  (VPP `target.plcDataMemory: "external"`): strucpp's `plcDataBlock`. */
+  plcDataBlock?: boolean
 }
 
 /** A single artefact the editor should persist (Electron) or pack
@@ -191,6 +194,7 @@ export function runProgramBuildPipeline(opts: ProgramBuildPipelineOptions): Prog
     md5,
     pouIncludes,
     ...(additionalSources ? { additionalSources } : {}),
+    ...(opts.plcDataBlock ? { plcDataBlock: true } : {}),
   })
 
   // Source map covers every file we fed strucpp, so formatDiagnostic

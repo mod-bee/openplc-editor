@@ -161,6 +161,10 @@ export interface BoardHalsBuildEntry extends BoardHalsCompileEntry {
    *  serial-port upload. "ethernet": network upload, with the device IP passed
    *  as arduino-cli's `--port`. From `target.uploadMethod`. */
   uploadMethod?: 'serial' | 'ethernet'
+  /** Where the PLC program's data lives: "external" builds it as one block
+   *  taken at start-up from external RAM (STruC++ `plcDataBlock`). Absent or
+   *  "static": linked in. From `target.plcDataMemory`; arduino-cli only. */
+  plcDataMemory?: 'static' | 'external'
   /** Vendor board-manager index (`package_<vendor>_index.json`).  From the
    *  VPP manifest `target.boardManagerUrl` or hals.json `board_manager_url`.
    *  Forwarded to `installArduinoCore`, which passes it to arduino-cli as
@@ -796,6 +800,16 @@ async function runCompilePipelineInner(
   // heavyweight hash dependency.  Both implementations produce
   // byte-identical hex.
   const md5 = await port.computeMd5(programSt)
+  // The PLC data block is a firmware build: only arduino-cli boards have the
+  // runtime that builds it at start-up.
+  const plcDataBlock = boardEntry.plcDataMemory === 'external'
+  if (plcDataBlock && (boardRuntime !== 'arduino-cli' || isSimulator)) {
+    return bailError(
+      emit,
+      'strucpp',
+      `The board package asks for PLC data in external memory, which only arduino-cli boards support (this target: ${boardRuntime}).`,
+    )
+  }
   const strucppResult = runProgramBuildPipeline({
     source: programSt,
     md5,
@@ -803,6 +817,7 @@ async function runCompilePipelineInner(
     libraries: libraryArchives,
     missingLibraries,
     hasCBlocks,
+    ...(plcDataBlock ? { plcDataBlock: true } : {}),
   })
   if (strucppResult.splitterFallbackMessage) {
     emit({ stage: 'st', message: strucppResult.splitterFallbackMessage, level: 'info' })
@@ -1449,15 +1464,26 @@ async function runCompilePipelineInner(
 
   // In RTOS mode the board is named with the options its RTOS needs, and every
   // file gets the RTOS's -D flags.
+  // Every file of a firmware with the PLC data block is built with its define
+  // (strucpp's runtime headers and the glue switch on it).
+  const plcDataFlags = plcDataBlock ? ['-DSTRUCPP_PLC_DATA_BLOCK=1'] : []
+  const firmwareEntry =
+    plcDataFlags.length > 0
+      ? {
+          ...boardEntry,
+          c_flags: [...(boardEntry.c_flags ?? []), ...plcDataFlags],
+          cxx_flags: [...(boardEntry.cxx_flags ?? []), ...plcDataFlags],
+        }
+      : boardEntry
   const rtosBuildEntry = {
-    ...boardEntry,
+    ...firmwareEntry,
     ...(rtosBoardOptions && typeof boardEntry.platform === 'string'
       ? { platform: withFqbnOptions(boardEntry.platform, rtosBoardOptions) }
       : {}),
     ...(rtosExtraFlags.length > 0
       ? {
-          c_flags: [...(boardEntry.c_flags ?? []), ...rtosExtraFlags],
-          cxx_flags: [...(boardEntry.cxx_flags ?? []), ...rtosExtraFlags],
+          c_flags: [...(firmwareEntry.c_flags ?? []), ...rtosExtraFlags],
+          cxx_flags: [...(firmwareEntry.cxx_flags ?? []), ...rtosExtraFlags],
         }
       : {}),
   }
@@ -1466,7 +1492,9 @@ async function runCompilePipelineInner(
   // the bundle, build the arduino-cli argv with the shared helper, and compile
   // it through the platform port.
   const compileFirmware = async (inRtosMode: boolean, log: PlatformLog) => {
-    const entry = inRtosMode ? rtosBuildEntry : boardEntry
+    const entry = inRtosMode ? rtosBuildEntry : firmwareEntry
+    // The editor's port builds its flags from the board plus these, not from `entry`.
+    const extraFlags = [...plcDataFlags, ...(inRtosMode ? rtosExtraFlags : [])]
     const files = composeFirmwareBundle({
       strucppFiles: strucppFilesMap,
       libraryResources,
@@ -1496,7 +1524,7 @@ async function runCompilePipelineInner(
         argv,
         parallel: arduinoCliParallel,
         ...(inRtosMode && rtosBoardOptions ? { boardOptions: rtosBoardOptions } : {}),
-        ...(inRtosMode && rtosExtraFlags.length > 0 ? { extraFlags: rtosExtraFlags } : {}),
+        ...(extraFlags.length > 0 ? { extraFlags } : {}),
       },
       log,
     )

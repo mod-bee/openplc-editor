@@ -594,6 +594,7 @@ export function renderOk(response: OkResponse): string {
         `program   ${md5}`,
         `plc       ${status.plcState}${status.fault ? ` — FAULT: ${status.fault.text}` : ''}`,
         ...(status.retain ? [`retain    ${status.retain.text}`] : []),
+        ...(status.plcData ? [`plc data  ${status.plcData.text}`] : []),
         `forced    ${status.forced.length > 0 ? status.forced.join(', ') : '(none)'}`,
         `watching  ${status.watching.length > 0 ? status.watching.join(', ') : '(none)'}`,
         `since     ${status.startedAt}`,
