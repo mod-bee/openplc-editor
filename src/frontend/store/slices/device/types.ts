@@ -1,4 +1,4 @@
-import type { FaultSummary, RetainSummary } from '../../../../backend/shared/debug/health'
+import type { FaultSummary, PlcDataSummary, RetainSummary } from '../../../../backend/shared/debug/health'
 import type { VppPackagePin } from '../../../../backend/shared/types/PLC/devices/configuration'
 import type { DeviceLicenseReport } from '../../../../middleware/shared/ports/device-port'
 import type { EtherCATRuntimeStatusResponse } from '../../../../middleware/shared/ports/ethercat-types'
@@ -92,6 +92,8 @@ export type RuntimeConnection = {
    *  when there is none or the firmware does not report it. */
   plcFault: FaultSummary | null
   plcRetain: RetainSummary | null
+  /** Where the PLC data block is, on firmware built with one; null otherwise. */
+  plcData: PlcDataSummary | null
   ipAddress: string | null
   /** Version string reported by the connected runtime (from
    *  get-users-info / the X-OpenPLC-Runtime-Version header), or null
@@ -276,7 +278,7 @@ export type DeviceActions = {
   setPlcRuntimeStatus: (status: PlcStatus | null) => void
   /** Set the mode-switch position (null clears it, e.g. on disconnect). */
   setPlcSwitchPosition: (position: 'run' | 'stop' | null) => void
-  setPlcHealth: (fault: FaultSummary | null, retain: RetainSummary | null) => void
+  setPlcHealth: (fault: FaultSummary | null, retain: RetainSummary | null, plcData?: PlcDataSummary | null) => void
   setSelectedDevice: (device: SelectedDevice | null) => void
   setStoredCredentials: (credentials: StoredCredentials | null) => void
   setTimingStats: (stats: TimingStats | null) => void

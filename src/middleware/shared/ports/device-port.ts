@@ -21,7 +21,7 @@
  *   - getDeviceStatus()
  */
 
-import type { RetainHealth, RuntimeFault } from '@root/backend/shared/debug/types'
+import type { PlcDataHealth, RetainHealth, RuntimeFault } from '@root/backend/shared/debug/types'
 
 import type {
   BoardInfo,
@@ -317,4 +317,6 @@ export type DevicePlcStatePayload = {
   switchPosition?: number
   fault?: RuntimeFault
   retain?: RetainHealth
+  /** Where the PLC data block is, on firmware built with one. */
+  plcData?: PlcDataHealth
 }

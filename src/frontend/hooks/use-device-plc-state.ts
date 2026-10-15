@@ -16,7 +16,7 @@
  */
 import { useEffect } from 'react'
 
-import { describeFault, describeRetain, type FaultSummary } from '../../backend/shared/debug/health'
+import { describeFault, describePlcData, describeRetain, type FaultSummary } from '../../backend/shared/debug/health'
 import { PlcRuntimeState, PlcSwitchPosition } from '../../backend/shared/simulator/types'
 import type { PlcStatus } from '../../middleware/shared/ports/types'
 import { useDevice } from '../../middleware/shared/providers'
@@ -52,7 +52,8 @@ export const useDevicePlcState = (): void => {
     // What was last reported, so the console gets one line per change, not one per poll.
     let lastFault = ''
     let lastRetain = ''
-    return device.onPlcState(({ plcState, switchPosition, fault, retain }) => {
+    let lastPlcData = ''
+    return device.onPlcState(({ plcState, switchPosition, fault, retain, plcData }) => {
       const status = toPlcStatus(plcState)
       if (status !== null) setPlcRuntimeStatus(status)
 
@@ -75,7 +76,8 @@ export const useDevicePlcState = (): void => {
             )
           : null
       const retainSummary = retain ? describeRetain(retain) : null
-      setPlcHealth(faultSummary, retainSummary)
+      const plcDataSummary = plcData ? describePlcData(plcData) : null
+      setPlcHealth(faultSummary, retainSummary, plcDataSummary)
 
       const { consoleActions } = store.getState()
       const faultLine = faultSummary ? `PLC fault: ${faultSummary.text}` : ''
@@ -87,6 +89,17 @@ export const useDevicePlcState = (): void => {
       if (retainLine !== lastRetain) {
         if (retainLine) consoleActions.addLog({ level: 'error', message: retainLine })
         lastRetain = retainLine
+      }
+      // Where the PLC data block is (firmware built with one): said once, an error if it has no memory.
+      const plcDataLine = plcDataSummary ? `PLC data: ${plcDataSummary.text}` : ''
+      if (plcDataLine !== lastPlcData) {
+        if (plcDataLine) {
+          consoleActions.addLog({
+            level: plcDataSummary?.kind === 'no-memory' ? 'error' : 'info',
+            message: plcDataLine,
+          })
+        }
+        lastPlcData = plcDataLine
       }
     })
   }, [device, setPlcRuntimeStatus, setPlcSwitchPosition, setPlcHealth, store])

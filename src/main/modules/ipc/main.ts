@@ -2555,6 +2555,7 @@ class MainProcessBridge implements MainIpcModule {
       switchPosition: r.switchPosition,
       ...(r.fault ? { fault: r.fault } : {}),
       ...(r.retain ? { retain: r.retain } : {}),
+      ...(r.plcData ? { plcData: r.plcData } : {}),
     })
   }
 

@@ -12,7 +12,12 @@ import type { OpenPLCStore } from '../../store'
 import { createStoreWrapper, createTestStore } from '../../store/testing'
 import { useDevicePlcState } from '../use-device-plc-state'
 
-type PlcStatePush = (payload: { port: string; plcState?: number; switchPosition?: number }) => void
+type PlcStatePush = (payload: {
+  port: string
+  plcState?: number
+  switchPosition?: number
+  plcData?: { code: number; kind: string; bytes: number }
+}) => void
 
 /** Captures the callback the hook subscribes with, so tests can drive it. */
 let pushed: PlcStatePush | null = null
@@ -103,6 +108,28 @@ describe('useDevicePlcState', () => {
     pushed!({ port: '/dev/x', plcState: 2, switchPosition: 1 })
 
     expect(spies.setPlcRuntimeStatus).toHaveBeenCalledWith('ERROR')
+  })
+
+  it('records where the PLC data block is and says it once in the console', () => {
+    renderPlcState()
+    const plcData = { code: 2, kind: 'external', bytes: 170896 }
+    pushed!({ port: '/dev/x', plcState: 1, plcData })
+    pushed!({ port: '/dev/x', plcState: 1, plcData })
+
+    expect(store.getState().runtimeConnection.plcData?.text).toBe('external RAM (170896 bytes)')
+    const lines = store.getState().logs.filter((log) => String(log.message).startsWith('PLC data:'))
+    expect(lines.map((log) => [log.level, log.message])).toEqual([['info', 'PLC data: external RAM (170896 bytes)']])
+  })
+
+  it('reports a PLC data block without memory as an error, and nothing for static data', () => {
+    renderPlcState()
+    pushed!({ port: '/dev/x', plcState: 2, plcData: { code: 3, kind: 'no-memory', bytes: 170896 } })
+    expect(store.getState().logs.at(-1)?.level).toBe('error')
+
+    store.getState().consoleActions.clearLogs()
+    pushed!({ port: '/dev/x', plcState: 1 })
+    expect(store.getState().runtimeConnection.plcData).toBeNull()
+    expect(store.getState().logs.filter((log) => String(log.message).startsWith('PLC data:'))).toEqual([])
   })
 
   it('leaves the status untouched when the firmware reports no state', () => {

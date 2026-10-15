@@ -100,6 +100,7 @@ describe('Device slice types', () => {
         switchPosition: null,
         plcFault: null,
         plcRetain: null,
+        plcData: null,
         ipAddress: null,
         runtimeVersion: null,
         selectedDevice: null,
@@ -146,6 +147,7 @@ describe('Device slice types', () => {
         switchPosition: 'run',
         plcFault: null,
         plcRetain: null,
+        plcData: null,
         ipAddress: '192.168.1.1',
         runtimeVersion: 'v4.1.9',
         selectedDevice: {
@@ -191,6 +193,7 @@ describe('Device slice types', () => {
           switchPosition: null,
           plcFault: null,
           plcRetain: null,
+          plcData: null,
           ipAddress: null,
           runtimeVersion: null,
           selectedDevice: null,

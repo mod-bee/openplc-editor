@@ -1756,6 +1756,16 @@ describe('createDeviceSlice', () => {
       expect(store.getState().runtimeConnection.plcFault).toBeNull()
       expect(store.getState().runtimeConnection.plcRetain).toBeNull()
     })
+
+    it('records where the PLC data block is, and a disconnect clears it', () => {
+      const store = makeStore()
+      expect(store.getState().runtimeConnection.plcData).toBeNull()
+      const plcData = { kind: 'external', bytes: 170896, text: 'external RAM (170896 bytes)' }
+      store.getState().deviceActions.setPlcHealth(null, null, plcData)
+      expect(store.getState().runtimeConnection.plcData).toEqual(plcData)
+      store.getState().deviceActions.clearRuntimeConnection()
+      expect(store.getState().runtimeConnection.plcData).toBeNull()
+    })
   })
 
   // -----------------------------------------------------------------------

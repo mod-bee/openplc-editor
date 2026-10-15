@@ -108,6 +108,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
     switchPosition: null,
     plcFault: null,
     plcRetain: null,
+    plcData: null,
     ipAddress: null,
     runtimeUpdateInProgress: false,
     runtimeVersion: null,
@@ -191,6 +192,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.plcStatus = null
           runtimeConnection.plcFault = null
           runtimeConnection.plcRetain = null
+          runtimeConnection.plcData = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
           runtimeConnection.selectedDevice = null
@@ -581,11 +583,12 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
         }),
       )
     },
-    setPlcHealth: (fault, retain): void => {
+    setPlcHealth: (fault, retain, plcData = null): void => {
       setState(
         produce(({ runtimeConnection }: DeviceSlice) => {
           runtimeConnection.plcFault = fault
           runtimeConnection.plcRetain = retain
+          runtimeConnection.plcData = plcData
         }),
       )
     },
@@ -653,6 +656,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.plcStatus = null
           runtimeConnection.plcFault = null
           runtimeConnection.plcRetain = null
+          runtimeConnection.plcData = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
           runtimeConnection.selectedDevice = null
