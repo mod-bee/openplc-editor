@@ -27,6 +27,7 @@ import { AIChatPanel } from './frontend/components/_features/[workspace]/ai-chat
 import { AcuExhaustionModal } from './frontend/components/_features/[workspace]/ai-settings-panel'
 import { setPythonLspWorkerUrl } from './frontend/components/_features/[workspace]/editor/monaco/python-lsp'
 import { AppLayout } from './frontend/components/_templates/app-layout'
+import { installE2EHook } from './frontend/e2e-hook'
 import { StartScreen } from './frontend/screens/start-screen'
 import { WorkspaceScreen } from './frontend/screens/workspace-screen'
 import { trackAcuExhausted, trackUpgradeCtaClicked } from './frontend/services/ai/telemetry'
@@ -40,6 +41,9 @@ import { transpileProjectStInProcess } from './middleware/adapters/editor/transp
 import { setMenuProjectOpen } from './middleware/adapters/editor/window-adapter'
 import { packageUpdateNotifier, setProjectPath, setRuntimeIpAddress } from './middleware/editor-platform'
 import { ExtensionPanelProvider, PlatformProvider } from './middleware/shared/providers'
+
+// An end-to-end test run only (see e2e-hook.ts).
+installE2EHook(appStore)
 
 /**
  * Load every installed library (bundled + user-installed) at startup
