@@ -116,7 +116,9 @@ const TreeNode = ({
 
         <div
           className={cn(
-            'grid min-w-0 flex-1 grid-cols-[1fr_auto_auto] items-center gap-2 py-1',
+            // In a narrow panel the type gives way first (cut short, in full on hover); the name keeps its
+            // room and the value is always shown whole.
+            'grid min-w-0 flex-1 grid-cols-[minmax(5rem,1fr)_minmax(0,auto)_auto] items-center gap-2 py-1',
             canForceNode && 'cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-850',
           )}
           style={{ paddingLeft: `${indentWidth}px` }}
@@ -138,18 +140,23 @@ const TreeNode = ({
               </span>
             )}
           </div>
-          <p className='uppercase text-neutral-400 dark:text-neutral-700'>{node.type}</p>
+          <p className='truncate uppercase text-neutral-400 dark:text-neutral-700' title={node.type}>
+            {node.type}
+          </p>
           <p
-            className='text-neutral-1000 dark:text-white'
+            className='whitespace-nowrap text-neutral-1000 dark:text-white'
             style={{
               color: textColor,
               fontWeight: isCurrentNodeForced ? 600 : undefined,
             }}
             // A leaf the PLC keeps no value for: an interface reference names another block, not a value.
+            // Otherwise the full value, for one cut short.
             title={
-              !node.isComplex && node.debugIndex === undefined
-                ? 'No value to show: a reference to another block (an interface), or not compiled for debugging'
-                : undefined
+              node.isComplex
+                ? undefined
+                : node.debugIndex === undefined
+                  ? 'No value to show: a reference to another block (an interface), or not compiled for debugging'
+                  : shownValue()
             }
           >
             {node.isComplex && !node.isExpanded ? '...' : node.isComplex ? '' : shownValue()}

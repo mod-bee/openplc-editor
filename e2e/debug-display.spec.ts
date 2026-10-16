@@ -10,6 +10,8 @@
  *   DEBUG_DISPLAY_SHOTS    where the screenshots go (default: a temp folder)
  *   DEBUG_DISPLAY_RUNGS    POU:text pairs, comma-separated: each shot is the rung holding that text
  *   DEBUG_DISPLAY_CONFIG   set to also shot the Configuration screen's General tab
+ *   DEBUG_DISPLAY_WATCH    global variables to watch (comma-separated); the window is shot with the watch panel
+ *   DEBUG_DISPLAY_EXPAND   watch-panel nodes to open, by composite key (e.g. Config0:well,Config0:well.Data)
  *
  * The libraries and board packages come from the local editor profile (~/.config/open-plc-editor).
  * Build first, as for every suite here: see "Electron e2e" in CLAUDE.md.
@@ -157,6 +159,23 @@ test('debug values on the diagrams', async () => {
 
   try {
     await shootRungs(page)
+    const watch = (process.env.DEBUG_DISPLAY_WATCH ?? '').split(',').filter(Boolean)
+    if (watch.length > 0) {
+      await page.evaluate(
+        ({ names, expand }) => {
+          const state = window.__openplcE2E!.store.getState()
+          const globals = state.project.data.configurations.resource.globalVariables
+          for (const name of names) {
+            const rowId = globals.findIndex((v) => v.name === name)
+            if (rowId !== -1) state.projectActions.updateVariable({ scope: 'global', rowId, data: { debug: true } })
+          }
+          for (const key of expand) state.workspaceActions.toggleDebugExpandedNode(key)
+        },
+        { names: watch, expand: (process.env.DEBUG_DISPLAY_EXPAND ?? '').split(',').filter(Boolean) },
+      )
+      await page.waitForTimeout(1500)
+      await page.screenshot({ path: join(SHOTS, 'watch-panel.png') })
+    }
     if (process.env.DEBUG_DISPLAY_CONFIG) {
       await page.getByText('Configuration', { exact: true }).locator('visible=true').first().click({ timeout: 30000 })
       await page.getByRole('tab', { name: 'General' }).click({ timeout: 30000 })
