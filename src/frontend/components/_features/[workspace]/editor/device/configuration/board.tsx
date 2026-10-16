@@ -110,7 +110,8 @@ const Board = memo(function () {
 
   const [isPressed, setIsPressed] = useState(false)
   const [previewImage, setPreviewImage] = useState('')
-  const [pinDrift, setPinDrift] = useState<string | null>(null)
+  // The warning, and the package now installed (null when it is not): accepting it records that one.
+  const [pinDrift, setPinDrift] = useState<{ message: string; installed: VppPackagePin | null } | null>(null)
   const [formattedBoardState, setFormattedBoardState] = useState('')
   const [showPythonWarning, setShowPythonWarning] = useState(false)
   // Human-readable label of the function-block kind(s) the target can't
@@ -296,7 +297,8 @@ const Board = memo(function () {
         setPinDrift(null)
         return
       }
-      setPinDrift(describeVppPinDrift(recorded, installed))
+      const message = describeVppPinDrift(recorded, installed)
+      setPinDrift(message === null ? null : { message, installed })
     })
     return () => {
       cancelled = true
@@ -891,7 +893,22 @@ const Board = memo(function () {
           data-testid='vpp-pin-drift'
           className='mt-3 rounded-md border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400'
         >
-          {pinDrift}
+          {pinDrift.message}
+          {pinDrift.installed && (
+            // After checking the slots and channels: the program is now written against the installed package
+            // (as CODESYS's "Update device"). Saved with the project.
+            <button
+              type='button'
+              onClick={() => {
+                if (!pinDrift.installed) return
+                setVppPackagePin(deviceBoard, pinDrift.installed)
+                setPinDrift(null)
+              }}
+              className='ml-3 rounded border border-amber-500/60 px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-400/20 dark:text-amber-300'
+            >
+              Use {pinDrift.installed.version}
+            </button>
+          )}
         </div>
       )}
       {(() => {

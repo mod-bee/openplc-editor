@@ -210,5 +210,37 @@ describe('Board device list', () => {
       expect(await screen.findByText(/is not installed/)).toBeTruthy()
       expect(getPackagePin).not.toHaveBeenCalled()
     })
+
+    it('records the installed version when the user accepts it, and the warning goes', async () => {
+      const { deviceActions } = store.getState()
+      deviceActions.setDeviceBoard(VPP_BOARD_NAME)
+      deviceActions.setVppPackagePin(VPP_BOARD_NAME, {
+        packageId: 'com.acme.backplane',
+        version: '1.2.2',
+        contentHash: 'sha256:old',
+      })
+      const installed = { packageId: 'com.acme.backplane', version: '1.2.4', contentHash: 'sha256:new' }
+      renderBoard(null, EDITOR_CAPABILITIES, stubPort<PackagePort>({ getPackagePin: () => Promise.resolve(installed) }))
+
+      expect(await screen.findByText(/1\.2\.4 is installed/)).toBeTruthy()
+      fireEvent.click(screen.getByText('Use 1.2.4'))
+
+      expect(store.getState().deviceDefinitions.configuration.vppPackagePinsByBoard?.[VPP_BOARD_NAME]).toEqual(installed)
+      expect(screen.queryByTestId('vpp-pin-drift')).toBeNull()
+    })
+
+    it('offers nothing to accept when the package is not installed', async () => {
+      const { deviceActions } = store.getState()
+      deviceActions.setDeviceBoard(VPP_BOARD_NAME)
+      deviceActions.setVppPackagePin(VPP_BOARD_NAME, {
+        packageId: 'com.acme.backplane',
+        version: '1.2.2',
+        contentHash: 'sha256:old',
+      })
+      renderBoard(null, EDITOR_CAPABILITIES, stubPort<PackagePort>({ getPackagePin: () => Promise.resolve(null) }))
+
+      expect(await screen.findByText(/is not installed/)).toBeTruthy()
+      expect(screen.queryByText(/^Use /)).toBeNull()
+    })
   })
 })
