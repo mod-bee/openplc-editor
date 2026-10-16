@@ -12,6 +12,8 @@
  *   DEBUG_DISPLAY_CONFIG   set to also shot the Configuration screen's General tab
  *   DEBUG_DISPLAY_WATCH    global variables to watch (comma-separated); the window is shot with the watch panel
  *   DEBUG_DISPLAY_EXPAND   watch-panel nodes to open, by composite key (e.g. Config0:well,Config0:well.Data)
+ *   DEBUG_DISPLAY_CLICKS   online clicks, `POU|element text|menu item` separated by `;`: opens the POU, clicks
+ *                          the element, shoots its menu, clicks the menu item (if given) and shoots the window
  *
  * The libraries and board packages come from the local editor profile (~/.config/open-plc-editor).
  * Build first, as for every suite here: see "Electron e2e" in CLAUDE.md.
@@ -175,6 +177,29 @@ test('debug values on the diagrams', async () => {
       )
       await page.waitForTimeout(1500)
       await page.screenshot({ path: join(SHOTS, 'watch-panel.png') })
+    }
+    const clicks = (process.env.DEBUG_DISPLAY_CLICKS ?? '').split(';').filter(Boolean)
+    for (const [n, step] of clicks.entries()) {
+      const [pou, text, item] = step.split('|')
+      await page.getByText(pou, { exact: true }).locator('visible=true').first().click({ timeout: 30000 })
+      await page.waitForTimeout(1000)
+      // In the diagram only: the variable table above names the same variables.
+      const target = page.locator('.react-flow').getByText(text, { exact: true }).locator('visible=true')
+      await page.mouse.move(900, 500)
+      for (let i = 0; i < 60 && (await target.count()) === 0; i++) {
+        await page.mouse.wheel(0, 400)
+        await page.waitForTimeout(200)
+      }
+      await target.first().click({ timeout: 30000, force: true })
+      await page.waitForTimeout(500)
+      await page.screenshot({ path: join(SHOTS, `click-${n + 1}-menu.png`) })
+      if (item) {
+        await page.getByText(item, { exact: true }).locator('visible=true').first().click({ timeout: 10000, force: true })
+        await page.waitForTimeout(1000)
+        await page.screenshot({ path: join(SHOTS, `click-${n + 1}-after.png`) })
+        await page.keyboard.press('Escape')
+        await page.waitForTimeout(300)
+      }
     }
     if (process.env.DEBUG_DISPLAY_CONFIG) {
       await page.getByText('Configuration', { exact: true }).locator('visible=true').first().click({ timeout: 30000 })

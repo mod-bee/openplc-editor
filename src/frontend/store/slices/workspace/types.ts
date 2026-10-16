@@ -117,6 +117,12 @@ export type WorkspaceState = {
     debugHarness: { programPou: PLCPou; instances: PLCInstance[] } | null
     debugLocalMd5: string | null
     debugGraphList: string[]
+    /**
+     * The project's watch list: debug composite keys of anything watched online (a whole variable or one
+     * member / element, `Config0:well.Data.set.tanks`). Saved in `<project>/debugger/watch.json`, apart from
+     * the project's own files, so changing it does not mark the project unsaved.
+     */
+    debugWatchList: string[]
     debugDataStale: boolean
     debugMd5Mismatch: { runtimeMd5: string; localMd5: string } | null
     /** Target's native byte order for multi-byte variable values on
@@ -214,6 +220,11 @@ export type WorkspaceActions = {
   setDebugTick: (tick: number) => void
   setDebugVariableTree: (tree: Map<string, DebugTreeNode>) => void
   setDebugExpandedNodes: (expandedNodes: Map<string, boolean>) => void
+  /** Replace the watch list (when the project's watch file is read). */
+  setDebugWatchList: (keys: string[]) => void
+  /** Watch one more item; one already watched stays where it is. */
+  addDebugWatch: (compositeKey: string) => void
+  removeDebugWatch: (compositeKey: string) => void
   toggleDebugExpandedNode: (compositeKey: string) => void
   setFbDebugInstances: (instances: Map<string, FbInstanceInfo[]>) => void
   /** Install (or clear, with `null`) the session's harness overlay. */

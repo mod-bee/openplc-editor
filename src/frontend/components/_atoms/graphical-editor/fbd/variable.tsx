@@ -11,15 +11,14 @@ import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import { cn } from '../../../../utils/cn'
 import { canForceDebugLeaf } from '../../../../utils/inout-force'
 import { resolveArrayVariableByName } from '../../../../utils/PLC/array-variable-utils'
-import { encodeForceValue, isForcedValueHigh } from '../../../../utils/variable-sizes'
-import { toast } from '../../../_features/[app]/toast/use-toast'
+import { isForcedValueHigh } from '../../../../utils/variable-sizes'
 import { useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
-import { Modal, ModalContent, ModalTitle } from '../../../_molecules/modal'
+import { ForceValueDialog } from '../../../_molecules/force-value-dialog'
 import { DebugInOutNote } from '../../debug-inout-note'
 import { HighlightedTextArea } from '../../highlighted-textarea'
-import { Label } from '../../label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../tooltip'
 import { DebugValueBadge } from '../debug-value-badge'
+import { DebugWatchMenuItem } from '../debug-watch-menu-item'
 import { BlockVariant } from '../types/block'
 import { validateVariableType } from '../utils'
 import { FBDBlockAutoComplete } from './autocomplete'
@@ -55,6 +54,7 @@ const VariableElement = (block: VariableProps) => {
   const getCompositeKey = useDebugCompositeKey()
   const compositeKey = getCompositeKey(data.variable.name)
   const { value: debugValue, isForced, forcedValue: forcedBoolValue, debugIndex } = useDebugValue(compositeKey)
+  const debugNode = useOpenPLCStore((state) => state.workspace.debugVariableTree.get(compositeKey))
   // The type of a member or element, which the POU does not declare by that name (see useDebugVariableType).
   const treeType = useDebugVariableType(compositeKey)
 
@@ -84,7 +84,6 @@ const VariableElement = (block: VariableProps) => {
   const [isContextMenuOpen, setIsContextMenuOpen] = useState<boolean>(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [forceValueModalOpen, setForceValueModalOpen] = useState<boolean>(false)
-  const [forceValue, setForceValue] = useState<string>('')
 
   /**
    * Get the connection type
@@ -327,65 +326,8 @@ const VariableElement = (block: VariableProps) => {
     setForceValueModalOpen(true)
   }
 
-  const handleForceValueConfirm = async () => {
-    if (!data.variable.name || !forceValue.trim()) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
 
-    if (debugIndex === undefined) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
 
-    const varType = getVariableType()
-    if (!varType) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
-
-    let valueBuffer: Uint8Array
-    try {
-      valueBuffer = encodeForceValue(forceValue, varType)
-    } catch (error) {
-      toast({
-        title: 'Cannot force value',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'fail',
-      })
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
-
-    await forceDebugVariable(
-      store,
-      debugger_,
-      compositeKey,
-      debugIndex,
-      valueBuffer,
-      isForcedValueHigh(forceValue),
-      varType,
-    )
-
-    setForceValueModalOpen(false)
-    setForceValue('')
-  }
-
-  const handleForceValueCancel = () => {
-    setForceValueModalOpen(false)
-    setForceValue('')
-  }
-
-  const handleForceValueModalChange = (open: boolean) => {
-    setForceValueModalOpen(open)
-    if (!open) {
-      setForceValue('')
-    }
-  }
 
   const handleClick = (e: React.MouseEvent) => {
     if (!isDebuggerVisible || !isAVariable) return
@@ -632,6 +574,11 @@ const VariableElement = (block: VariableProps) => {
                           )}
                         </>
                       )}
+                      <DebugWatchMenuItem
+                        compositeKey={data.variable.name ? compositeKey : undefined}
+                        onDone={() => setIsContextMenuOpen(false)}
+                        first={!canForceDebugLeaf(debugIndex)}
+                      />
                     </Popover.Content>
                   </Popover.Portal>
                 </Popover.Root>
@@ -655,48 +602,27 @@ const VariableElement = (block: VariableProps) => {
         </Tooltip>
       </TooltipProvider>
 
-      <Modal open={forceValueModalOpen} onOpenChange={handleForceValueModalChange}>
-        <ModalContent className='flex h-fit min-h-0 w-[400px] select-none flex-col items-center justify-start rounded-lg p-6'>
-          <ModalTitle className='mb-4 text-lg font-semibold'>Force Value</ModalTitle>
-
-          <p className='mb-6 text-center text-sm text-neutral-600 dark:text-neutral-400'>
-            Enter the value to force for {data.variable?.name || 'this variable'}
-          </p>
-
-          <div className='flex w-full flex-col gap-4'>
-            <div>
-              <Label htmlFor='force-value-input' className='mb-2 block text-sm'>
-                Value
-              </Label>
-              <input
-                id='force-value-input'
-                type='text'
-                value={forceValue}
-                onChange={(e) => setForceValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void handleForceValueConfirm()}
-                placeholder='Enter value'
-                className='w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-850 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300'
-                autoFocus
-              />
-            </div>
-
-            <div className='mt-4 flex gap-3'>
-              <button
-                onClick={() => void handleForceValueConfirm()}
-                className='flex-1 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-medium-dark'
-              >
-                OK
-              </button>
-              <button
-                onClick={handleForceValueCancel}
-                className='flex-1 rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-1000 hover:bg-neutral-200 dark:bg-neutral-850 dark:text-neutral-100'
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </ModalContent>
-      </Modal>
+      <ForceValueDialog
+        open={forceValueModalOpen}
+        onOpenChange={setForceValueModalOpen}
+        name={data.variable.name}
+        type={getVariableType() ?? ''}
+        currentValue={debugValue}
+        enumValues={debugNode?.enumValues}
+        enumCodes={debugNode?.enumCodes}
+        onForce={async (value, text) => {
+          if (data.variable.name)
+            await forceDebugVariable(
+              store,
+              debugger_,
+              compositeKey,
+              debugIndex,
+              value,
+              isForcedValueHigh(text),
+              getVariableType(),
+            )
+        }}
+      />
 
       {data.handles.map((handle, index) => (
         <CustomHandle key={index} {...handle} />

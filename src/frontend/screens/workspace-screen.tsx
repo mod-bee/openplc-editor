@@ -57,6 +57,7 @@ import {
   useDebugNonBoolValuesMap,
   useIsDebuggerVisible,
 } from '../hooks/use-debug-value'
+import { useDebugWatchFile } from '../hooks/use-debug-watch-file'
 import { useDeviceConnectionMonitor } from '../hooks/use-device-connection-monitor'
 import { useDevicePlcState } from '../hooks/use-device-plc-state'
 import { useRuntimePolling } from '../hooks/use-runtime-polling'
@@ -110,6 +111,7 @@ const WorkspaceScreen = () => {
     debugExpandedNodes,
     fbSelectedInstance,
     fbDebugInstances,
+    debugWatchList,
   } = useOpenPLCStore(
     useShallow((s) => ({
       isCollapsed: s.workspace.isCollapsed,
@@ -120,6 +122,14 @@ const WorkspaceScreen = () => {
       debugExpandedNodes: s.workspace.debugExpandedNodes,
       fbSelectedInstance: s.workspace.fbSelectedInstance,
       fbDebugInstances: s.workspace.fbDebugInstances,
+      debugWatchList: s.workspace.debugWatchList,
+    })),
+  )
+  const { addDebugWatch, removeDebugWatch, setDebugWatchList } = useOpenPLCStore(
+    useShallow((s) => ({
+      addDebugWatch: s.workspaceActions.addDebugWatch,
+      removeDebugWatch: s.workspaceActions.removeDebugWatch,
+      setDebugWatchList: s.workspaceActions.setDebugWatchList,
     })),
   )
 
@@ -184,6 +194,8 @@ const WorkspaceScreen = () => {
   }, [projectPath, rawLoadedContent, loadedSerialized, initBaseline, store])
 
   useRuntimePolling()
+  // The project's watch list, read from and written to <project>/debugger/watch.json.
+  useDebugWatchFile()
   // Mirrors a baremetal target's run/stop state from the held device link's existing liveness tick (no timer of its own).
   useDevicePlcState()
   useDeviceConnectionMonitor()
@@ -271,13 +283,20 @@ const WorkspaceScreen = () => {
     })
   }, [allDebugVariables])
 
-  // Filter debug variable tree to only include watched or forced keys
+  // Filter debug variable tree to only include watched (the table's eye, or the watch list) or forced keys.
+  // Watch-list items come first, in the order they were added.
   const filteredDebugVariableTree = useMemo(() => {
     const watchedCompositeKeys = new Set<string>(allDebugVariables.map((v) => v.compositeKey))
     const forcedKeys = Array.from(debugForcedVariables.keys())
     const allKeys = new Set([...watchedCompositeKeys, ...forcedKeys])
-    return new Map(Array.from(debugVariableTree.entries()).filter(([key]) => allKeys.has(key)))
-  }, [allDebugVariables, debugForcedVariables, debugVariableTree])
+    const listed = debugWatchList
+      .map((key) => [key, debugVariableTree.get(key)] as const)
+      .filter((entry): entry is readonly [string, NonNullable<(typeof entry)[1]>] => entry[1] !== undefined)
+    const rest = Array.from(debugVariableTree.entries()).filter(
+      ([key]) => allKeys.has(key) && !debugWatchList.includes(key),
+    )
+    return new Map([...listed, ...rest])
+  }, [allDebugVariables, debugForcedVariables, debugVariableTree, debugWatchList])
 
   const handleForceVariable = useCallback(
     async (
@@ -377,6 +396,12 @@ const WorkspaceScreen = () => {
   const workspacePanelRef = useRef<PanelMethods | null>(null)
   const consolePanelRef = useRef<PanelMethods | null>(null)
   const [activeTab, setActiveTab] = useState('console')
+  // Watching something brings the debugger's watch table forward.
+  const watchCount = useRef(debugWatchList.length)
+  useEffect(() => {
+    if (debugWatchList.length > watchCount.current && isDebuggerVisible) setActiveTab('debug')
+    watchCount.current = debugWatchList.length
+  }, [debugWatchList.length, isDebuggerVisible])
   const consoleFollowRequestId = useOpenPLCStore((state) => state.followRequestId)
   const hasSearchResults = searchResults.length > 0
 
@@ -821,6 +846,10 @@ const WorkspaceScreen = () => {
                           <ResizablePanelGroup direction='horizontal' className='flex h-full w-full'>
                             <ResizablePanel minSize={15} defaultSize={20} className='h-full w-full'>
                               <VariablesPanel
+                                watchList={debugWatchList}
+                                onWatch={addDebugWatch}
+                                onUnwatch={removeDebugWatch}
+                                onClearWatch={() => setDebugWatchList([])}
                                 variables={debugVariables}
                                 variableTree={filteredDebugVariableTree}
                                 graphList={graphList}

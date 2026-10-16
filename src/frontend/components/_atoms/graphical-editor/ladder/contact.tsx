@@ -13,6 +13,7 @@ import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from '../../../../
 import { useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
 import { DebugInOutNote } from '../../debug-inout-note'
 import { HighlightedTextArea } from '../../highlighted-textarea'
+import { DebugWatchMenuItem } from '../debug-watch-menu-item'
 import { VariablesBlockAutoComplete } from './autocomplete'
 import { CustomHandle } from './handle'
 import { getLadderPouVariablesRungNodeAndEdges } from './utils'
@@ -339,6 +340,11 @@ const Contact = (block: ContactProps) => {
                         )}
                       </>
                     )}
+                    <DebugWatchMenuItem
+                      compositeKey={data.variable.name ? compositeKey : undefined}
+                      onDone={() => setIsContextMenuOpen(false)}
+                      first={!canForceDebugLeaf(debugIndex)}
+                    />
                   </Popover.Content>
                 </Popover.Portal>
               </Popover.Root>

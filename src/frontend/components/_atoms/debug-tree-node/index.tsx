@@ -18,6 +18,8 @@ type TreeNodeProps = ComponentPropsWithoutRef<'div'> & {
   getForcedValue?: (compositeKey: string) => boolean | undefined
   canForce?: (node: DebugTreeNode) => boolean
   onRowClick?: (node: DebugTreeNode, position: { x: number; y: number }) => void
+  /** A watch-list item: shown with a button that removes it from the watch list. */
+  onRemove?: (compositeKey: string) => void
   level?: number
 }
 
@@ -32,6 +34,7 @@ const TreeNode = ({
   canForce,
   onRowClick,
   level = 0,
+  onRemove,
   ...rest
 }: TreeNodeProps) => {
   const indentWidth = level * 16
@@ -162,6 +165,20 @@ const TreeNode = ({
             {node.isComplex && !node.isExpanded ? '...' : node.isComplex ? '' : shownValue()}
           </p>
         </div>
+        {onRemove && (
+          <button
+            type='button'
+            aria-label='Unwatch'
+            title='Remove from the watch list'
+            onClick={(e) => {
+              e.stopPropagation()
+              onRemove(node.compositeKey)
+            }}
+            className='flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-850 dark:hover:bg-neutral-850 dark:hover:text-white'
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {node.isComplex && node.isExpanded && node.children && (

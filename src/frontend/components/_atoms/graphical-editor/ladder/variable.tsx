@@ -14,14 +14,13 @@ import { cn } from '../../../../utils/cn'
 import { blockPinVariableName } from '../../../../utils/debug-pin-values'
 import { canForceDebugLeaf } from '../../../../utils/inout-force'
 import { getLiteralType } from '../../../../utils/keywords'
-import { encodeForceValue, isForcedValueHigh } from '../../../../utils/variable-sizes'
-import { toast } from '../../../_features/[app]/toast/use-toast'
+import { isForcedValueHigh } from '../../../../utils/variable-sizes'
 import { useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
-import { Modal, ModalContent, ModalTitle } from '../../../_molecules/modal'
+import { ForceValueDialog } from '../../../_molecules/force-value-dialog'
 import { DebugInOutNote } from '../../debug-inout-note'
 import { HighlightedTextArea } from '../../highlighted-textarea'
-import { Label } from '../../label'
 import { DebugValuePill } from '../debug-value-pill'
+import { DebugWatchMenuItem } from '../debug-watch-menu-item'
 import { VariablesBlockAutoComplete } from './autocomplete'
 import { CustomHandle } from './handle'
 import { getLadderPouVariablesRungNodeAndEdges, validateVariableType } from './utils'
@@ -40,7 +39,6 @@ const VariableElement = (block: VariableProps) => {
   const isDebuggerVisible = useIsDebuggerVisible()
   const getCompositeKey = useDebugCompositeKey()
   const compositeKey = getCompositeKey(data.variable.name)
-  const { isForced, forcedValue: forcedBoolValue, debugIndex } = useDebugValue(compositeKey)
   // The type of a member or element, which the POU does not declare by that name (see useDebugVariableType).
   const treeType = useDebugVariableType(compositeKey)
   // The block pin this element is attached to, read when the element itself names no variable: an empty
@@ -81,11 +79,15 @@ const VariableElement = (block: VariableProps) => {
   const [isContextMenuOpen, setIsContextMenuOpen] = useState<boolean>(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [forceValueModalOpen, setForceValueModalOpen] = useState<boolean>(false)
-  const [forceValue, setForceValue] = useState<string>('')
 
   const [variableValue, setVariableValue] = useState(data.variable.name)
   const [inputError, setInputError] = useState<boolean>(false)
   const [isAVariable, setIsAVariable] = useState<boolean>(false)
+  // What this element reads, forces and watches online: its own variable, or, when it names none (an empty
+  // pin, a constant, a literal), the pin it sits on (`motor.Start`), which the block keeps in its instance.
+  const debugKey = isAVariable ? compositeKey : pinVariableName ? getCompositeKey(pinVariableName) : undefined
+  const { isForced, forcedValue: forcedBoolValue, debugIndex, value: debugValue } = useDebugValue(debugKey ?? '')
+  const debugNode = useOpenPLCStore((state) => (debugKey ? state.workspace.debugVariableTree.get(debugKey) : undefined))
 
   const updateRelatedNode = (rung: RungLadderState, variableNode: VariableNode, variable: PLCVariable) => {
     const relatedBlock = rung.nodes.find((node) => node.id === variableNode.data.block.id)
@@ -264,27 +266,28 @@ const VariableElement = (block: VariableProps) => {
     return variable?.type.value ?? treeType
   }
 
+  /** The type of what `debugKey` names: the element's variable, or the pin's declared type. */
+  const debugType = (): string | undefined => (isAVariable ? getVariableType() : data.block.variableType.type.value)
+
   const handleForceTrue = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsContextMenuOpen(false)
-    if (data.variable.name)
-      await forceDebugVariable(store, debugger_, compositeKey, debugIndex, new Uint8Array([1]), true)
+    if (debugKey) await forceDebugVariable(store, debugger_, debugKey, debugIndex, new Uint8Array([1]), true)
   }
 
   const handleForceFalse = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsContextMenuOpen(false)
-    if (data.variable.name)
-      await forceDebugVariable(store, debugger_, compositeKey, debugIndex, new Uint8Array([0]), false)
+    if (debugKey) await forceDebugVariable(store, debugger_, debugKey, debugIndex, new Uint8Array([0]), false)
   }
 
   const handleReleaseForce = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setIsContextMenuOpen(false)
-    if (data.variable.name) await releaseDebugVariable(store, debugger_, compositeKey, debugIndex)
+    if (debugKey) await releaseDebugVariable(store, debugger_, debugKey, debugIndex)
   }
 
   const handleForceValueOpen = (e: React.MouseEvent) => {
@@ -294,68 +297,11 @@ const VariableElement = (block: VariableProps) => {
     setForceValueModalOpen(true)
   }
 
-  const handleForceValueConfirm = async () => {
-    if (!data.variable.name || !forceValue.trim()) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
 
-    if (debugIndex === undefined) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
 
-    const variableType = getVariableType()
-    if (!variableType) {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
-
-    let valueBuffer: Uint8Array
-    try {
-      valueBuffer = encodeForceValue(forceValue, variableType)
-    } catch (error) {
-      toast({
-        title: 'Cannot force value',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'fail',
-      })
-      setForceValueModalOpen(false)
-      setForceValue('')
-      return
-    }
-
-    await forceDebugVariable(
-      store,
-      debugger_,
-      compositeKey,
-      debugIndex,
-      valueBuffer,
-      isForcedValueHigh(forceValue),
-      variableType,
-    )
-
-    setForceValueModalOpen(false)
-    setForceValue('')
-  }
-
-  const handleForceValueCancel = () => {
-    setForceValueModalOpen(false)
-    setForceValue('')
-  }
-
-  const handleForceValueModalChange = (open: boolean) => {
-    setForceValueModalOpen(open)
-    if (!open) {
-      setForceValue('')
-    }
-  }
 
   const handleClick = (e: React.MouseEvent) => {
-    if (!isDebuggerVisible || !isAVariable) return
+    if (!isDebuggerVisible || !debugKey) return
     e.preventDefault()
     e.stopPropagation()
     setContextMenuPosition({ x: e.clientX, y: e.clientY })
@@ -363,7 +309,7 @@ const VariableElement = (block: VariableProps) => {
   }
 
   const variableType = getVariableType()
-  const isBoolVariable = variableType?.toUpperCase() === 'BOOL'
+  const isBoolVariable = debugType()?.toUpperCase() === 'BOOL'
 
   return (
     <>
@@ -550,54 +496,30 @@ const VariableElement = (block: VariableProps) => {
                     )}
                   </>
                 )}
+                <DebugWatchMenuItem
+                  compositeKey={debugKey}
+                  onDone={() => setIsContextMenuOpen(false)}
+                  first={!canForceDebugLeaf(debugIndex)}
+                />
               </Popover.Content>
             </Popover.Portal>
           </Popover.Root>
         )}
       </div>
 
-      <Modal open={forceValueModalOpen} onOpenChange={handleForceValueModalChange}>
-        <ModalContent className='flex h-fit min-h-0 w-[400px] select-none flex-col items-center justify-start rounded-lg p-6'>
-          <ModalTitle className='mb-4 text-lg font-semibold'>Force Value</ModalTitle>
-
-          <p className='mb-6 text-center text-sm text-neutral-600 dark:text-neutral-400'>
-            Enter the value to force for {data.variable?.name || 'this variable'}
-          </p>
-
-          <div className='flex w-full flex-col gap-4'>
-            <div>
-              <Label htmlFor='force-value-input' className='mb-2 block text-sm'>
-                Value
-              </Label>
-              <input
-                id='force-value-input'
-                type='text'
-                value={forceValue}
-                onChange={(e) => setForceValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void handleForceValueConfirm()}
-                placeholder='Enter value'
-                className='w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-850 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300'
-                autoFocus
-              />
-            </div>
-
-            <div className='mt-4 flex gap-3'>
-              <button
-                onClick={() => void handleForceValueConfirm()}
-                className='flex-1 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-medium-dark'
-              >
-                OK
-              </button>
-              <button
-                onClick={handleForceValueCancel}
-                className='flex-1 rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-1000 hover:bg-neutral-200 dark:bg-neutral-850 dark:text-neutral-100'
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </ModalContent>
-      </Modal>
+      <ForceValueDialog
+        open={forceValueModalOpen}
+        onOpenChange={setForceValueModalOpen}
+        name={data.variable.name || pinVariableName || ''}
+        type={debugType() ?? ''}
+        currentValue={debugValue}
+        enumValues={debugNode?.enumValues}
+        enumCodes={debugNode?.enumCodes}
+        onForce={async (value, text) => {
+          if (debugKey)
+            await forceDebugVariable(store, debugger_, debugKey, debugIndex, value, isForcedValueHigh(text), debugType())
+        }}
+      />
 
       {data.handles.map((handle, index) => (
         <CustomHandle key={index} {...handle} />

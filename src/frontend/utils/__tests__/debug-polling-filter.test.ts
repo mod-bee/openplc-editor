@@ -227,6 +227,20 @@ describe('buildActiveIndexSet', () => {
     })
   })
 
+  describe('the watch list', () => {
+    it('polls a watched member or element, and a watched struct as it is opened', () => {
+      const state = makeState({
+        debugVariableIndexes: new Map([
+          ['Config0:well.Data.set.tanks', 11],
+          ['Config0:IO.dout[2].q', 12],
+        ]),
+      }) as { workspace: Record<string, unknown> }
+      state.workspace.debugWatchList = ['Config0:well.Data.set.tanks', 'Config0:IO.dout[2].q']
+      const { activeIndexes } = buildActiveIndexSet(state as never, new Map(), null)
+      expect([...activeIndexes].sort()).toEqual([11, 12])
+    })
+  })
+
   describe('forced variables', () => {
     it('includes forced variable indexes', () => {
       const forced = new Map([['Main:FORCED_VAR', { value: 42 }]])

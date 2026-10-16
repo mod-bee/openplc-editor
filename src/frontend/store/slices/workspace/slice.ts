@@ -51,6 +51,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
     debugHarness: null,
     debugLocalMd5: null,
     debugGraphList: [],
+    debugWatchList: [],
     debugDataStale: false,
     debugMd5Mismatch: null,
     debugTargetEndian: 'le',
@@ -167,6 +168,8 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           workspace.debugTick = 0
           workspace.debugVariableTree = new Map()
           workspace.debugExpandedNodes = new Map()
+          // Project-scoped: the next project reads its own watch file.
+          workspace.debugWatchList = []
           workspace.fbDebugInstances = new Map()
           workspace.fbSelectedInstance = new Map()
           workspace.debugHarness = null
@@ -357,6 +360,27 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
       setState(
         produce(({ workspace }: WorkspaceSlice) => {
           workspace.debugLocalMd5 = md5
+        }),
+      )
+    },
+    setDebugWatchList: (keys: string[]) => {
+      setState(
+        produce(({ workspace }: WorkspaceSlice) => {
+          workspace.debugWatchList = [...new Set(keys)]
+        }),
+      )
+    },
+    addDebugWatch: (compositeKey: string) => {
+      setState(
+        produce(({ workspace }: WorkspaceSlice) => {
+          if (!workspace.debugWatchList.includes(compositeKey)) workspace.debugWatchList.push(compositeKey)
+        }),
+      )
+    },
+    removeDebugWatch: (compositeKey: string) => {
+      setState(
+        produce(({ workspace }: WorkspaceSlice) => {
+          workspace.debugWatchList = workspace.debugWatchList.filter((key) => key !== compositeKey)
         }),
       )
     },

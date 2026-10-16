@@ -40,6 +40,8 @@ export interface DebugPollingState {
     debugForcedVariables: Map<string, unknown>
     debugExpandedNodes: Map<string, boolean>
     debugGraphList: string[]
+    /** The project's watch list (`debugger/watch.json`); absent reads as empty. */
+    debugWatchList?: string[]
     fbSelectedInstance: Map<string, string>
     fbDebugInstances: Map<string, FbInstanceInfo[]>
     /** Generated program the session is running, when it runs one the
@@ -93,6 +95,7 @@ export function buildActiveIndexSet(
     debugForcedVariables,
     debugExpandedNodes,
     debugGraphList,
+    debugWatchList = [],
     fbSelectedInstance,
     fbDebugInstances,
     debugHarness,
@@ -141,6 +144,14 @@ export function buildActiveIndexSet(
   // 2. Forced variables
   // -----------------------------------------------------------------------
   for (const compositeKey of debugForcedVariables.keys()) {
+    activeKeys.add(compositeKey)
+  }
+
+  // -----------------------------------------------------------------------
+  // 2b. The watch list: any variable, member or element; a watched struct or block polls its members as it
+  //     is opened, like any other watched one (4. below).
+  // -----------------------------------------------------------------------
+  for (const compositeKey of debugWatchList) {
     activeKeys.add(compositeKey)
   }
 

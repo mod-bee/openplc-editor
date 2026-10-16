@@ -6,11 +6,9 @@ import ViewIcon from '../../../assets/icons/interface/View'
 import ZapIcon from '../../../assets/icons/interface/Zap'
 import { cn } from '../../../utils/cn'
 import { canForceDebugLeaf } from '../../../utils/inout-force'
-import { encodeForceValue, isForcedValueHigh } from '../../../utils/variable-sizes'
+import { isForcedValueHigh } from '../../../utils/variable-sizes'
 import { TreeNode } from '../../_atoms/debug-tree-node'
-import { Label } from '../../_atoms/label'
-import { toast } from '../../_features/[app]/toast/use-toast'
-import { Modal, ModalContent, ModalTitle } from '../modal'
+import { ForceValueDialog } from '../force-value-dialog'
 
 type Variable = {
   name: string
@@ -20,6 +18,11 @@ type Variable = {
 }
 
 type VariablePanelProps = {
+  /** The project's watch list (`debugger/watch.json`): its items are root rows with a remove button. */
+  watchList?: string[]
+  onWatch?: (compositeKey: string) => void
+  onUnwatch?: (compositeKey: string) => void
+  onClearWatch?: () => void
   variables?: Variable[]
   variableTree?: Map<string, DebugTreeNode>
   graphList?: string[]
@@ -104,6 +107,10 @@ const VariablesPanel = ({
   onToggleExpandedNode,
   isDebuggerVisible,
   onForceVariable,
+  watchList,
+  onWatch,
+  onUnwatch,
+  onClearWatch,
 }: VariablePanelProps) => {
   const expandedNodes = debugExpandedNodes ?? new Map<string, boolean>()
   const [contextMenuState, setContextMenuState] = useState<{
@@ -114,9 +121,10 @@ const VariablesPanel = ({
     enumValues?: string[]
     enumCodes?: number[]
     position: { x: number; y: number }
+    /** The row can be forced (a leaf the runtime accepts a force for); watching is offered on every row. */
+    canForce: boolean
   } | null>(null)
   const [forceValueModalOpen, setForceValueModalOpen] = useState<boolean>(false)
-  const [forceValue, setForceValue] = useState<string>('')
   const [pendingForceContext, setPendingForceContext] = useState<{
     compositeKey: string
     lookupKey: string
@@ -194,7 +202,8 @@ const VariablesPanel = ({
 
   const handleRowClick = useCallback(
     (node: DebugTreeNode, position: { x: number; y: number }) => {
-      if (!canForceVariable(node)) return
+      const canForce = canForceVariable(node)
+      if (!canForce && !onWatch && !onUnwatch) return
 
       const lookupKey = node.debugIndex !== undefined ? node.fullPath : node.compositeKey
 
@@ -206,9 +215,10 @@ const VariablesPanel = ({
         enumValues: node.enumValues,
         enumCodes: node.enumCodes,
         position,
+        canForce,
       })
     },
-    [canForceVariable],
+    [canForceVariable, onWatch, onUnwatch],
   )
 
   const handleCloseContextMenu = useCallback(() => {
@@ -276,62 +286,8 @@ const VariablesPanel = ({
     [contextMenuState, handleCloseContextMenu],
   )
 
-  const handleForceValueConfirm = useCallback(() => {
-    const closeModal = () => {
-      setForceValueModalOpen(false)
-      setForceValue('')
-      setPendingForceContext(null)
-    }
 
-    if (!pendingForceContext || !forceValue.trim() || !onForceVariable) {
-      closeModal()
-      return
-    }
 
-    const variableType = pendingForceContext.variableType
-
-    let valueBuffer: Uint8Array
-    try {
-      valueBuffer = encodeForceValue(
-        forceValue,
-        variableType,
-        pendingForceContext.enumValues,
-        pendingForceContext.enumCodes,
-      )
-    } catch (error) {
-      toast({
-        title: 'Cannot force value',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'fail',
-      })
-      closeModal()
-      return
-    }
-
-    void onForceVariable(
-      pendingForceContext.compositeKey,
-      variableType,
-      isForcedValueHigh(forceValue),
-      valueBuffer,
-      pendingForceContext.lookupKey,
-    )
-
-    closeModal()
-  }, [pendingForceContext, forceValue, onForceVariable])
-
-  const handleForceValueCancel = useCallback(() => {
-    setForceValueModalOpen(false)
-    setForceValue('')
-    setPendingForceContext(null)
-  }, [])
-
-  const handleForceValueModalChange = useCallback((open: boolean) => {
-    setForceValueModalOpen(open)
-    if (!open) {
-      setForceValue('')
-      setPendingForceContext(null)
-    }
-  }, [])
 
   const renderTreeView = () => {
     if (!variableTree || variableTree.size === 0) return null
@@ -352,6 +308,7 @@ const VariablesPanel = ({
             getForcedValue={getForcedValue}
             canForce={canForceVariable}
             onRowClick={handleRowClick}
+            onRemove={onUnwatch && watchList?.includes(node.compositeKey) ? onUnwatch : undefined}
           />
         ))}
       </div>
@@ -438,16 +395,28 @@ const VariablesPanel = ({
   return (
     <>
       <div className='flex h-full w-full min-w-52 flex-col gap-2 overflow-hidden rounded-lg border-[0.75px] border-neutral-200 bg-white p-2 text-cp-sm font-medium text-neutral-1000 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-50'>
-        <div className='flex h-7 w-[90px] select-none items-center gap-1 rounded-lg bg-neutral-100 p-1 text-cp-sm dark:bg-brand-dark'>
-          <ZapIcon className='h-4 w-4' />
-          <p>Variables</p>
+        <div className='flex items-center justify-between gap-2'>
+          <div className='flex h-7 w-[90px] select-none items-center gap-1 rounded-lg bg-neutral-100 p-1 text-cp-sm dark:bg-brand-dark'>
+            <ZapIcon className='h-4 w-4' />
+            <p>Variables</p>
+          </div>
+          {onClearWatch && (watchList?.length ?? 0) > 0 && (
+            <button
+              type='button'
+              onClick={onClearWatch}
+              className='h-7 rounded-md px-2 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-850 dark:text-neutral-400 dark:hover:bg-neutral-850 dark:hover:text-white'
+              title='Remove every item from the watch list'
+            >
+              Clear watch list
+            </button>
+          )}
         </div>
         {variableTree && variableTree.size > 0 ? renderTreeView() : renderFlatView()}
       </div>
 
       {isDebuggerVisible && contextMenuState && (
         <ContextMenu position={contextMenuState.position} onClose={handleCloseContextMenu}>
-          {isBoolVariable ? (
+          {!contextMenuState.canForce ? null : isBoolVariable ? (
             <>
               <div
                 className='flex w-full cursor-pointer items-center gap-2 rounded-t-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
@@ -488,51 +457,54 @@ const VariablesPanel = ({
               )}
             </>
           )}
+          {(() => {
+            const watched = watchList?.includes(contextMenuState.compositeKey) ?? false
+            const action = watched ? onUnwatch : onWatch
+            if (!action) return null
+            return (
+              <div
+                className={cn(
+                  'flex w-full cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900',
+                  contextMenuState.canForce
+                    ? 'rounded-b-lg border-t border-neutral-200 dark:border-neutral-800'
+                    : 'rounded-lg',
+                )}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  action(contextMenuState.compositeKey)
+                  handleCloseContextMenu()
+                }}
+              >
+                <p>{watched ? 'Unwatch' : 'Watch'}</p>
+              </div>
+            )
+          })()}
         </ContextMenu>
       )}
 
-      <Modal open={forceValueModalOpen} onOpenChange={handleForceValueModalChange}>
-        <ModalContent className='flex h-fit min-h-0 w-[400px] select-none flex-col items-center justify-start rounded-lg p-6'>
-          <ModalTitle className='mb-4 text-lg font-semibold'>Force Value</ModalTitle>
-
-          <p className='mb-6 text-center text-sm text-neutral-600 dark:text-neutral-400'>
-            Enter the value to force for {pendingForceContext?.compositeKey.split(':')[1] || 'this variable'}
-          </p>
-
-          <div className='flex w-full flex-col gap-4'>
-            <div>
-              <Label htmlFor='force-value-input' className='mb-2 block text-sm'>
-                Value
-              </Label>
-              <input
-                id='force-value-input'
-                type='text'
-                value={forceValue}
-                onChange={(e) => setForceValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && void handleForceValueConfirm()}
-                placeholder='Enter value'
-                className='w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-850 outline-none focus:border-brand dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300'
-                autoFocus
-              />
-            </div>
-
-            <div className='mt-4 flex gap-3'>
-              <button
-                onClick={() => void handleForceValueConfirm()}
-                className='flex-1 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-medium-dark'
-              >
-                OK
-              </button>
-              <button
-                onClick={handleForceValueCancel}
-                className='flex-1 rounded-md bg-neutral-100 px-4 py-2 text-sm font-medium text-neutral-1000 hover:bg-neutral-200 dark:bg-neutral-850 dark:text-neutral-100'
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </ModalContent>
-      </Modal>
+      <ForceValueDialog
+        open={forceValueModalOpen && pendingForceContext !== null}
+        onOpenChange={(open) => {
+          setForceValueModalOpen(open)
+          if (!open) setPendingForceContext(null)
+        }}
+        name={(pendingForceContext?.compositeKey ?? '').split(':').slice(1).join(':')}
+        type={pendingForceContext?.variableType ?? ''}
+        currentValue={pendingForceContext ? getValue(pendingForceContext.compositeKey) : undefined}
+        enumValues={pendingForceContext?.enumValues}
+        enumCodes={pendingForceContext?.enumCodes}
+        onForce={async (value, text) => {
+          if (!pendingForceContext || !onForceVariable) return
+          await onForceVariable(
+            pendingForceContext.compositeKey,
+            pendingForceContext.variableType,
+            isForcedValueHigh(text),
+            value,
+            pendingForceContext.lookupKey,
+          )
+        }}
+      />
     </>
   )
 }
