@@ -89,6 +89,7 @@ export const ExecuteElementModal = ({ isOpen, onClose, node, pouName }: ExecuteE
             onCommit={commit}
             uri={executeStDocumentUri(pouName, nodeId)}
             debugPrefix={isDebuggerVisible ? `${pouName}:` : undefined}
+            debugPouName={pouName}
             active={isOpen}
             variant='full'
           />

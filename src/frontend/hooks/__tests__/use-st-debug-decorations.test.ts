@@ -20,6 +20,12 @@ jest.mock('../use-debug-value', () => ({
   useDebugNonBoolValuesMap: () => nonBoolValues,
 }))
 
+// The POUs the hook reads a VAR_EXTERNAL list from.
+let pous: Array<{ name: string; interface: { variables: Array<{ name: string; class: string }> } }> = []
+jest.mock('../../store', () => ({
+  useOpenPLCStore: (selector: (s: unknown) => unknown) => selector({ project: { data: { pous } } }),
+}))
+
 type Badge = { line: number; startCol: number; endCol: number; content: string }
 
 const clear = jest.fn()
@@ -84,6 +90,7 @@ const render = (text: string, overrides: Partial<Parameters<typeof useStDebugDec
 beforeEach(() => {
   boolValues = new Map()
   nonBoolValues = new Map()
+  pous = []
   clear.mockClear()
 })
 
@@ -139,6 +146,20 @@ describe('useStDebugDecorations', () => {
   it('ignores names that belong to another prefix', () => {
     nonBoolValues = new Map([['Other:speed', '42']])
     expect(render('speed := 1;').badges).toEqual([])
+  })
+
+  it("badges a global the POU reaches through VAR_EXTERNAL, from the global's value", () => {
+    pous = [{ name: 'Prog', interface: { variables: [{ name: 'IO', class: 'external' }] } }]
+    nonBoolValues = new Map([['Config0:IO.pulseCount', '7']])
+    const { badges } = render('x := IO.pulseCount;', { pouName: 'Prog' })
+
+    expect(badges).toEqual([{ line: 1, startCol: 6, endCol: 19, content: ' = 7 ' }])
+  })
+
+  it('does not badge a global the POU does not declare', () => {
+    pous = [{ name: 'Prog', interface: { variables: [{ name: 'IO', class: 'external' }] } }]
+    nonBoolValues = new Map([['Config0:DEV.mode', '1']])
+    expect(render('x := DEV.mode;', { pouName: 'Prog' }).badges).toEqual([])
   })
 
   it('clears its decorations on unmount', () => {

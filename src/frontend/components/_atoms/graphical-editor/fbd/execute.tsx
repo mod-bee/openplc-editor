@@ -119,6 +119,7 @@ const ExecuteElement = (block: ExecuteProps) => {
               onCommit={handleCommit}
               uri={executeStDocumentUri(pouName, id)}
               debugPrefix={isDebuggerVisible ? `${pouName}:` : undefined}
+              debugPouName={pouName}
               active={selected === true && !isExpanded}
             />
           </div>

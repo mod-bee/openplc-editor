@@ -748,6 +748,86 @@ describe('buildActiveIndexSet', () => {
     })
   })
 
+  describe('VAR_EXTERNAL globals shown on a diagram or in source text', () => {
+    // A global is polled by its canonical key (Config0:<name>), the key the
+    // debug tree gives it, wherever it is referenced - never <POU>:<name>.
+    const external = (name: string, typeName?: string): PLCVariable => ({
+      ...makeVariable(name, 'external'),
+      ...(typeName ? { type: { definition: 'derived' as const, value: typeName } } : {}),
+    })
+    const leaves = (entries: [number, string][]) =>
+      new Map<number, { compositeKey: string; type: string }[]>(
+        entries.map(([index, compositeKey]) => [index, [{ compositeKey, type: 'BOOL' }]]),
+      )
+
+    it('polls a global bound to a ladder variable node, through its members', () => {
+      const pou = makePou('BoardIn', 'program', [external('IO', 'UPC_IO')], 'ld')
+      const ldFlow = {
+        name: 'BoardIn',
+        rungs: [{ nodes: [{ type: 'variable', data: { variable: { name: 'IO.aiImg[1].v' } } }] }],
+      }
+      const state = makeState({
+        pous: [pou],
+        editorName: 'BoardIn',
+        editorLanguage: 'ld',
+        debugVariableIndexes: new Map([['Config0:IO.aiImg[1].v', 7]]),
+        ladderFlows: [ldFlow],
+      })
+      const { activeIndexes } = buildActiveIndexSet(state, new Map(), null)
+      expect(activeIndexes).toEqual([7])
+    })
+
+    it('polls every pin of a block whose instance is a global, and of a global array element', () => {
+      const pou = makePou('Stirrer', 'program', [external('mixerMotor', 'UT_MOTOR'), external('pumps')], 'ld')
+      const ldFlow = {
+        name: 'Stirrer',
+        rungs: [
+          {
+            nodes: [
+              {
+                type: 'block',
+                data: { variant: { name: 'UT_MOTOR', type: 'function-block' }, variable: { name: 'mixerMotor' } },
+              },
+              {
+                type: 'block',
+                data: { variant: { name: 'UT_PUMP', type: 'function-block' }, variable: { name: 'pumps[1]' } },
+              },
+            ],
+          },
+        ],
+      }
+      const state = makeState({ pous: [pou], editorName: 'Stirrer', editorLanguage: 'ld', ladderFlows: [ldFlow] })
+      const allLeaves = leaves([
+        [1, 'Config0:mixerMotor.RUNNING'],
+        [2, 'Config0:pumps[1].READY'],
+        [3, 'Stirrer:mixerMotor.RUNNING'],
+        [4, 'Config0:pumps[2].READY'],
+      ])
+      const { activeIndexes } = buildActiveIndexSet(state, allLeaves, null)
+      expect(activeIndexes).toEqual([1, 2])
+    })
+
+    it('polls a global named in ST source text, with its members', () => {
+      const pou = makePou('IoIn', 'program', [external('IO', 'UPC_IO')], 'st')
+      pou.body.value = 'IO.boardOk := TRUE;'
+      const state = makeState({ pous: [pou], editorName: 'IoIn', editorLanguage: 'st' })
+      const allLeaves = leaves([
+        [5, 'Config0:IO.boardOk'],
+        [6, 'IoIn:IO.boardOk'],
+      ])
+      const { activeIndexes } = buildActiveIndexSet(state, allLeaves, null)
+      expect(activeIndexes).toEqual([5])
+    })
+
+    it("polls a function block's global without a selected instance", () => {
+      const fb = makePou('Pump', 'function-block', [external('DEV', 'UPC_DEV')], 'st')
+      fb.body.value = 'DEV.mode := 1;'
+      const state = makeState({ pous: [fb], editorName: 'Pump', editorLanguage: 'st' })
+      const { activeIndexes } = buildActiveIndexSet(state, leaves([[9, 'Config0:DEV.mode']]), null)
+      expect(activeIndexes).toEqual([9])
+    })
+  })
+
   describe('LD diagram-visible variables', () => {
     it('includes contact and coil variable names from LD flow', () => {
       const pou = makePou('Main', 'program', [], 'ld')

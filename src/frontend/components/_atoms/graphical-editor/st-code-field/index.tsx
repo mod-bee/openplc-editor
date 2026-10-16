@@ -37,6 +37,8 @@ export type StCodeFieldProps = {
    * Omit to disable badges (the modal in a non-debug session).
    */
   debugPrefix?: string
+  /** The POU this text belongs to: its VAR_EXTERNALs get badges from the shared globals' values. */
+  debugPouName?: string
   /**
    * When false the field stays in its cheap read-only presentation and
    * never mounts Monaco. The node passes `selected`; the modal passes
@@ -65,6 +67,7 @@ export const StCodeField = ({
   onCommit,
   uri,
   debugPrefix,
+  debugPouName,
   active = false,
   variant = 'compact',
   className,
@@ -155,6 +158,7 @@ export const StCodeField = ({
     editorRef,
     monacoRef,
     prefix: debugPrefix,
+    pouName: debugPouName,
     enabled: active && editorMounted && isDebuggerVisible && debugPrefix !== undefined,
     modelVersion: draft,
   })

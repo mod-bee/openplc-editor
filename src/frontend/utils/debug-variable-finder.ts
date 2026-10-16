@@ -113,6 +113,43 @@ export function buildGlobalCompositeKey(variableName: string): string {
   return `${GLOBAL_CONFIG_NAME}:${variableName}`
 }
 
+/** A POU's VAR_EXTERNAL names, upper case → as declared (see `buildReferenceCompositeKey`). */
+export function externalNamesOf(variables: readonly { name: string; class?: string }[]): Map<string, string> {
+  const externals = new Map<string, string>()
+  for (const v of variables) {
+    if (v.class === 'external') externals.set(v.name.toUpperCase(), v.name)
+  }
+  return externals
+}
+
+/**
+ * The composite key of a name as a POU's body writes it (`SPEED`, `IO.aiImg[1].v`, a block instance
+ * `pumps[1]`). When its root is one of the POU's VAR_EXTERNALs it is the shared global, keyed
+ * `Config0:<declared name>` + the rest, as the debug tree keys it (in a program or a function block,
+ * whatever instance is selected); otherwise it is the POU's own: `localPrefix` + the name. The poller
+ * and the diagrams both resolve through here, so a value is polled and shown under one key.
+ */
+export function buildReferenceCompositeKey(
+  externals: ReadonlyMap<string, string>,
+  localPrefix: string,
+  variableName: string,
+): string {
+  const root = referenceRoot(variableName)
+  const declared = externals.get(root.toUpperCase())
+  if (declared !== undefined) return `${buildGlobalCompositeKey(declared)}${variableName.slice(root.length)}`
+  return `${localPrefix}${variableName}`
+}
+
+/** Whether a name as a POU's body writes it refers to one of the POU's VAR_EXTERNALs. */
+export function isExternalReference(externals: ReadonlyMap<string, string>, variableName: string): boolean {
+  return externals.has(referenceRoot(variableName).toUpperCase())
+}
+
+/** The variable a reference starts with: `IO` of `IO.aiImg[1].v`, `pumps` of `pumps[1]`. */
+function referenceRoot(variableName: string): string {
+  return variableName.split(/[.[]/, 1)[0] ?? ''
+}
+
 /**
  * The single path rule for a program variable: a shared global (VAR_EXTERNAL →
  * CONFIGURATION VAR_GLOBAL) addresses by its bare name; everything else is

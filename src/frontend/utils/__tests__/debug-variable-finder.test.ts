@@ -5,6 +5,9 @@ import {
   buildDebugPathPrefix,
   buildGlobalCompositeKey,
   buildGlobalDebugPath,
+  buildReferenceCompositeKey,
+  externalNamesOf,
+  isExternalReference,
   GLOBAL_CONFIG_NAME,
   findDebugVariable,
   findDebugVariableForField,
@@ -312,5 +315,30 @@ describe('appendToDebugPath', () => {
 
   it('handles already uppercased child name', () => {
     expect(appendToDebugPath('INSTANCE0', 'VAR')).toBe('INSTANCE0.VAR')
+  })
+})
+
+describe('buildReferenceCompositeKey — a name as a POU body writes it', () => {
+  const externals = externalNamesOf([
+    { name: 'IO', class: 'external' },
+    { name: 'pumps', class: 'external' },
+    { name: 'speed', class: 'local' },
+  ])
+
+  it('keys a reference to a VAR_EXTERNAL as the shared global, members and elements included', () => {
+    expect(buildReferenceCompositeKey(externals, 'Main:', 'IO')).toBe('Config0:IO')
+    expect(buildReferenceCompositeKey(externals, 'Main:', 'IO.aiImg[1].v')).toBe('Config0:IO.aiImg[1].v')
+    expect(buildReferenceCompositeKey(externals, 'Main:', 'pumps[1].')).toBe('Config0:pumps[1].')
+    expect(buildReferenceCompositeKey(externals, 'Main:', 'io.boardOk')).toBe('Config0:IO.boardOk')
+  })
+
+  it("keys anything else as the POU's own", () => {
+    expect(buildReferenceCompositeKey(externals, 'Main:', 'speed')).toBe('Main:speed')
+    expect(buildReferenceCompositeKey(externals, 'Prog:fb.', 'IOX')).toBe('Prog:fb.IOX')
+  })
+
+  it('says whether a reference is to a VAR_EXTERNAL', () => {
+    expect(isExternalReference(externals, 'pumps[2].RUNNING')).toBe(true)
+    expect(isExternalReference(externals, 'speed')).toBe(false)
   })
 })

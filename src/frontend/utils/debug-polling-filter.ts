@@ -17,7 +17,12 @@
  */
 
 import type { FbInstanceInfo, PLCPou, PLCVariable } from '../../middleware/shared/ports/types'
-import { buildGlobalCompositeKey } from './debug-variable-finder'
+import {
+  buildGlobalCompositeKey,
+  buildReferenceCompositeKey,
+  externalNamesOf,
+  isExternalReference,
+} from './debug-variable-finder'
 import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from './PLC/edge-trigger-instance'
 
 /**
@@ -318,14 +323,19 @@ function computeVisibleVariableKeys(
     workspace: { fbSelectedInstance, fbDebugInstances },
   } = state
 
+  // A reference to one of the POU's VAR_EXTERNALs is the shared global (see buildReferenceCompositeKey).
+  const externals = externalNamesOf(currentPou.interface?.variables ?? [])
+
   // Helper to make composite key respecting FB instance context
   const makeKey = (variableName: string): string | null => {
     if (currentPou.pouType === 'function-block') {
+      // An FB's own variable needs a selected instance; a global does not.
       const resolved = resolveFbInstance(currentPou.name, fbSelectedInstance, fbDebugInstances)
-      if (!resolved) return null
-      return `${resolved.programName}:${resolved.fbVariableName}.${variableName}`
+      if (!resolved && !isExternalReference(externals, variableName)) return null
+      const prefix = resolved ? `${resolved.programName}:${resolved.fbVariableName}.` : ''
+      return buildReferenceCompositeKey(externals, prefix, variableName)
     }
-    return `${currentPou.name}:${variableName}`
+    return buildReferenceCompositeKey(externals, `${currentPou.name}:`, variableName)
   }
 
   // Helper to find all leaf keys matching a prefix in the debug tree

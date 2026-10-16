@@ -407,6 +407,7 @@ const MonacoEditor = (props: monacoEditorProps): ReturnType<typeof PrimitiveEdit
     editorRef,
     monacoRef,
     prefix: fbInstanceContext ? `${fbInstanceContext.programName}:${fbInstanceContext.fbVariableName}.` : `${name}:`,
+    pouName: name,
     enabled: isActive && isDebuggerVisible && (language === 'st' || language === 'il'),
     modelVersion,
     expectedUri: debugDecorationUri,
