@@ -836,6 +836,31 @@ describe('buildActiveIndexSet', () => {
       expect(activeIndexes).toEqual([11])
     })
 
+    it('polls an array element whose subscript names a constant', () => {
+      // ALARMS' fault lamp coil: IO.dout[DO_FAULT_LAMP].q with DO_FAULT_LAMP = 2 a VAR_GLOBAL CONSTANT.
+      const pou = makePou('Alarms', 'program', [external('IO', 'UPC_IO')], 'ld')
+      const ldFlow = {
+        name: 'Alarms',
+        rungs: [{ nodes: [{ type: 'coil', data: { variable: { name: 'IO.dout[DO_FAULT_LAMP].q' } } }] }],
+      }
+      const state = makeState({ pous: [pou], editorName: 'Alarms', editorLanguage: 'ld', ladderFlows: [ldFlow] }) as {
+        project: { data: Record<string, unknown> }
+      }
+      state.project.data.configurations = {
+        resource: {
+          tasks: [],
+          instances: [],
+          globalVariables: [{ ...makeVariable('DO_FAULT_LAMP'), flag: 'constant', initialValue: '2' }],
+        },
+      }
+      const allLeaves = leaves([
+        [21, 'Config0:IO.dout[1].q'],
+        [22, 'Config0:IO.dout[2].q'],
+      ])
+      const { activeIndexes } = buildActiveIndexSet(state as never, allLeaves, null)
+      expect(activeIndexes).toEqual([22])
+    })
+
     it("polls a function block's global without a selected instance", () => {
       const fb = makePou('Pump', 'function-block', [external('DEV', 'UPC_DEV')], 'st')
       fb.body.value = 'DEV.mode := 1;'

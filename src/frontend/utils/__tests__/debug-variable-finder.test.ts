@@ -1,3 +1,4 @@
+import type { PLCVariable } from '../../../middleware/shared/ports/types'
 import type { DebugVariableEntry } from '../debug-parser'
 import {
   appendToDebugPath,
@@ -9,6 +10,8 @@ import {
   canonicalCompositeKey,
   compositeKeyIndex,
   externalNamesOf,
+  indexConstantsOf,
+  resolveConstantIndexes,
   isExternalReference,
   GLOBAL_CONFIG_NAME,
   findDebugVariable,
@@ -345,7 +348,7 @@ describe('buildReferenceCompositeKey — a name as a POU body writes it', () => 
   })
 })
 
-describe('canonicalCompositeKey — a key in the debug tree\'s spelling', () => {
+describe("canonicalCompositeKey — a key in the debug tree's spelling", () => {
   const index = compositeKeyIndex(['Config0:sysMode.NOTOFF', 'Stirrer:mixerOn', 'Stirrer:MIXERON'])
 
   it('finds the tree key whatever the case, the first spelling winning', () => {
@@ -355,5 +358,52 @@ describe('canonicalCompositeKey — a key in the debug tree\'s spelling', () => 
 
   it('returns a key the tree does not have unchanged', () => {
     expect(canonicalCompositeKey(index, 'Config0:other')).toBe('Config0:other')
+  })
+})
+
+describe('constant array subscripts — IO.dout[DO_FAULT_LAMP] reads IO.dout[2]', () => {
+  const v = (name: string, initialValue: string, extra: Partial<PLCVariable> = {}): PLCVariable => ({
+    name,
+    class: 'local',
+    type: { definition: 'base-type', value: 'INT' },
+    location: '',
+    documentation: '',
+    initialValue,
+    ...extra,
+  })
+  const project = {
+    configurations: {
+      resource: {
+        tasks: [],
+        instances: [],
+        globalVariables: [
+          v('DO_FAULT_LAMP', '2', { flag: 'constant' }),
+          v('ROW', 'INT#3', { flag: 'constant' }),
+          v('MASK', '16#0A', { flag: 'constant' }),
+          v('notConstant', '5'),
+          v('EXPR', 'ROW + 1', { flag: 'constant' }),
+        ],
+      },
+    },
+    globalVariableLists: [{ name: 'GVL', qualifier: 'CONSTANT', variables: [v('gvlLamp', '7')] }],
+  }
+
+  it('collects global, GVL and local integer constants, a local hiding a global', () => {
+    const constants = indexConstantsOf(project, [
+      v('ROW', '9', { flag: 'constant' }),
+      v('DO_FAULT_LAMP', '', { class: 'external', flag: 'constant' }),
+    ])
+    expect(Object.fromEntries(constants)).toEqual({ DO_FAULT_LAMP: 2, ROW: 9, MASK: 10, GVLLAMP: 7 })
+  })
+
+  it('replaces a subscript naming a constant, in any case, and leaves the rest as written', () => {
+    const constants = indexConstantsOf(project, [])
+    expect(resolveConstantIndexes('IO.dout[DO_FAULT_LAMP].q', constants)).toBe('IO.dout[2].q')
+    expect(resolveConstantIndexes('IO.dout[do_fault_lamp].q', constants)).toBe('IO.dout[2].q')
+    expect(resolveConstantIndexes('grid[ROW, 1]', constants)).toBe('grid[3,1]')
+    expect(resolveConstantIndexes('pumps[1].Fault', constants)).toBe('pumps[1].Fault')
+    // Only a running PLC knows a variable's or an expression's value.
+    expect(resolveConstantIndexes('pumps[i].Fault', constants)).toBe('pumps[i].Fault')
+    expect(resolveConstantIndexes('grid[ROW, i]', constants)).toBe('grid[ROW, i]')
   })
 })

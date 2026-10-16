@@ -16,14 +16,16 @@
  * unless the user switches tabs or FB instance selection.
  */
 
-import type { FbInstanceInfo, PLCPou, PLCVariable } from '../../middleware/shared/ports/types'
+import type { FbInstanceInfo, PLCPou, PLCProjectData, PLCVariable } from '../../middleware/shared/ports/types'
 import {
   buildGlobalCompositeKey,
   buildReferenceCompositeKey,
   canonicalCompositeKey,
   compositeKeyIndex,
   externalNamesOf,
+  indexConstantsOf,
   isExternalReference,
+  resolveConstantIndexes,
 } from './debug-variable-finder'
 import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from './PLC/edge-trigger-instance'
 
@@ -32,7 +34,7 @@ import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from './PLC/edge-t
  * Defined locally to avoid coupling the utils layer to the store layer.
  */
 export interface DebugPollingState {
-  project: { data: { pous: PLCPou[] } }
+  project: { data: Pick<PLCProjectData, 'pous'> & Partial<Pick<PLCProjectData, 'configurations' | 'globalVariableLists'>> }
   workspace: {
     debugVariableIndexes: Map<string, number>
     debugForcedVariables: Map<string, unknown>
@@ -333,9 +335,12 @@ function computeVisibleVariableKeys(
   const leafKeys: string[] = []
   for (const [, metas] of allLeaves) for (const meta of metas) leafKeys.push(meta.compositeKey)
   const keyIndex = compositeKeyIndex([...leafKeys, ...state.workspace.debugVariableIndexes.keys()])
+  // An array subscript naming a constant reads the element by number (see indexConstantsOf).
+  const constants = indexConstantsOf(state.project.data, currentPou.interface?.variables ?? [])
 
   // Helper to make composite key respecting FB instance context
-  const makeKey = (variableName: string): string | null => {
+  const makeKey = (written: string): string | null => {
+    const variableName = resolveConstantIndexes(written, constants)
     if (currentPou.pouType === 'function-block') {
       // An FB's own variable needs a selected instance; a global does not.
       const resolved = resolveFbInstance(currentPou.name, fbSelectedInstance, fbDebugInstances)

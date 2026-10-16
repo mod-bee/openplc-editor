@@ -6,6 +6,8 @@ import {
   canonicalCompositeKey,
   compositeKeyIndex,
   externalNamesOf,
+  indexConstantsOf,
+  resolveConstantIndexes,
 } from '../utils/debug-variable-finder'
 
 /**
@@ -27,6 +29,13 @@ export const useDebugCompositeKey = () => {
   )
   // A reference to one of the POU's VAR_EXTERNALs is the shared global, keyed as the poller keys it.
   const externals = useMemo(() => externalNamesOf(variables ?? []), [variables])
+  // An array subscript naming a constant reads the element by number (see indexConstantsOf).
+  const configurations = useOpenPLCStore(useCallback((s) => s.project.data.configurations, []))
+  const globalVariableLists = useOpenPLCStore(useCallback((s) => s.project.data.globalVariableLists, []))
+  const constants = useMemo(
+    () => indexConstantsOf({ configurations, globalVariableLists }, variables ?? []),
+    [configurations, globalVariableLists, variables],
+  )
   // The debug tree's keys, so a name spelled in another case reads the same value (IEC names are
   // case-insensitive). Rebuilt only when a debug session builds its tree.
   const debugVariableIndexes = useOpenPLCStore(useCallback((s) => s.workspace.debugVariableIndexes, []))
@@ -48,9 +57,10 @@ export const useDebugCompositeKey = () => {
       const localPrefix = fbInstanceContext
         ? `${fbInstanceContext.programName}:${fbInstanceContext.fbVariableName}.`
         : `${editorName}:`
-      return canonicalCompositeKey(keyIndex, buildReferenceCompositeKey(externals, localPrefix, variableName))
+      const resolved = resolveConstantIndexes(variableName, constants)
+      return canonicalCompositeKey(keyIndex, buildReferenceCompositeKey(externals, localPrefix, resolved))
     },
-    [fbInstanceContext, editorName, externals, keyIndex],
+    [fbInstanceContext, editorName, externals, keyIndex, constants],
   )
 
   return getCompositeKey

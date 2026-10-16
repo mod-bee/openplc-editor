@@ -5,7 +5,9 @@
 
 export { type DebugVariableEntry } from './debug-parser'
 
+import type { PLCProjectData, PLCVariable } from '../../middleware/shared/ports/types'
 import type { DebugVariableEntry } from './debug-parser'
+import { parseIecInteger } from './PLC/enum-named-values'
 
 export interface PLCInstanceMapping {
   /** Instance name (e.g., "INSTANCE0"). Appears at the root of every path
@@ -140,6 +142,63 @@ export function externalNamesOf(variables: readonly { name: string; class?: stri
     if (v.class === 'external') externals.set(v.name.toUpperCase(), v.name)
   }
   return externals
+}
+
+/**
+ * An integer constant's value from its initial value: an IEC integer literal (6.3.3), optionally typed
+ * (`INT#2`, `UINT#16#0A`). Undefined for anything else, an expression included.
+ */
+function constantIntegerValue(initialValue: string | null | undefined): number | undefined {
+  const text = (initialValue ?? '').trim()
+  const typed = /^[A-Za-z_][A-Za-z0-9_]*#(.+)$/.exec(text)
+  const literal = typed && !/^(2|8|16)$/.test(text.slice(0, text.indexOf('#'))) ? typed[1] : text
+  const value = parseIecInteger(literal)
+  return value !== undefined && value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(value)
+    : undefined
+}
+
+/**
+ * The integer constants an array index may name in a POU, upper case → value: the configuration's and the
+ * global variable lists' `VAR_GLOBAL CONSTANT`s (reached through `VAR_EXTERNAL CONSTANT`), then the POU's
+ * own `VAR CONSTANT`s, which hide a global of the same name. IEC 61131-3 allows a constant as an array
+ * subscript; the debug tree only knows the elements by number (`IO.dout[2].q`), so a diagram's
+ * `IO.dout[DO_FAULT_LAMP].q` reads through {@link resolveConstantIndexes}.
+ */
+export function indexConstantsOf(
+  project: Partial<Pick<PLCProjectData, 'configurations' | 'globalVariableLists'>>,
+  pouVariables: readonly PLCVariable[],
+): Map<string, number> {
+  const constants = new Map<string, number>()
+  const add = (variable: PLCVariable) => {
+    const value = constantIntegerValue(variable.initialValue)
+    if (value !== undefined) constants.set(variable.name.toUpperCase(), value)
+  }
+  for (const v of project.configurations?.resource?.globalVariables ?? []) if (v.flag === 'constant') add(v)
+  for (const list of project.globalVariableLists ?? []) {
+    const listConstant = /\bCONSTANT\b/i.test(list.qualifier ?? '')
+    for (const v of list.variables) if (listConstant || v.flag === 'constant') add(v)
+  }
+  for (const v of pouVariables) if (v.flag === 'constant' && v.class !== 'external') add(v)
+  return constants
+}
+
+/**
+ * `variableName` with each array subscript that names an integer constant replaced by its value:
+ * `IO.dout[DO_FAULT_LAMP].q` → `IO.dout[2].q`, `grid[ROW, 1]` → `grid[3,1]`. A subscript that is a variable
+ * or an expression is left as written, since only a running PLC knows its value.
+ */
+export function resolveConstantIndexes(variableName: string, constants: ReadonlyMap<string, number>): string {
+  if (constants.size === 0 || !variableName.includes('[')) return variableName
+  return variableName.replace(/\[([^\]]*)\]/g, (whole, inner: string) => {
+    const parts = inner.split(',').map((part) => part.trim())
+    const resolved = parts.map((part) => {
+      if (/^[+-]?\d+$/.test(part)) return part
+      const value = constants.get(part.toUpperCase())
+      return value === undefined ? undefined : String(value)
+    })
+    return resolved.every((part) => part !== undefined) ? `[${resolved.join(',')}]` : whole
+  })
 }
 
 /**

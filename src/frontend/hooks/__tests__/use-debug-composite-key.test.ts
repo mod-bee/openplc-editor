@@ -11,6 +11,7 @@ type State = {
   editor: { meta: { name: string } }
   project: {
     data: {
+      configurations?: unknown
       pous: Array<{ name: string; pouType: string; interface: { variables: Array<{ name: string; class: string }> } }>
     }
   }
@@ -72,5 +73,15 @@ describe('useDebugCompositeKey', () => {
     expect(result.current('mixerMotor.Running')).toBe('Config0:mixerMotor.RUNNING')
     expect(result.current('run')).toBe('Stirrer:RUN')
     expect(result.current('notInTree')).toBe('Stirrer:notInTree')
+  })
+
+  it('reads an array element whose subscript names a constant by its number', () => {
+    state.project.data.configurations = {
+      resource: {
+        globalVariables: [{ name: 'DO_FAULT_LAMP', class: 'global', flag: 'constant', initialValue: '2' }],
+      },
+    }
+    const { result } = renderHook(() => useDebugCompositeKey())
+    expect(result.current('IO.dout[DO_FAULT_LAMP].q')).toBe('Config0:IO.dout[2].q')
   })
 })
