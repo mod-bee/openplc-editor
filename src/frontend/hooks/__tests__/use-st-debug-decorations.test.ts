@@ -162,6 +162,30 @@ describe('useStDebugDecorations', () => {
     expect(render('x := DEV.mode;', { pouName: 'Prog' }).badges).toEqual([])
   })
 
+  it('badges an element whose subscript names a constant, at the reference as written', () => {
+    pous = [
+      {
+        name: 'Prog',
+        interface: {
+          variables: [
+            { name: 'IO', class: 'external' },
+            { name: 'LAMP', class: 'local', flag: 'constant', initialValue: '2' } as never,
+          ],
+        },
+      },
+    ]
+    boolValues = new Map([['Config0:IO.dout[2].q', 'TRUE']])
+    const { badges } = render('IO.dout[LAMP].q := run;', { pouName: 'Prog' })
+
+    expect(badges).toEqual([{ line: 1, startCol: 1, endCol: 16, content: ' = TRUE ' }])
+  })
+
+  it('badges a library member spelled in another case than its key', () => {
+    pous = [{ name: 'Prog', interface: { variables: [{ name: 'sysMode', class: 'external' }] } }]
+    boolValues = new Map([['Config0:sysMode.NOTOFF', 'TRUE']])
+    expect(render('x := sysMode.NotOff;', { pouName: 'Prog' }).badges).toHaveLength(1)
+  })
+
   it('clears its decorations on unmount', () => {
     nonBoolValues = new Map([['Prog:speed', '42']])
     render('speed := 1;').unmount()
