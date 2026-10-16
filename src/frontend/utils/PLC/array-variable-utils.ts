@@ -85,3 +85,15 @@ export const resolveArrayVariableByName = (variables: PLCVariable[], name: strin
 
   return resolveArrayElement(baseVariable, access) ?? undefined
 }
+
+/**
+ * Whether `variable` is an instance of the function block `blockType`, as a block element binds it:
+ * a variable of that FB type (`derived`), or an element of an array of them (`pumps[1]`, from
+ * {@link resolveArrayElement}). An array's element type is `base-type` or `user-data-type` in the
+ * variable model, never `derived`, so the element carries the FB's name as a `user-data-type`.
+ */
+export const isInstanceOfBlockType = (variable: PLCVariable, blockType: string): boolean => {
+  if (variable.type.value.toLowerCase() !== blockType.toLowerCase()) return false
+  if (variable.type.definition === 'derived') return true
+  return variable.type.definition === 'user-data-type' && parseArrayAccess(variable.name) !== null
+}

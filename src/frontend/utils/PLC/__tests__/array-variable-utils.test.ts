@@ -1,5 +1,6 @@
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
 import {
+  isInstanceOfBlockType,
   parseArrayAccess,
   parseDimensionRange,
   resolveArrayElement,
@@ -237,5 +238,40 @@ describe('resolveArrayVariableByName', () => {
   it('returns undefined when indices are out of range', () => {
     const vars = [makeArrayVar('arr', 'base-type', 'INT', ['0..5'])]
     expect(resolveArrayVariableByName(vars, 'arr[10]')).toBeUndefined()
+  })
+})
+
+describe('isInstanceOfBlockType', () => {
+  const variable = (name: string, definition: PLCVariable['type']['definition'], value: string): PLCVariable =>
+    ({ name, class: 'local', type: { definition, value }, location: '', documentation: '' }) as PLCVariable
+
+  it('accepts a variable of the block type', () => {
+    expect(isInstanceOfBlockType(variable('motor', 'derived', 'UT_MOTOR'), 'ut_motor')).toBe(true)
+  })
+
+  it('accepts an element of an array of instances, typed as the model types array elements', () => {
+    expect(isInstanceOfBlockType(variable('pumps[1]', 'user-data-type', 'UT_PUMP'), 'UT_PUMP')).toBe(true)
+  })
+
+  it('refuses another type, a whole array, and a non-element user type', () => {
+    expect(isInstanceOfBlockType(variable('motor', 'derived', 'UT_PUMP'), 'UT_MOTOR')).toBe(false)
+    expect(isInstanceOfBlockType(variable('pumps', 'array', 'ARRAY [1..1] OF UT_PUMP'), 'UT_PUMP')).toBe(false)
+    expect(isInstanceOfBlockType(variable('cfg', 'user-data-type', 'UT_PUMP'), 'UT_PUMP')).toBe(false)
+  })
+
+  it('accepts what resolveArrayElement makes of an array of instances', () => {
+    const pumps = {
+      name: 'pumps',
+      class: 'external',
+      type: {
+        definition: 'array',
+        value: 'ARRAY [1..1] OF UT_PUMP',
+        data: { baseType: { definition: 'user-data-type', value: 'UT_PUMP' }, dimensions: [{ dimension: '1..1' }] },
+      },
+      location: '',
+      documentation: '',
+    } as PLCVariable
+    const element = resolveArrayVariableByName([pumps], 'pumps[1]')
+    expect(element && isInstanceOfBlockType(element, 'UT_PUMP')).toBe(true)
   })
 })

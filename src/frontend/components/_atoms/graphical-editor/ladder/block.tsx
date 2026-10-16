@@ -12,6 +12,7 @@ import { checkVariableName } from '../../../../store/slices/project/validation/v
 import { cn } from '../../../../utils/cn'
 import { legacyInOutSourcePinIds } from '../../../../utils/graphical/in-out-pin-rules'
 import { isLegalIdentifier } from '../../../../utils/keywords'
+import { isInstanceOfBlockType } from '../../../../utils/PLC/array-variable-utils'
 import { findLibraryPou } from '../../../../utils/PLC/library-block-divergence'
 import { toast } from '../../../_features/[app]/toast/use-toast'
 import { useBoundEditorModel, useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
@@ -624,8 +625,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
     const nodeBlockType = (freshNode.data as BlockNodeData<BlockVariant>).variant.name
 
     if (nodeVariableName === selectedVariableName) {
-      const typeMatches =
-        variable.type.definition === 'derived' && variable.type.value.toLowerCase() === nodeBlockType.toLowerCase()
+      const typeMatches = isInstanceOfBlockType(variable, nodeBlockType)
 
       if (!typeMatches) {
         setWrongVariable(true)
