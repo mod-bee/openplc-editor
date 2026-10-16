@@ -406,4 +406,8 @@ describe('constant array subscripts — IO.dout[DO_FAULT_LAMP] reads IO.dout[2]'
     expect(resolveConstantIndexes('pumps[i].Fault', constants)).toBe('pumps[i].Fault')
     expect(resolveConstantIndexes('grid[ROW, i]', constants)).toBe('grid[ROW, i]')
   })
+
+  it('writes a numbered element as the debug tree keys it, with no constants at all', () => {
+    expect(resolveConstantIndexes('grid[1, 2].v', new Map())).toBe('grid[1,2].v')
+  })
 })

@@ -185,11 +185,12 @@ export function indexConstantsOf(
 
 /**
  * `variableName` with each array subscript that names an integer constant replaced by its value:
- * `IO.dout[DO_FAULT_LAMP].q` → `IO.dout[2].q`, `grid[ROW, 1]` → `grid[3,1]`. A subscript that is a variable
- * or an expression is left as written, since only a running PLC knows its value.
+ * `IO.dout[DO_FAULT_LAMP].q` → `IO.dout[2].q`, `grid[ROW, 1]` → `grid[3,1]`, written as the debug tree keys
+ * an element (`[i,j]`, no spaces). A subscript that is a variable or an expression is left as written,
+ * since only a running PLC knows its value.
  */
 export function resolveConstantIndexes(variableName: string, constants: ReadonlyMap<string, number>): string {
-  if (constants.size === 0 || !variableName.includes('[')) return variableName
+  if (!variableName.includes('[')) return variableName
   return variableName.replace(/\[([^\]]*)\]/g, (whole, inner: string) => {
     const parts = inner.split(',').map((part) => part.trim())
     const resolved = parts.map((part) => {

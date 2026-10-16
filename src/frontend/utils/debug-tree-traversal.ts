@@ -171,7 +171,7 @@ function isFunctionBlock(typeName: string, projectPous: PLCPou[], systemLibrarie
  * IEC 61131-3 allows negative array indices.
  */
 function parseArrayDimension(dimension: string): [number, number] | null {
-  const match = dimension.match(/^(-?\d+)\.\.(-?\d+)$/)
+  const match = dimension.match(/^\s*(-?\d+)\s*\.\.\s*(-?\d+)\s*$/)
   if (!match) return null
   return [parseInt(match[1], 10), parseInt(match[2], 10)]
 }
@@ -364,34 +364,38 @@ function traverseNestedNode<T>(
     return visitor.visitComplex(name, fullPath, compositeKey, typeName, children)
   } else if (typeDefinition === 'array' && arrayData) {
     // Array type — STruC++ emits array elements as `PARENT[iec_idx]` using
-    // IEC-based indexing (the start of the declared range, not 0).
-    const dimensions = arrayData.dimensions
-    if (dimensions.length === 0) {
+    // IEC-based indexing (the start of the declared range, not 0), one
+    // subscript per dimension: `GRID[1][2]`. The element's key is written as
+    // ST writes it, `grid[1,2]`, so a diagram's reference finds it.
+    const bounds = arrayData.dimensions.map((d) => parseArrayDimension(d.dimension))
+    if (bounds.length === 0 || bounds.some((b) => b === null)) {
       return visitor.visitLeaf(name, fullPath, compositeKey, 'ARRAY', undefined)
     }
-
-    const indices = parseArrayDimension(dimensions[0].dimension)
-    if (!indices) {
-      return visitor.visitLeaf(name, fullPath, compositeKey, 'ARRAY', undefined)
-    }
-
-    const [startIndex, endIndex] = indices
-    const arraySize = endIndex - startIndex + 1
+    const ranges = bounds as Array<[number, number]>
+    const [startIndex, endIndex] = ranges[0]
     const baseType = arrayData.baseType
     const elementTypeName = baseType.definition === 'base-type' ? baseType.value.toUpperCase() : baseType.value
 
+    // Every element, last subscript fastest, as the elements lie in memory.
+    let elements: number[][] = [[]]
+    for (const [start, end] of ranges) {
+      const next: number[][] = []
+      for (const prefix of elements) for (let i = start; i <= end; i++) next.push([...prefix, i])
+      elements = next
+    }
+
     const children: T[] = []
 
-    for (let i = 0; i < arraySize; i++) {
-      const elementIndex = startIndex + i
-      const elementFullPath = `${fullPath}[${elementIndex}]`
-      const elementCompositeKey = `${compositeKey}[${elementIndex}]`
+    for (const element of elements) {
+      const elementLabel = `[${element.join(',')}]`
+      const elementFullPath = `${fullPath}${element.map((i) => `[${i}]`).join('')}`
+      const elementCompositeKey = `${compositeKey}${elementLabel}`
 
       if (baseType.definition === 'base-type') {
         const debugVar = findDebugVariable(debugVariables, elementFullPath)
         children.push(
           visitor.visitLeaf(
-            `[${elementIndex}]`,
+            elementLabel,
             elementFullPath,
             elementCompositeKey,
             elementTypeName,
@@ -409,7 +413,7 @@ function traverseNestedNode<T>(
           : 'user-data-type'
         children.push(
           traverseNestedNode(
-            `[${elementIndex}]`,
+            elementLabel,
             elementFullPath,
             elementCompositeKey,
             baseType.value,

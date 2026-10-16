@@ -505,6 +505,33 @@ describe('traverseVariable', () => {
       expect(result.children).toHaveLength(0)
     })
 
+    it('walks every dimension of a multi-dimensional array, keyed as ST writes the element', () => {
+      // STruC++ names an element GRID[1][2]; ST and the diagrams write grid[1,2].
+      const variable: PLCVariable = {
+        name: 'grid',
+        class: 'local',
+        type: {
+          definition: 'array',
+          value: 'ARRAY [1..2, 0..1] OF INT',
+          data: {
+            baseType: { definition: 'base-type', value: 'INT' },
+            dimensions: [{ dimension: '1..2' }, { dimension: ' 0 .. 1 ' }],
+          },
+        },
+        location: '',
+        documentation: '',
+      }
+      const debugVars = [makeDebugVar('INSTANCE0.GRID[2][1]', 'INT_ENUM', 41)]
+      const ctx = makeContext({ debugVariables: debugVars })
+
+      const result = traverseVariable(variable, ctx, simpleVisitor)
+
+      expect(result.kind).toBe('array')
+      expect(result.children!.map((c) => c.name)).toEqual(['[1,0]', '[1,1]', '[2,0]', '[2,1]'])
+      const last = result.children![3]
+      expect([last.compositeKey, last.debugIndex]).toEqual(['Main:grid[2,1]', 41])
+    })
+
     it('returns leaf for array with no dimensions', () => {
       const variable: PLCVariable = {
         name: 'emptyArr',
