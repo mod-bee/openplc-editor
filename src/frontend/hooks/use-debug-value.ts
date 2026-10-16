@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { useOpenPLCStore } from '../store'
+import { forcedStateOf } from '../utils/inout-force'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,14 +42,26 @@ export function useDebugVariableValue(compositeKey: string): string | undefined 
   )
 }
 
-/** Whether a variable is currently forced. */
+/** Whether the value a key reads is forced, under this name or another one at the same address. */
 export function useIsVariableForced(compositeKey: string): boolean {
-  return useOpenPLCStore(useCallback((s) => s.workspace.debugForcedVariables.has(compositeKey), [compositeKey]))
+  return useOpenPLCStore(
+    useCallback(
+      (s) =>
+        forcedStateOf(s.workspace.debugForcedVariables, s.workspace.debugVariableIndexes, compositeKey).isForced,
+      [compositeKey],
+    ),
+  )
 }
 
 /** The forced boolean value (true = forced high, false = forced low). */
 export function useForcedValue(compositeKey: string): boolean | undefined {
-  return useOpenPLCStore(useCallback((s) => s.workspace.debugForcedVariables.get(compositeKey), [compositeKey]))
+  return useOpenPLCStore(
+    useCallback(
+      (s) =>
+        forcedStateOf(s.workspace.debugForcedVariables, s.workspace.debugVariableIndexes, compositeKey).forcedValue,
+      [compositeKey],
+    ),
+  )
 }
 
 /**
@@ -78,8 +91,7 @@ export function useDebugValue(compositeKey: string): DebugVariableState {
   return useOpenPLCStore(
     useShallow((s) => ({
       value: s.workspace.debugBoolValues.get(compositeKey) ?? s.workspace.debugNonBoolValues.get(compositeKey),
-      isForced: s.workspace.debugForcedVariables.has(compositeKey),
-      forcedValue: s.workspace.debugForcedVariables.get(compositeKey),
+      ...forcedStateOf(s.workspace.debugForcedVariables, s.workspace.debugVariableIndexes, compositeKey),
       debugIndex: s.workspace.debugVariableIndexes.get(compositeKey),
     })),
   )

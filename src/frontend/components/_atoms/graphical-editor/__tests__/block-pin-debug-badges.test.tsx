@@ -8,6 +8,7 @@ import { render, screen } from '@testing-library/react'
 import { BlockPinDebugBadges } from '../block-pin-debug-badges'
 
 const values = new Map<string, string>()
+const forced = new Set<string>()
 
 jest.mock('../../../../hooks/use-debug-composite-key', () => ({
   useDebugCompositeKey: () => (name: string) => `Main:${name}`,
@@ -15,6 +16,7 @@ jest.mock('../../../../hooks/use-debug-composite-key', () => ({
 jest.mock('../../../../hooks/use-debug-value', () => ({
   useIsDebuggerVisible: () => true,
   useDebugVariableValue: (key: string) => values.get(key),
+  useIsVariableForced: (key: string) => forced.has(key),
 }))
 jest.mock('../../../../hooks/use-debug-display-options', () => ({
   useDebugDisplayOptions: () => ({ decimals: 3, blockInputs: true, functionInputs: true, hideSecrets: true }),
@@ -54,6 +56,7 @@ const renderBadges = (props: Partial<Parameters<typeof BlockPinDebugBadges>[0]> 
   )
 
 beforeEach(() => {
+  forced.clear()
   values.clear()
   values.set('Main:motor.Start', '1')
   values.set('Main:motor.Setpoint', '42.5')
@@ -65,6 +68,15 @@ beforeEach(() => {
 })
 
 describe('BlockPinDebugBadges', () => {
+  it('marks a forced pin with an F: beside its value, or alone on a BOOL', () => {
+    forced.add('Main:motor.Setpoint')
+    forced.add('Main:motor.Running')
+    renderBadges()
+    expect(screen.getAllByLabelText('Forced')).toHaveLength(2)
+    expect(screen.getByText('42.500')).toBeTruthy()
+    expect(screen.queryByText('TRUE')).toBeNull()
+  })
+
   it("shows a function block's non-BOOL inputs and outputs, and no BOOL", () => {
     renderBadges()
     // REAL values at the default 3 decimals.
@@ -100,7 +112,7 @@ describe('BlockPinDebugBadges', () => {
 
   it('places a badge at its drawn pin', () => {
     const { container } = renderBadges({ inputHandles: [{ id: 'Setpoint', relPosition: { y: 100 } }] })
-    const badge = screen.getByText('42.500').parentElement as HTMLElement
+    const badge = screen.getByText('42.500').closest('[style]') as HTMLElement
     // At the wire's height; the badge itself sits just above it.
     expect(badge.style.top).toBe('100px')
     expect(container).toBeTruthy()

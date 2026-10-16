@@ -78,6 +78,10 @@ export async function releaseDebugVariable(
     const state = store.getState()
     const newForced = new Map(state.workspace.debugForcedVariables)
     newForced.delete(compositeKey)
+    // The force may have been made under another name at the same address: that one is released too.
+    for (const key of state.workspace.debugForcedVariables.keys()) {
+      if (resolveForceIndex(state.workspace.debugVariableIndexes.get(key)) === debugIndex) newForced.delete(key)
+    }
     state.workspaceActions.setDebugForcedVariables(newForced)
   }
   return result.success

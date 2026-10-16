@@ -16,6 +16,7 @@ import {
   describeInOutLeaf,
   describeRawLeaf,
   forcedKeyFor,
+  forcedStateOf,
   getDebugLeafAccess,
   registerDebugLeafAccess,
   resolveForceIndex,
@@ -200,5 +201,26 @@ describe('debug leaf access for raw array elements', () => {
     expect(describeRawLeaf(at(2))).toBeUndefined()
     expect(describeRawLeaf(at(4))).toBeUndefined()
     expect(describeInOutLeaf(at(0))).toBeUndefined()
+  })
+})
+
+describe('forced state by address', () => {
+  // A global seen in two programs, and the in-out bound to it: three names, one address.
+  const indexes = new Map([...keys, ['other:counter', at(0)]])
+
+  it('marks every name at the address of a force, with its BOOL value', () => {
+    register()
+    const forced = new Map([['main:counter', true]])
+    expect(forcedStateOf(forced, indexes, 'main:counter')).toEqual({ isForced: true, forcedValue: true })
+    expect(forcedStateOf(forced, indexes, 'other:counter')).toEqual({ isForced: true, forcedValue: true })
+    expect(forcedStateOf(forced, indexes, 'main:acc0.total')).toEqual({ isForced: true, forcedValue: true })
+  })
+
+  it('leaves other addresses, and an in-out it cannot follow, unmarked', () => {
+    register()
+    const forced = new Map([['main:counter', false]])
+    expect(forcedStateOf(forced, indexes, 'main:acc0.sum').isForced).toBe(false)
+    expect(forcedStateOf(forced, indexes, 'main:acc1.total').isForced).toBe(false)
+    expect(forcedStateOf(new Map(), indexes, 'main:counter')).toEqual({ isForced: false, forcedValue: undefined })
   })
 })

@@ -89,6 +89,23 @@ describe('GUI force of a VAR_IN_OUT (IEC 61131-3 §3.48)', () => {
     expect(forced().size).toBe(0)
   })
 
+  it('releases a force made under another name at the same address, leaving no stale mark', async () => {
+    const { port } = setUp()
+    store
+      .getState()
+      .workspaceActions.setDebugVariableIndexes(
+        new Map([
+          ['main:counter', at(0)],
+          ['other:counter', at(0)],
+          ['main:acc0.total', at(1)],
+        ]),
+      )
+    await forceDebugVariable(store, port, 'main:counter', at(0), new Uint8Array([7, 0]), true, 'INT')
+    await releaseDebugVariable(store, port, 'other:counter', at(0))
+
+    expect(forced().size).toBe(0)
+  })
+
   it('sends nothing for an in-out whose variable cannot be named', async () => {
     const { port, calls } = setUp()
     const ok = await forceDebugVariable(store, port, 'main:acc1.total', at(2), new Uint8Array([7, 0]), true, 'INT')

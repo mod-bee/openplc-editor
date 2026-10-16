@@ -5,7 +5,7 @@ import type { DebugTreeNode } from '../../../../middleware/shared/ports/types'
 import ViewIcon from '../../../assets/icons/interface/View'
 import ZapIcon from '../../../assets/icons/interface/Zap'
 import { cn } from '../../../utils/cn'
-import { canForceDebugLeaf } from '../../../utils/inout-force'
+import { canForceDebugLeaf, forcedStateOf } from '../../../utils/inout-force'
 import { isForcedValueHigh } from '../../../utils/variable-sizes'
 import { TreeNode } from '../../_atoms/debug-tree-node'
 import { ForceValueDialog } from '../force-value-dialog'
@@ -169,19 +169,16 @@ const VariablesPanel = ({
     [graphList],
   )
 
-  const isForcedPredicate = useCallback(
-    (compositeKey: string) => {
-      return debugForcedVariables?.has(compositeKey) ?? false
-    },
-    [debugForcedVariables],
+  // Under this name or another one at the same address (a global in each program, an in-out bound to it).
+  const forcedState = useCallback(
+    (compositeKey: string) =>
+      forcedStateOf(debugForcedVariables ?? new Map(), debugVariableIndexes ?? new Map(), compositeKey),
+    [debugForcedVariables, debugVariableIndexes],
   )
 
-  const getForcedValue = useCallback(
-    (compositeKey: string) => {
-      return debugForcedVariables?.get(compositeKey)
-    },
-    [debugForcedVariables],
-  )
+  const isForcedPredicate = useCallback((compositeKey: string) => forcedState(compositeKey).isForced, [forcedState])
+
+  const getForcedValue = useCallback((compositeKey: string) => forcedState(compositeKey).forcedValue, [forcedState])
 
   const canForceVariable = useCallback(
     (node: DebugTreeNode) => {

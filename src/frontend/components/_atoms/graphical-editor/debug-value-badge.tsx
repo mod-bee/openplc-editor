@@ -1,8 +1,9 @@
 import { useDebugDisplayOptions } from '../../../hooks/use-debug-display-options'
-import { useDebugVariableValue } from '../../../hooks/use-debug-value'
+import { useDebugVariableValue, useIsVariableForced } from '../../../hooks/use-debug-value'
 import { cn } from '../../../utils/cn'
 import { formatDebugValue, HIDDEN_VALUE, isSecretValue } from '../../../utils/debug-pin-values'
 import { useIsGraphicalEditorActive } from '../../_features/[workspace]/editor/graphical/active-context'
+import { ForcedMarker } from '../forced-marker'
 
 type DebugValueBadgeProps = {
   compositeKey: string
@@ -25,15 +26,15 @@ const DebugValueBadge = ({ compositeKey, variableType, position = 'right' }: Deb
   // and re-render churn during a debug session.
   const isActive = useIsGraphicalEditorActive()
   const value = useDebugVariableValue(compositeKey)
+  const isForced = useIsVariableForced(compositeKey)
   const { decimals, hideSecrets } = useDebugDisplayOptions()
 
   if (!isActive) {
     return null
   }
-  if (!variableType || variableType.toUpperCase() === 'BOOL') {
-    return null
-  }
-  if (value === undefined) {
+  // A BOOL's value is its wire's colour; it still shows when it is forced.
+  const showValue = value !== undefined && !!variableType && variableType.toUpperCase() !== 'BOOL'
+  if (!showValue && !isForced) {
     return null
   }
 
@@ -50,15 +51,18 @@ const DebugValueBadge = ({ compositeKey, variableType, position = 'right' }: Deb
   return (
     <div
       className={cn(
-        'pointer-events-none absolute z-20 flex items-center whitespace-nowrap rounded px-1 py-px',
-        'bg-[#2E7D32] text-[10px] font-semibold leading-tight text-white',
-        'dark:bg-[#388E3C]',
+        'pointer-events-none absolute z-20 flex items-center gap-1 whitespace-nowrap',
         positionClasses[position],
       )}
     >
-      {hideSecrets && isSecretValue(compositeKey, variableType)
-        ? HIDDEN_VALUE
-        : formatDebugValue(value, variableType, decimals)}
+      {isForced && <ForcedMarker />}
+      {showValue && (
+        <span className='rounded bg-[#2E7D32] px-1 py-px text-[10px] font-semibold leading-tight text-white dark:bg-[#388E3C]'>
+          {hideSecrets && isSecretValue(compositeKey, variableType)
+            ? HIDDEN_VALUE
+            : formatDebugValue(value, variableType, decimals)}
+        </span>
+      )}
     </div>
   )
 }

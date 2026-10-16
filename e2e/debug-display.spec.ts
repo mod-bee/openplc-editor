@@ -12,6 +12,7 @@
  *   DEBUG_DISPLAY_CONFIG   set to also shot the Configuration screen's General tab
  *   DEBUG_DISPLAY_WATCH    global variables to watch (comma-separated); the window is shot with the watch panel
  *   DEBUG_DISPLAY_EXPAND   watch-panel nodes to open, by composite key (e.g. Config0:well,Config0:well.Data)
+ *   DEBUG_DISPLAY_FORCED   composite keys to show as forced, comma-separated (`Main:pump.run=TRUE` for a BOOL)
  *   DEBUG_DISPLAY_CLICKS   online clicks, `POU|element text|menu item` separated by `;`: opens the POU, clicks
  *                          the element, shoots its menu, clicks the menu item (if given) and shoots the window
  *
@@ -122,7 +123,7 @@ test('debug values on the diagrams', async () => {
   await page.waitForTimeout(4000)
 
   const debugMap = readDebugMap(project)
-  const leaves = await page.evaluate((map) => {
+  const leaves = await page.evaluate(({ map, forced }) => {
     const hook = window.__openplcE2E
     if (!hook) throw new Error('e2e hook missing: was OPENPLC_E2E passed?')
     const state = hook.store.getState()
@@ -155,8 +156,15 @@ test('debug values on the diagrams', async () => {
     actions.setDebugVariableTree(treeMap)
     actions.setDebugValues({ boolValues, nonBoolValues })
     actions.setDebuggerVisible(true)
+    // Forces as the force menu records them (the PLC is not there to take one).
+    const forcedMap = new Map<string, boolean>()
+    for (const item of forced) {
+      const [key, value] = item.split('=')
+      forcedMap.set(key, value?.toUpperCase() === 'TRUE')
+    }
+    actions.setDebugForcedVariables(forcedMap)
     return boolValues.size + nonBoolValues.size
-  }, debugMap)
+  }, { map: debugMap, forced: (process.env.DEBUG_DISPLAY_FORCED ?? '').split(',').filter(Boolean) })
   expect(leaves).toBeGreaterThan(0)
 
   try {

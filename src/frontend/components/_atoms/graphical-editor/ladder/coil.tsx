@@ -11,6 +11,7 @@ import { cn } from '../../../../utils/cn'
 import { canForceDebugLeaf } from '../../../../utils/inout-force'
 import { useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
 import { DebugInOutNote } from '../../debug-inout-note'
+import { ForcedMarker } from '../../forced-marker'
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { DebugWatchMenuItem } from '../debug-watch-menu-item'
 import { VariablesBlockAutoComplete } from './autocomplete'
@@ -200,6 +201,9 @@ const Coil = (block: CoilProps) => {
         onClick={isDebuggerVisible ? handleClick : undefined}
       >
         {coil.svg(wrongVariable, debuggerFillColor)}
+        {isDebuggerVisible && isForced && data.variable.name && (
+          <ForcedMarker className='absolute left-1/2 top-full mt-1 -translate-x-1/2' />
+        )}
         <div className='absolute left-1/2 w-[72px] -translate-x-1/2' ref={inputWrapperRef}>
           <HighlightedTextArea
             id={`coil-variable-input-${id}`}

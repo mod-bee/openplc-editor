@@ -7,6 +7,7 @@ import { useDebugDisplayOptions } from '../../../hooks/use-debug-display-options
 import { cn } from '../../../utils/cn'
 import { formatDebugValue, HIDDEN_VALUE, isSecretValue } from '../../../utils/debug-pin-values'
 import { describeInOutLeaf } from '../../../utils/inout-force'
+import { ForcedMarker } from '../forced-marker'
 
 type TreeNodeProps = ComponentPropsWithoutRef<'div'> & {
   node: DebugTreeNode
@@ -137,6 +138,7 @@ const TreeNode = ({
             >
               {displayLabel}
             </p>
+            {isCurrentNodeForced && <ForcedMarker />}
             {inOutNote !== undefined && (
               <span className='shrink-0 text-neutral-400 dark:text-neutral-600' title={inOutNote}>
                 in-out

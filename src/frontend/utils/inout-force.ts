@@ -136,3 +136,32 @@ export function describeRawLeaf(index: number | undefined): string | undefined {
   if (!access?.raw || access.indirect) return undefined
   return 'Array element of an enumeration, alias or subrange: watched only, it cannot be forced.'
 }
+
+export interface ForcedState {
+  isForced: boolean
+  /** A forced BOOL's value (true = forced TRUE); undefined for other types and when not forced. */
+  forcedValue: boolean | undefined
+}
+
+const NOT_FORCED: ForcedState = { isForced: false, forcedValue: undefined }
+
+/**
+ * Whether the value a key reads is forced. A force is recorded under one name (`forcedKeyFor`), but the same
+ * PLC address can be shown under others: a global in each program that uses it, an in-out bound to it. So a
+ * key is forced when the address its force would go to is the address of a recorded force.
+ */
+export function forcedStateOf(
+  forced: ReadonlyMap<string, boolean>,
+  indexes: ReadonlyMap<string, number>,
+  compositeKey: string,
+): ForcedState {
+  if (forced.size === 0) return NOT_FORCED
+  const direct = forced.get(compositeKey)
+  if (direct !== undefined) return { isForced: true, forcedValue: direct }
+  const at = resolveForceIndex(indexes.get(compositeKey))
+  if (at === undefined) return NOT_FORCED
+  for (const [key, value] of forced) {
+    if (resolveForceIndex(indexes.get(key)) === at) return { isForced: true, forcedValue: value }
+  }
+  return NOT_FORCED
+}

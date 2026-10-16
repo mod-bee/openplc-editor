@@ -18,6 +18,7 @@ import { isForcedValueHigh } from '../../../../utils/variable-sizes'
 import { useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
 import { ForceValueDialog } from '../../../_molecules/force-value-dialog'
 import { DebugInOutNote } from '../../debug-inout-note'
+import { ForcedMarker } from '../../forced-marker'
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { DebugValuePill } from '../debug-value-pill'
 import { DebugWatchMenuItem } from '../debug-watch-menu-item'
@@ -347,6 +348,7 @@ const VariableElement = (block: VariableProps) => {
             ) : (
               <span className='text-neutral-400'>{`(*${data.block.variableType.type.value}*)`}</span>
             )}
+            {isForced && <ForcedMarker className='ml-1' />}
             <DebugValuePill
               className={cn('absolute bottom-[calc(50%+7px)]', data.variant === 'output' ? 'left-0' : 'right-0')}
               compositeKey={
