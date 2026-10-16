@@ -2,7 +2,15 @@ import type { Node } from '@xyflow/react'
 
 import type { RungLadderState } from '../../../../../../store/slices/ladder'
 import { defaultCustomNodesStyles, nodesBuilder } from '../../../../../_atoms/graphical-editor/ladder/node-builders'
-import type { BuilderBasicProps } from '../../../../../_atoms/graphical-editor/ladder/utils/types'
+import type {
+  BlockNodeData,
+  BlockVariant,
+  BuilderBasicProps,
+} from '../../../../../_atoms/graphical-editor/ladder/utils/types'
+import {
+  variableElementText,
+  variableElementWidth,
+} from '../../../../../_atoms/graphical-editor/ladder/utils/variable-width'
 
 export const findNode = (
   rung: RungLadderState,
@@ -24,6 +32,33 @@ export const isNodeOfType = (node: Node, nodeType: string): boolean => {
 
 export const getDefaultNodeStyle = ({ node, nodeType }: { node?: Node; nodeType?: string }) => {
   return defaultCustomNodesStyles[node?.type ?? nodeType ?? 'mockNode']
+}
+
+/**
+ * The room a node keeps on one side in a series: its style's gap, except a block, which keeps enough for
+ * its widest variable element on that side (inputs before it, outputs after it) so a long name stretches
+ * the wire to its pin (see variable-width.ts). The first handle on each side is the rung's own connector.
+ */
+export const nodeGap = (node: Node, side: 'before' | 'after'): number => {
+  const style = getDefaultNodeStyle({ node })
+  if (node.type !== 'block') return style.gap
+  const data = node.data as BlockNodeData<BlockVariant> & {
+    inputHandles?: Array<{ id?: string }>
+    outputHandles?: Array<{ id?: string }>
+  }
+  const handles = (side === 'before' ? data.inputHandles : data.outputHandles) ?? []
+  const elementSide = side === 'before' ? 'input' : 'output'
+  const connected = Array.isArray(data.connectedVariables) ? data.connectedVariables : []
+  const pins = data.variant?.variables ?? []
+  let widest = 0
+  for (const handle of handles.slice(1)) {
+    const element = connected.find((entry) => entry.type === elementSide && entry.handleId === handle.id)
+    const pin = pins.find((entry) => entry.name === handle.id)
+    widest = Math.max(widest, variableElementWidth(variableElementText(element?.variable?.name, pin?.type.value)))
+  }
+  if (widest === 0) return style.gap
+  // The element, its own gap to the pin, and the spare room a default element leaves (80 + 30 + 10 = 120).
+  return Math.max(style.gap, widest + defaultCustomNodesStyles.variable.gap + 10)
 }
 
 /** Origin placeholder inherited from the synthetic `-1` node that used to be

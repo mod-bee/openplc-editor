@@ -46,7 +46,7 @@ export const needsPositionRecovery = (rung: RungLadderState): boolean => {
 
 import type { Node } from '@xyflow/react'
 import { addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react'
-import { produce } from 'immer'
+import { current, produce } from 'immer'
 import { StateCreator } from 'zustand'
 
 import type { PLCVariable, RungLadderState } from '../../../../middleware/shared/ports/types'
@@ -490,6 +490,22 @@ export const createLadderFlowSlice: StateCreator<LadderFlowSlice, [], [], Ladder
       )
     },
 
+    relayoutRung: ({ editorName, rungId }) => {
+      setState(
+        produce(({ ladderFlows }: LadderFlowState) => {
+          const flow = ladderFlows.find((entry) => entry.name === editorName)
+          const target = flow?.rungs.find((entry) => entry.id === rungId)
+          if (!flow || !target) return
+          const rung = current(target)
+          // As project-load recovery does: a layout that would lose an element is not taken.
+          const { nodes, edges } = updateDiagramElementsPosition(rung, rungBounds(rung))
+          if (!elementsSurvived(rung.nodes, nodes)) return
+          target.nodes = nodes
+          target.edges = edges
+          flow.updated = true
+        }),
+      )
+    },
     setNodes: ({ editorName, nodes, rungId }) => {
       setState(
         produce(({ ladderFlows }: LadderFlowState) => {

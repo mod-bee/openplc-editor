@@ -7,6 +7,10 @@ import {
   nodesBuilder,
 } from '../../../../../../../_atoms/graphical-editor/ladder/node-builders'
 import { BlockNode, BlockVariant } from '../../../../../../../_atoms/graphical-editor/ladder/utils/types'
+import {
+  variableElementText,
+  variableElementWidth,
+} from '../../../../../../../_atoms/graphical-editor/ladder/utils/variable-width'
 import { buildEdge } from '../../edges'
 import { hasBranchOnHandle } from '../handle-branch'
 
@@ -88,7 +92,11 @@ export const renderVariableBlock = <T extends BlockVariant>(
     const previous = previousIdentities?.get(variableIdentityKey(blockElement.id, inputHandle.id as string, 'input'))
     const variableElement = nodesBuilder.variable({
       id: previous?.id ?? newGraphicalEditorNodeID('variable'),
-      posX: inputHandle.glbPosition.x - (variableElementStyle.width + variableElementStyle.gap),
+      // Its right end stays at the wire; a long name grows it to the left (see variable-width.ts).
+      posX:
+        inputHandle.glbPosition.x -
+        (variableElementWidth(variableElementText(connectedVariable?.variable?.name, variableType.type.value)) +
+          variableElementStyle.gap),
       posY: inputHandle.glbPosition.y - variableElementStyle.handle.y,
       handleX: inputHandle.glbPosition.x - variableElementStyle.gap,
       handleY: inputHandle.glbPosition.y,

@@ -25,7 +25,6 @@ import {
   DEFAULT_POWER_RAIL_WIDTH,
   DEFAULT_VARIABLE_CONNECTOR_Y,
   DEFAULT_VARIABLE_HEIGHT,
-  DEFAULT_VARIABLE_WIDTH,
   executeHeight,
 } from './utils/constants'
 import type {
@@ -43,6 +42,7 @@ import type {
   VariableBuilderProps,
   VariableNode,
 } from './utils/types'
+import { variableElementText, variableElementWidth } from './utils/variable-width'
 
 /**
  *
@@ -683,6 +683,8 @@ export const buildVariableNode = ({
   block,
   variable,
 }: VariableBuilderProps): VariableNode => {
+  // As wide as its name needs (see variable-width.ts); the block leaves room for it.
+  const width = variableElementWidth(variableElementText(variable?.name, block.variableType.type.value))
   const inputHandle =
     variant === 'output'
       ? buildHandle({
@@ -703,9 +705,9 @@ export const buildVariableNode = ({
           position: Position.Right,
           isConnectable: false,
           type: 'source',
-          glbX: handleX + DEFAULT_VARIABLE_WIDTH,
+          glbX: handleX + width,
           glbY: handleY,
-          relX: DEFAULT_VARIABLE_WIDTH,
+          relX: width,
           relY: DEFAULT_VARIABLE_CONNECTOR_Y,
         })
       : undefined
@@ -717,10 +719,10 @@ export const buildVariableNode = ({
       x: posX,
       y: posY,
     },
-    width: DEFAULT_VARIABLE_WIDTH,
+    width: width,
     height: DEFAULT_VARIABLE_HEIGHT,
     measured: {
-      width: DEFAULT_VARIABLE_WIDTH,
+      width: width,
       height: DEFAULT_VARIABLE_HEIGHT,
     },
     data: {

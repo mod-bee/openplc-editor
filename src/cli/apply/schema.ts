@@ -398,6 +398,21 @@ const deviceSchema = z
       .object({ keep: z.boolean(), count: z.number().int().min(1).max(100).optional() })
       .strict()
       .optional(),
+    /**
+     * How the debugger shows values on the diagrams: `decimals` of a REAL (0-6, default 3), the values at
+     * function blocks' and functions' input pins (`blockInputs`, `functionInputs`, default on) and
+     * `hideSecrets` (STRINGs named like a password, key or secret show as dots; default on). The whole
+     * object replaces the project's; `{}` restores the defaults.
+     */
+    debugDisplay: z
+      .object({
+        decimals: z.number().int().min(0).max(6).optional(),
+        blockInputs: z.boolean().optional(),
+        functionInputs: z.boolean().optional(),
+        hideSecrets: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 

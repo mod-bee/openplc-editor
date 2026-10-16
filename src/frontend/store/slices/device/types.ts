@@ -5,6 +5,7 @@ import type { EtherCATRuntimeStatusResponse } from '../../../../middleware/share
 import type {
   BoardInfo,
   BuildOutputSetting,
+  DebugDisplaySetting,
   CommunicationPort,
   DebugMedium,
   DeviceConfiguration,
@@ -334,6 +335,8 @@ export type DeviceActions = {
   setOutputsOnStop: (mode: OutputsOnStop) => void
   /** Keep each build's output in the project; `undefined` turns it off. */
   setBuildOutput: (setting: BuildOutputSetting | undefined) => void
+  /** How the debugger shows values; `undefined` (or an empty setting) restores the defaults. */
+  setDebugDisplay: (setting: DebugDisplaySetting | undefined) => void
   /** Record (or clear, with `null`) the VPP package a board was authored against. */
   setVppPackagePin: (board: string, pin: VppPackagePin | null) => void
   setVendorScreenData: (persistenceKey: string, data: unknown) => void

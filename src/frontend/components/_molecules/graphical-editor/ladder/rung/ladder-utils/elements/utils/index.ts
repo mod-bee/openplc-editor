@@ -3,7 +3,7 @@ import type { Edge, Node } from '@xyflow/react'
 
 import type { CustomHandleProps } from '../../../../../../../_atoms/graphical-editor/ladder/handle'
 import { BasicNodeData, ParallelNode } from '../../../../../../../_atoms/graphical-editor/ladder/utils/types'
-import { getDefaultNodeStyle, isNodeOfType } from '../../nodes'
+import { getDefaultNodeStyle, isNodeOfType, nodeGap } from '../../nodes'
 
 /**
  * Get the previous element by searching with edge in the rung
@@ -155,7 +155,6 @@ export const getNodePositionBasedOnPreviousNode = (
       ? (previousElement as ParallelNode).data.parallelOutputConnector
       : previousElement.data.outputConnector
   ) as CustomHandleProps
-  const previousElementStyle = getDefaultNodeStyle({ node: previousElement })
   const newNodeStyle = getDefaultNodeStyle(
     typeof newElement === 'string' ? { nodeType: newElement } : { node: newElement },
   )
@@ -175,7 +174,9 @@ export const getNodePositionBasedOnPreviousNode = (
       gap = 100
     }
   } else {
-    gap = previousElementStyle.gap + newNodeStyle.gap
+    gap =
+      nodeGap(previousElement, 'after') +
+      (typeof newElement === 'string' ? newNodeStyle.gap : nodeGap(newElement, 'before'))
   }
 
   const offsetY = newNodeStyle.handle.y

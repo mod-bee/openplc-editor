@@ -10,6 +10,7 @@ import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import { LibraryState } from '../../../../store/slices/library'
 import { checkVariableName } from '../../../../store/slices/project/validation/variables'
 import { cn } from '../../../../utils/cn'
+import { blockPinVariableName } from '../../../../utils/debug-pin-values'
 import { legacyInOutSourcePinIds } from '../../../../utils/graphical/in-out-pin-rules'
 import { isLegalIdentifier } from '../../../../utils/keywords'
 import { isInstanceOfBlockType } from '../../../../utils/PLC/array-variable-utils'
@@ -489,10 +490,10 @@ const Block = <T extends object>(block: BlockProps<T>) => {
   // block, once by the variable. The rung graph is the authority, and reading it
   // also fixes projects saved before now without a migration.
   //
-  // An output variable node with an EMPTY name is a bare pin stub (every TON
-  // carries one for ET). That is not a connected variable, it shows no badge of
-  // its own, and the block's badge is the only place its value appears -- so it
-  // must NOT suppress anything.
+  // Every element on a pin counts, an EMPTY one too (the bare pin stub every TON
+  // carries for ET): online, an element shows the value of its own variable or,
+  // when it names none, the value the block holds at its pin (ladder/variable.tsx),
+  // so the block draws no second value for that pin.
   // Subscribe to the flows array only (a stable reference until the ladder
   // actually changes), then derive in a memo. As a live selector this ran its
   // whole-POU scan on EVERY store update — a debug-value tick, a cursor move —
@@ -513,13 +514,13 @@ const Block = <T extends object>(block: BlockProps<T>) => {
       if (nd.variant !== 'output' && nd.variant !== 'input') continue
       if (nd.block?.id !== id) continue
       if (!nd.block?.handleId) continue
-      if (!nd.variable?.name) continue
       names.push(`${nd.variant}\u0001${nd.block.handleId}`)
     }
     return names.sort().join('\u0000')
   }, [ladderFlows, pouName, id])
 
-  // The pins on one side with a named element attached, which shows the value itself.
+  // The pins on one side with an element attached (named, a constant, or an empty pin), which shows the
+  // value itself (ladder/variable.tsx).
   const connectedPinNames = (side: 'input' | 'output', connectedKey: string, connected: unknown): Set<string> => {
     // Union with the cache: where it DOES carry an entry, honour it.
     const names = new Set<string>()
@@ -538,6 +539,23 @@ const Block = <T extends object>(block: BlockProps<T>) => {
     () => connectedPinNames('output', connectedPinKey, data.connectedVariables),
     [connectedPinKey, data.connectedVariables],
   )
+  // Inputs wired straight from another block's output: read that output (a function keeps no inputs).
+  const inputSources = useMemo(() => {
+    const sources = new Map<string, string>()
+    const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
+    for (const edge of rung?.edges ?? []) {
+      if (edge.target !== id || !edge.targetHandle || !edge.sourceHandle) continue
+      const source = rung?.nodes.find((node) => node.id === edge.source)
+      if (source?.type !== 'block') continue
+      const name = blockPinVariableName(
+        source.data as Parameters<typeof blockPinVariableName>[0],
+        edge.sourceHandle,
+        'output',
+      )
+      if (name !== undefined) sources.set(edge.targetHandle, name)
+    }
+    return sources
+  }, [ladderFlows, pouName, id])
   const connectedInputNames = useMemo(
     () => connectedPinNames('input', connectedPinKey, data.connectedVariables),
     [connectedPinKey, data.connectedVariables],
@@ -1105,6 +1123,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
         blockWidth={width ?? DEFAULT_BLOCK_WIDTH}
         connectedOutputNames={connectedOutputNames}
         connectedInputNames={connectedInputNames}
+        inputSources={inputSources}
       />
     </div>
   )

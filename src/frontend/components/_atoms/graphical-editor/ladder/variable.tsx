@@ -1,15 +1,17 @@
 import * as Popover from '@radix-ui/react-popover'
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PLCVariable } from '../../../../../middleware/shared/ports'
 import { useDebugger } from '../../../../../middleware/shared/providers'
 import { useDebugCompositeKey } from '../../../../hooks/use-debug-composite-key'
+import { useDebugDisplayOptions } from '../../../../hooks/use-debug-display-options'
 import { useDebugValue, useDebugVariableType, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
 import { forceDebugVariable, releaseDebugVariable } from '../../../../services/debug-force-variable'
 import { resolveScopeExpressionType } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import { RungLadderState } from '../../../../store/slices/ladder'
 import { cn } from '../../../../utils/cn'
+import { blockPinVariableName } from '../../../../utils/debug-pin-values'
 import { canForceDebugLeaf } from '../../../../utils/inout-force'
 import { getLiteralType } from '../../../../utils/keywords'
 import { encodeForceValue, isForcedValueHigh } from '../../../../utils/variable-sizes'
@@ -19,12 +21,13 @@ import { Modal, ModalContent, ModalTitle } from '../../../_molecules/modal'
 import { DebugInOutNote } from '../../debug-inout-note'
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { Label } from '../../label'
-import { DebugValueBadge } from '../debug-value-badge'
+import { DebugValuePill } from '../debug-value-pill'
 import { VariablesBlockAutoComplete } from './autocomplete'
 import { CustomHandle } from './handle'
 import { getLadderPouVariablesRungNodeAndEdges, validateVariableType } from './utils'
 import { DEFAULT_VARIABLE_HEIGHT, DEFAULT_VARIABLE_WIDTH } from './utils/constants'
 import { BlockNodeData, BlockVariant, LadderBlockConnectedVariables, VariableNode, VariableProps } from './utils/types'
+import { variableElementText, variableElementWidth } from './utils/variable-width'
 
 const VariableElement = (block: VariableProps) => {
   const store = useOpenPLCStoreApi()
@@ -32,6 +35,7 @@ const VariableElement = (block: VariableProps) => {
   const pouName = useBoundPou()
   const pous = useOpenPLCStore((state) => state.project.data.pous)
   const updateNode = useOpenPLCStore((state) => state.ladderFlowActions.updateNode)
+  const relayoutRung = useOpenPLCStore((state) => state.ladderFlowActions.relayoutRung)
   const debugger_ = useDebugger()
   const isDebuggerVisible = useIsDebuggerVisible()
   const getCompositeKey = useDebugCompositeKey()
@@ -39,6 +43,23 @@ const VariableElement = (block: VariableProps) => {
   const { isForced, forcedValue: forcedBoolValue, debugIndex } = useDebugValue(compositeKey)
   // The type of a member or element, which the POU does not declare by that name (see useDebugVariableType).
   const treeType = useDebugVariableType(compositeKey)
+  // The block pin this element is attached to, read when the element itself names no variable: an empty
+  // pin, a literal or a constant shows the value the block holds at that pin (see blockPinVariableName).
+  const ladderFlows = useOpenPLCStore((state) => state.ladderFlows)
+  const { blockInputs } = useDebugDisplayOptions()
+  const pinVariableName = useMemo(() => {
+    const blockId = data.block?.id
+    const handleId = data.block?.handleId
+    if (!blockId || !handleId) return undefined
+    const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
+    const blockNode = rung?.nodes.find((node) => node.id === blockId)
+    if (!blockNode) return undefined
+    return blockPinVariableName(
+      blockNode.data as Parameters<typeof blockPinVariableName>[0],
+      handleId,
+      data.variant === 'output' ? 'output' : 'input',
+    )
+  }, [ladderFlows, pouName, id, data.block?.id, data.block?.handleId, data.variant])
 
   const inputVariableRef = useRef<
     HTMLTextAreaElement & {
@@ -185,6 +206,7 @@ const VariableElement = (block: VariableProps) => {
         },
       })
       updateRelatedNode(rung, variableNode, emptyVariable as PLCVariable)
+      relayoutRung({ editorName: pouName, rungId: rung.id })
       return
     }
 
@@ -222,6 +244,8 @@ const VariableElement = (block: VariableProps) => {
     })
 
     updateRelatedNode(rung, variableNode, variable as PLCVariable)
+    // The block leaves room for its elements' names: a new name may stretch the wire (variable-width.ts).
+    relayoutRung({ editorName: pouName, rungId: rung.id })
   }
 
   const onChangeHandler = () => {
@@ -344,52 +368,107 @@ const VariableElement = (block: VariableProps) => {
   return (
     <>
       <div
-        style={{ width: DEFAULT_VARIABLE_WIDTH, height: DEFAULT_VARIABLE_HEIGHT }}
+        className='relative'
+        // The node's own box, where the layout put its handle; the name is drawn from its wire end.
+        style={{ width: block.width ?? DEFAULT_VARIABLE_WIDTH, height: DEFAULT_VARIABLE_HEIGHT }}
         onClick={isDebuggerVisible ? handleClick : undefined}
       >
-        <HighlightedTextArea
-          id={`variable-input-${id}`}
-          textAreaClassName={cn('text-center placeholder:text-center text-xs leading-3', {
-            'text-yellow-500': !isAVariable,
-            'text-red-500': inputError,
-            'text-left placeholder:text-left': data.variant === 'output',
-            'text-right placeholder:text-right': data.variant === 'input',
-            'font-bold': isForced,
-            'text-[#80C000]': isForced && forcedBoolValue,
-            'text-[#4080FF]': isForced && !forcedBoolValue,
-          })}
-          highlightClassName={cn('text-center placeholder:text-center text-xs leading-3', {
-            'text-left placeholder:text-left': data.variant === 'output',
-            'text-right placeholder:text-right': data.variant === 'input',
-          })}
-          scrollableIndicatorClassName={cn({
-            '-right-3': data.variant === 'output',
-            '-left-3': data.variant === 'input',
-          })}
-          placeholder={`(*${data.block.variableType.type.value}*)`}
-          textAreaValue={variableValue}
-          setTextAreaValue={setVariableValue}
-          handleSubmit={handleSubmitVariableValueOnTextareaBlur}
-          inputHeight={{
-            height: DEFAULT_VARIABLE_HEIGHT,
-            scrollLimiter: DEFAULT_VARIABLE_HEIGHT,
-          }}
-          ref={inputVariableRef}
-          disabled={isDebuggerVisible}
-          readOnly={isDebuggerVisible}
-          onChange={onChangeHandler}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Tab') e.preventDefault()
-            if (e.key === 'Enter' && openAutocomplete) {
-              e.preventDefault()
-              autocompleteRef.current?.triggerSubmit?.()
-              inputVariableRef.current?.blur({ submit: false })
-              return
-            }
-            setKeyPressedAtTextarea(e.key)
-          }}
-          onKeyUp={() => setKeyPressedAtTextarea('')}
-        />
+        {isDebuggerVisible ? (
+          /*
+           * Online the element is read, not edited: the name on one line, anchored at the wire end and
+           * free to grow away from the block, and the value just above the wire at its
+           * pin end, so it covers neither the name nor the block's pin label. A BOOL shows no value: its
+           * wire carries the colour.
+           */
+          <div
+            className={cn(
+              'absolute top-0 flex items-center whitespace-nowrap text-xs leading-3',
+              data.variant === 'output' ? 'left-0' : 'right-0',
+            )}
+            style={{ height: DEFAULT_VARIABLE_HEIGHT }}
+          >
+            {data.variable.name ? (
+              <span
+                className={cn({
+                  'text-yellow-500': !isAVariable,
+                  'font-bold': isForced,
+                  'text-[#80C000]': isForced && forcedBoolValue,
+                  'text-[#4080FF]': isForced && !forcedBoolValue,
+                })}
+              >
+                {data.variable.name}
+              </span>
+            ) : (
+              <span className='text-neutral-400'>{`(*${data.block.variableType.type.value}*)`}</span>
+            )}
+            <DebugValuePill
+              className={cn('absolute bottom-[calc(50%+7px)]', data.variant === 'output' ? 'left-0' : 'right-0')}
+              compositeKey={
+                isAVariable
+                  ? compositeKey
+                  : // An input pin's value only when the project shows block inputs; an output's always.
+                    pinVariableName && (data.variant === 'output' || blockInputs)
+                    ? getCompositeKey(pinVariableName)
+                    : undefined
+              }
+              variableType={isAVariable ? variableType : data.block.variableType.type.value}
+            />
+          </div>
+        ) : (
+          // Wide enough for the name on one line (as the layout reserves room for it), grown away from
+          // the block from the wire end: the node itself, and so its handle, stays where the layout put it.
+          <div
+            className={cn('absolute top-0', data.variant === 'output' ? 'left-0' : 'right-0')}
+            style={{
+              width: variableElementWidth(variableElementText(variableValue, data.block.variableType.type.value)),
+              height: DEFAULT_VARIABLE_HEIGHT,
+            }}
+          >
+            <HighlightedTextArea
+              id={`variable-input-${id}`}
+              textAreaClassName={cn('text-center placeholder:text-center text-xs leading-3', {
+                'text-yellow-500': !isAVariable,
+                'text-red-500': inputError,
+                'text-left placeholder:text-left': data.variant === 'output',
+                'text-right placeholder:text-right': data.variant === 'input',
+                'font-bold': isForced,
+                'text-[#80C000]': isForced && forcedBoolValue,
+                'text-[#4080FF]': isForced && !forcedBoolValue,
+              })}
+              highlightClassName={cn('text-center placeholder:text-center text-xs leading-3', {
+                'text-left placeholder:text-left': data.variant === 'output',
+                'text-right placeholder:text-right': data.variant === 'input',
+              })}
+              scrollableIndicatorClassName={cn({
+                '-right-3': data.variant === 'output',
+                '-left-3': data.variant === 'input',
+              })}
+              placeholder={`(*${data.block.variableType.type.value}*)`}
+              textAreaValue={variableValue}
+              setTextAreaValue={setVariableValue}
+              handleSubmit={handleSubmitVariableValueOnTextareaBlur}
+              inputHeight={{
+                height: DEFAULT_VARIABLE_HEIGHT,
+                scrollLimiter: DEFAULT_VARIABLE_HEIGHT,
+              }}
+              ref={inputVariableRef}
+              disabled={isDebuggerVisible}
+              readOnly={isDebuggerVisible}
+              onChange={onChangeHandler}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Tab') e.preventDefault()
+                if (e.key === 'Enter' && openAutocomplete) {
+                  e.preventDefault()
+                  autocompleteRef.current?.triggerSubmit?.()
+                  inputVariableRef.current?.blur({ submit: false })
+                  return
+                }
+                setKeyPressedAtTextarea(e.key)
+              }}
+              onKeyUp={() => setKeyPressedAtTextarea('')}
+            />
+          </div>
+        )}
         {openAutocomplete && (
           <div className='relative flex justify-center'>
             <div className='absolute -bottom-1'>
@@ -404,14 +483,6 @@ const VariableElement = (block: VariableProps) => {
               />
             </div>
           </div>
-        )}
-
-        {isDebuggerVisible && isAVariable && (
-          <DebugValueBadge
-            compositeKey={compositeKey}
-            variableType={variableType}
-            position={data.variant === 'output' ? 'left' : 'right'}
-          />
         )}
 
         {isDebuggerVisible && contextMenuPosition && (

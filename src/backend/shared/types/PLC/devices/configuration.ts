@@ -63,6 +63,15 @@ const deviceConfigurationSchema = z.object({
       count: z.number().int().min(1).max(100).optional(),
     })
     .optional(),
+  // How the debugger shows values on the diagrams. Absent fields take their defaults.
+  debugDisplay: z
+    .object({
+      decimals: z.number().int().min(0).max(6).optional(),
+      blockInputs: z.boolean().optional(),
+      functionInputs: z.boolean().optional(),
+      hideSecrets: z.boolean().optional(),
+    })
+    .optional(),
   // User picks from VPP `target.platformOptions` (e.g. Nano cpu=atmega328old).
   // Keyed by option `key`, value is the chosen `values[].id`. The compile and
   // upload pipelines fall back to each manifest option's `default` when a key
@@ -78,9 +87,11 @@ type VppPackagePin = z.infer<typeof vppPackagePinSchema>
 
 const outputsOnStopSchema = deviceConfigurationSchema.shape.outputsOnStop
 const buildOutputSchema = deviceConfigurationSchema.shape.buildOutput
+const debugDisplaySchema = deviceConfigurationSchema.shape.debugDisplay
 
 export {
   buildOutputSchema,
+  debugDisplaySchema,
   deviceConfigurationSchema,
   outputsOnStopSchema,
   persistentStorageSchema,

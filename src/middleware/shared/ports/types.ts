@@ -1010,6 +1010,21 @@ export interface BuildOutputSetting {
   count?: number
 }
 
+/**
+ * How the debugger shows values on this project's diagrams (Configuration > General > Debugger). Every field
+ * is optional: an absent one takes its default.
+ */
+export interface DebugDisplaySetting {
+  /** Decimal places of a REAL / LREAL value, 0 to 6. Default 3. */
+  decimals?: number
+  /** Show the value at each input pin of a function block. Default on. */
+  blockInputs?: boolean
+  /** Show the value at each input pin of a function, from what feeds it. Default on. */
+  functionInputs?: boolean
+  /** Show `••••` for a STRING named like a password, key, token or secret. Default on. */
+  hideSecrets?: boolean
+}
+
 export interface DeviceConfiguration {
   deviceBoard: string
   communicationPort: string
@@ -1022,6 +1037,8 @@ export interface DeviceConfiguration {
   outputsOnStop?: OutputsOnStop
   /** Keep each build's output in the project (absent: off, as before). */
   buildOutput?: BuildOutputSetting
+  /** How the debugger shows values (absent: the defaults). */
+  debugDisplay?: DebugDisplaySetting
   /** Active board's VPP vendor-screen data; always mirrors `vendorScreenDataByBoard[deviceBoard]`. */
   vendorScreenData?: Record<string, unknown>
   /** Per-board archive of vendor-screen data, since VPP screens are board-specific. Legacy flat data is migrated on load. */

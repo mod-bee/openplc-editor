@@ -10,6 +10,7 @@
  */
 
 import type { RungLadderState } from '../../../../../../store/slices/ladder'
+import { blockPinVariableName, isTrueValue } from '../../../../../../utils/debug-pin-values'
 import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from '../../../../../../utils/PLC/edge-trigger-instance'
 
 export type LadderDebugContext = {
@@ -37,6 +38,12 @@ export const computeRungDebugStates = (
     if (list) list.push(edge)
     else edgesByTarget.set(edge.target, [edge])
   }
+
+  /** Whether power reaches a block's EN pin. */
+  const enState = (blockId: string): boolean =>
+    (edgesByTarget.get(blockId) ?? []).some(
+      (edge) => edge.targetHandle?.toUpperCase() === 'EN' && determineEdgeState(edge.id),
+    )
 
   const getNodeOutputState = (
     nodeId: string,
@@ -87,39 +94,39 @@ export const computeRungDebugStates = (
     }
 
     if (node.type === 'block') {
-      const blockData = node.data as {
-        variable?: { name: string }
-        variant?: { name: string; type: string }
-        numericId?: string
-      }
+      const blockData = node.data as Parameters<typeof blockPinVariableName>[0]
       if (!sourceHandle) return undefined
 
       if (!ctx.isFunctionBlockPou && !ctx.hasProgramInstance) return undefined
 
-      if (blockData.variant?.type === 'function-block') {
-        const blockVariableName = blockData.variable?.name
-        if (!blockVariableName) return undefined
+      const pinName = blockPinVariableName(blockData, sourceHandle, 'output')
+      const value = pinName === undefined ? undefined : isTrueValue(ctx.boolValues.get(ctx.getCompositeKey(pinName)))
+      if (value !== undefined) return value
 
-        const compositeKey = ctx.getCompositeKey(`${blockVariableName}.${sourceHandle}`)
-        const value = ctx.boolValues.get(compositeKey)
-
-        if (value === undefined) return undefined
-
-        return value === '1' || value.toUpperCase() === 'TRUE'
-      } else if (blockData.variant?.type === 'function') {
-        const blockName = blockData.variant.name.toUpperCase()
-        const numericId = blockData.numericId
-        if (!numericId) return undefined
-
-        const compositeKey = ctx.getCompositeKey(`_TMP_${blockName}${numericId}_${sourceHandle.toUpperCase()}`)
-        const value = ctx.boolValues.get(compositeKey)
-
-        if (value === undefined) return undefined
-
-        return value === '1' || value.toUpperCase() === 'TRUE'
-      }
-
+      // ENO mirrors EN at every call (STruC++ emits it so, and keeps no debug value for it): the
+      // block's ENO is energized exactly when its EN is.
+      if (sourceHandle.toUpperCase() === 'ENO') return enState(nodeId)
       return undefined
+    }
+
+    // An element on a block's input pin feeds the wire into the pin: a BOOL variable with its own value,
+    // TRUE / FALSE written out, or else the value the block holds at that pin (an empty pin, a constant).
+    if (node.type === 'variable') {
+      const variableData = node.data as {
+        variant?: string
+        variable?: { name?: string }
+        block?: { id?: string; handleId?: string }
+      }
+      if (variableData.variant !== 'input') return undefined
+      const name = variableData.variable?.name?.trim() ?? ''
+      if (/^(TRUE|FALSE)$/i.test(name)) return name.toUpperCase() === 'TRUE'
+      const own = name ? isTrueValue(ctx.boolValues.get(ctx.getCompositeKey(name))) : undefined
+      if (own !== undefined) return own
+      const block = variableData.block?.id ? nodeById.get(variableData.block.id) : undefined
+      const handle = variableData.block?.handleId
+      if (!block || !handle) return undefined
+      const pinName = blockPinVariableName(block.data as Parameters<typeof blockPinVariableName>[0], handle, 'input')
+      return pinName === undefined ? undefined : isTrueValue(ctx.boolValues.get(ctx.getCompositeKey(pinName)))
     }
 
     return undefined

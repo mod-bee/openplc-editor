@@ -27,7 +27,6 @@ import TableActions from '../../../../../_atoms/table-actions'
 import { DeviceConnectButton } from '../../../../../_molecules/device-connect-button'
 import { Modal, ModalContent, ModalFooter, ModalHeader, ModalTitle } from '../../../../../_molecules/modal'
 import { DeviceEditorSlot } from '../../../../../_templates/[editors]/device-editor-slot'
-import { BuildOutputSwitch } from './components/build-output-switch'
 import { DeviceLicenseStatus } from './components/device-license-status'
 import { OutputsOnStopSelect } from './components/outputs-on-stop-select'
 import { PinMappingTable } from './components/pin-mapping-table'
@@ -863,7 +862,6 @@ const Board = memo(function () {
           ) : null}
           <RtosModeSwitch boardInfo={currentBoardInfo} />
           <OutputsOnStopSelect boardInfo={currentBoardInfo} />
-          <BuildOutputSwitch boardInfo={currentBoardInfo} />
           {!isOpenPLCRuntimeTarget(currentBoardInfo) && !isSimulatorTarget(currentBoardInfo) && (
             <div id='board-specs' className='flex w-full flex-col items-start justify-start gap-4'>
               <Label id='board-specs-label' className='w-fit text-xs text-neutral-950 dark:text-white'>

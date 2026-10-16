@@ -1,6 +1,7 @@
 /**
- * BlockPinDebugBadges — the live value at each pin of a block: outputs, and a function block's inputs
- * (kept in its instance), BOOLs as TRUE / FALSE since a block pin has no colour of its own.
+ * BlockPinDebugBadges — the live value at each pin of a block that has no element of its own to show it:
+ * outputs, a function block's inputs (kept in its instance), a function's inputs from the output wired in.
+ * BOOL pins show no value: their wire carries the colour.
  */
 import { render, screen } from '@testing-library/react'
 
@@ -14,6 +15,9 @@ jest.mock('../../../../hooks/use-debug-composite-key', () => ({
 jest.mock('../../../../hooks/use-debug-value', () => ({
   useIsDebuggerVisible: () => true,
   useDebugVariableValue: (key: string) => values.get(key),
+}))
+jest.mock('../../../../hooks/use-debug-display-options', () => ({
+  useDebugDisplayOptions: () => ({ decimals: 3, blockInputs: true, functionInputs: true, hideSecrets: true }),
 }))
 jest.mock('../../../_features/[workspace]/editor/graphical/active-context', () => ({
   useIsGraphicalEditorActive: () => true,
@@ -61,39 +65,44 @@ beforeEach(() => {
 })
 
 describe('BlockPinDebugBadges', () => {
-  it("shows a function block's inputs and outputs, BOOLs as TRUE / FALSE", () => {
+  it("shows a function block's non-BOOL inputs and outputs, and no BOOL", () => {
     renderBadges()
-    expect(screen.getByText('42.5')).toBeTruthy()
-    expect(screen.getByText('41.9')).toBeTruthy()
-    expect(screen.getByText('TRUE')).toBeTruthy() // Start
-    expect(screen.getByText('FALSE')).toBeTruthy() // Running
-    // EN / ENO are execution control; an in-out is a reference, shown at its variable.
-    expect(screen.getAllByText('TRUE')).toHaveLength(1)
+    // REAL values at the default 3 decimals.
+    expect(screen.getByText('42.500')).toBeTruthy()
+    expect(screen.getByText('41.900')).toBeTruthy()
+    // BOOL pins (Start, Running, EN, ENO) are their wire's colour; an in-out is shown at its variable.
+    expect(screen.queryByText('TRUE')).toBeNull()
+    expect(screen.queryByText('1')).toBeNull()
+    expect(screen.queryByText('0')).toBeNull()
     expect(screen.queryByText('3')).toBeNull()
   })
 
   it('leaves out pins with a named element attached, which shows the value itself', () => {
     renderBadges({ connectedInputNames: new Set(['Setpoint']), connectedOutputNames: new Set(['Speed']) })
-    expect(screen.queryByText('42.5')).toBeNull()
-    expect(screen.queryByText('41.9')).toBeNull()
+    expect(screen.queryByText('42.500')).toBeNull()
+    expect(screen.queryByText('41.900')).toBeNull()
   })
 
-  it("shows a function's outputs from its temporaries, and no inputs (a function keeps none)", () => {
+  it("shows a function's outputs from its temporaries, and an input from the output wired into it", () => {
     values.set('Main:_TMP_ADD7_OUT', '12')
+    values.set('Main:other.Speed', '7')
     renderBadges({
       blockType: 'function',
       blockName: 'ADD',
       blockVariableName: '',
       variables: [pin('IN1', 'input', 'INT'), pin('IN2', 'input', 'INT'), pin('OUT', 'output', 'INT')],
+      inputSources: new Map([['IN1', 'other.Speed']]),
     })
     expect(screen.getByText('12')).toBeTruthy()
-    expect(screen.queryByText('42.5')).toBeNull()
+    expect(screen.getByText('7')).toBeTruthy()
+    expect(screen.queryByText('42.500')).toBeNull()
   })
 
   it('places a badge at its drawn pin', () => {
     const { container } = renderBadges({ inputHandles: [{ id: 'Setpoint', relPosition: { y: 100 } }] })
-    const badge = screen.getByText('42.5').parentElement as HTMLElement
-    expect(badge.style.top).toBe('90px')
+    const badge = screen.getByText('42.500').parentElement as HTMLElement
+    // At the wire's height; the badge itself sits just above it.
+    expect(badge.style.top).toBe('100px')
     expect(container).toBeTruthy()
   })
 })

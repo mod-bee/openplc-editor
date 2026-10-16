@@ -92,6 +92,11 @@ type LadderFlowActions = {
   }) => void
   onConnect: ({ changes, rungId, editorName }: { changes: Connection; rungId: string; editorName: string }) => void
 
+  /**
+   * Lay a rung out again from its elements, e.g. after a variable element is named: a block leaves room
+   * for its elements' names (variable-width.ts), so a longer name stretches the wire to its pin.
+   */
+  relayoutRung: ({ rungId, editorName }: { rungId: string; editorName: string }) => void
   setNodes: ({ nodes, rungId, editorName }: { nodes: Node[]; rungId: string; editorName: string }) => void
   updateNode: ({
     node,

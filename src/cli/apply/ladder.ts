@@ -178,6 +178,12 @@ function nameBlockPins(
   }
 
   if (updates.length > 0) store.getState().ladderFlowActions.updateNodes(updates)
+
+  // As the GUI does once an element is named: the block leaves room for its elements' names, so the
+  // rung is laid out again with them (variable-width.ts).
+  for (const rungId of new Set(updates.map((update) => update.rungId))) {
+    store.getState().ladderFlowActions.relayoutRung({ editorName: pouName, rungId })
+  }
 }
 
 function toOutput(store: OpenPLCStore, pouName: string, output: SpecLadderOutput, errors: string[]): RungOutput | null {
