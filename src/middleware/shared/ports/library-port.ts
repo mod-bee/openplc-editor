@@ -51,13 +51,25 @@ export type CatalogQueryResult =
  * in the future are simply ignored until something here opts in to
  * them.
  */
+/**
+ * A pin or parameter as a `.stlib` manifest carries it. strucpp folds every
+ * name (IEC 61131-3 6.1.2: case is not significant); `declaredName` is the
+ * spelling the library's author wrote, present when it differs (`myPin` for
+ * `MYPIN`), absent in an archive built before strucpp exported it.
+ */
+export interface StlibPinDTO {
+  name: string
+  declaredName?: string
+  type: string
+}
+
 /** A method prototype as a `.stlib` manifest carries it. */
 export interface StlibMethodDTO {
   name: string
   returnType?: string
-  inputs: Array<{ name: string; type: string }>
-  outputs: Array<{ name: string; type: string }>
-  inouts: Array<{ name: string; type: string }>
+  inputs: StlibPinDTO[]
+  outputs: StlibPinDTO[]
+  inouts: StlibPinDTO[]
 }
 
 export interface StlibArchiveDTO {
@@ -72,16 +84,16 @@ export interface StlibArchiveDTO {
     functions: Array<{
       name: string
       returnType: string
-      parameters: Array<{ name: string; type: string; direction: 'input' | 'output' | 'inout' }>
+      parameters: Array<StlibPinDTO & { direction: 'input' | 'output' | 'inout' }>
       variadic?: { minArgs: number }
       documentation?: string
       category?: string
     }>
     functionBlocks: Array<{
       name: string
-      inputs: Array<{ name: string; type: string; edge?: 'R_EDGE' | 'F_EDGE' }>
-      outputs: Array<{ name: string; type: string }>
-      inouts: Array<{ name: string; type: string }>
+      inputs: Array<StlibPinDTO & { edge?: 'R_EDGE' | 'F_EDGE' }>
+      outputs: StlibPinDTO[]
+      inouts: StlibPinDTO[]
       documentation?: string
       category?: string
       /** Body language, when strucpp did NOT compile this block.

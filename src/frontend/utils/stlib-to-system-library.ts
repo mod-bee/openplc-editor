@@ -36,7 +36,7 @@
  *   parameters become class `'inOut'` (camel-case the editor uses).
  */
 
-import type { StlibArchiveDTO, StlibMethodDTO } from '../../middleware/shared/ports/library-port'
+import type { StlibArchiveDTO, StlibMethodDTO, StlibPinDTO } from '../../middleware/shared/ports/library-port'
 import type {
   SystemLibrary,
   SystemLibraryInterface,
@@ -97,6 +97,15 @@ function typeRef(typeName: string): SystemLibraryVariable['type'] {
   return { definition: 'derived-type', value: typeName }
 }
 
+/**
+ * A pin's name as the library's author spelled it (`myPin`, not strucpp's
+ * folded `MYPIN`), the way a pin of the project's own blocks keeps its case.
+ * IEC 61131-3 names are not case-sensitive (6.1.2), so the generated call and
+ * the debugger find the same variable either way. Block and type names stay
+ * folded: projects store them and look them up by that spelling.
+ */
+const pinName = (pin: StlibPinDTO): string => pin.declaredName ?? pin.name
+
 function classFromDirection(d: 'input' | 'output' | 'inout'): SystemLibraryVariable['class'] {
   if (d === 'inout') return 'inOut'
   return d
@@ -108,9 +117,9 @@ function toMethod(method: StlibMethodDTO): SystemLibraryMethod {
     name: method.name,
     ...(method.returnType !== undefined ? { returnType: method.returnType } : {}),
     variables: [
-      ...method.inputs.map((p) => ({ name: p.name, class: 'input' as const, type: typeRef(p.type) })),
-      ...method.outputs.map((p) => ({ name: p.name, class: 'output' as const, type: typeRef(p.type) })),
-      ...method.inouts.map((p) => ({ name: p.name, class: 'inOut' as const, type: typeRef(p.type) })),
+      ...method.inputs.map((p) => ({ name: pinName(p), class: 'input' as const, type: typeRef(p.type) })),
+      ...method.outputs.map((p) => ({ name: pinName(p), class: 'output' as const, type: typeRef(p.type) })),
+      ...method.inouts.map((p) => ({ name: pinName(p), class: 'inOut' as const, type: typeRef(p.type) })),
     ],
   }
 }
@@ -130,7 +139,7 @@ export function stlibToSystemLibrary(
   for (const fn of m.functions) {
     const variables: SystemLibraryVariable[] = [
       ...fn.parameters.map((p) => ({
-        name: p.name,
+        name: pinName(p),
         class: classFromDirection(p.direction),
         type: typeRef(p.type),
       })),
@@ -162,7 +171,7 @@ export function stlibToSystemLibrary(
         // way it does for function parameters): the pin may be left unwired.
         const initialValue = (v as { initialValue?: string }).initialValue
         return {
-          name: v.name,
+          name: pinName(v),
           class: 'input' as const,
           type: typeRef(v.type),
           ...(initialValue !== undefined ? { initialValue } : {}),
@@ -171,12 +180,12 @@ export function stlibToSystemLibrary(
         }
       }),
       ...fb.outputs.map((v) => ({
-        name: v.name,
+        name: pinName(v),
         class: 'output' as const,
         type: typeRef(v.type),
       })),
       ...fb.inouts.map((v) => ({
-        name: v.name,
+        name: pinName(v),
         class: 'inOut' as const,
         type: typeRef(v.type),
       })),

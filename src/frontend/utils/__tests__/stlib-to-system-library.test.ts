@@ -116,6 +116,50 @@ describe('stlibToSystemLibrary — function blocks', () => {
   })
 })
 
+describe('stlibToSystemLibrary — declared spelling', () => {
+  // strucpp folds every name (IEC 61131-3 6.1.2: case is not significant) and
+  // records the author's spelling as `declaredName`. Pins show that spelling,
+  // as a pin of the project's own blocks does; block names stay folded.
+  it('names pins, parameters and method parameters as the library declared them', () => {
+    const lib = stlibToSystemLibrary(
+      makeArchive({
+        functions: [
+          {
+            name: 'SCALE_VALUE',
+            returnType: 'REAL',
+            parameters: [{ name: 'RAWVALUE', declaredName: 'rawValue', type: 'INT', direction: 'input' }],
+          },
+        ],
+        functionBlocks: [
+          {
+            name: 'FB_PUMP',
+            inputs: [
+              { name: 'MYPIN', declaredName: 'myPin', type: 'BOOL' },
+              { name: 'RUN', type: 'BOOL' },
+            ],
+            outputs: [{ name: 'NOTOFF', declaredName: 'NotOff', type: 'BOOL' }],
+            inouts: [{ name: 'CMD', declaredName: 'Cmd', type: 'INT' }],
+            methods: [
+              {
+                name: 'SETSPEED',
+                inputs: [{ name: 'NEWSPEED', declaredName: 'newSpeed', type: 'INT' }],
+                outputs: [],
+                inouts: [],
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    const [fn, fb] = lib.pous
+    expect(fn.name).toBe('SCALE_VALUE')
+    expect(fn.variables.map((v) => v.name)).toEqual(['rawValue', 'OUT'])
+    expect(fb.name).toBe('FB_PUMP')
+    expect(fb.variables.map((v) => v.name)).toEqual(['myPin', 'RUN', 'NotOff', 'Cmd'])
+    expect(fb.methods?.[0].variables.map((v) => v.name)).toEqual(['newSpeed'])
+  })
+})
+
 describe('stlibToSystemLibrary — native (C/C++, Python) blocks', () => {
   const nativeArchive = (
     blocks: Array<{ name: string; implementation: 'cpp' | 'python'; sourceFile?: string; documentation?: string }>,
