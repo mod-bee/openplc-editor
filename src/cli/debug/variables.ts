@@ -63,6 +63,9 @@ export interface ResolvedVariable extends DebugLeafInfo {
    */
   inOut?: true
   target?: string
+  /** An enumeration's member names (and their values, when not their position), as the debug tree has them. */
+  enumValues?: string[]
+  enumCodes?: number[]
 }
 
 export interface DebugVariableIndex {
@@ -171,6 +174,16 @@ export function indexDebugMap(store: OpenPLCStore, map: DebugMap): DebugVariable
     })
   }
 
+  // An enumeration's member names, from the tree node at each address.
+  const enumByIndex = new Map<number, Pick<ResolvedVariable, 'enumValues' | 'enumCodes'>>()
+  for (const node of treeMap.values()) {
+    if (node.debugIndex === undefined || node.enumValues === undefined || enumByIndex.has(node.debugIndex)) continue
+    enumByIndex.set(node.debugIndex, {
+      enumValues: node.enumValues,
+      ...(node.enumCodes !== undefined ? { enumCodes: node.enumCodes } : {}),
+    })
+  }
+
   const all: ResolvedVariable[] = []
   const byName = new Map<string, ResolvedVariable>()
   const byIndex = new Map<number, ResolvedVariable>()
@@ -179,7 +192,9 @@ export function indexDebugMap(store: OpenPLCStore, map: DebugMap): DebugVariable
     const info = byPackedIndex.get(index)
     /* istanbul ignore if -- every index in the map came from a leaf */
     if (!info) continue
-    const resolved: ResolvedVariable = { ...info, name, index, ...access.get(index) }
+    // By address, not name: a variable named by its raw debug path (`DEV.A.M`) has no tree node of its own.
+    const enumInfo = enumByIndex.get(index)
+    const resolved: ResolvedVariable = { ...info, name, index, ...access.get(index), ...enumInfo }
     all.push(resolved)
     if (!byName.has(name.toUpperCase())) byName.set(name.toUpperCase(), resolved)
     // First name wins for decoding: a shared global appears under several
@@ -217,6 +232,13 @@ export function filterVariables(index: DebugVariableIndex, filter: string | unde
   return index.all.filter((variable) => variable.name.toUpperCase().includes(needle))
 }
 
+/** The enumeration member a read value names, as the watch panel shows it. */
+function enumMemberOf(variable: ResolvedVariable, value: unknown): string | undefined {
+  if (variable.enumValues === undefined || typeof value !== 'number') return undefined
+  const position = variable.enumCodes !== undefined ? variable.enumCodes.indexOf(value) : value
+  return variable.enumValues[position]
+}
+
 /**
  * Decode a `getVariablesList` reply into typed values.
  *
@@ -248,11 +270,14 @@ export function decodeVariableValues(options: {
       return variable ? { type: variable.type, meta: variable } : undefined
     },
     emit: ({ type, value, meta: variable }) => {
+      const typed = normaliseValue(value, type)
+      const member = enumMemberOf(variable, typed)
       values.push({
         name: variable.name,
         type,
-        value: normaliseValue(value, type),
+        value: typed,
         forced: forced.has(variable.name.toUpperCase()),
+        ...(member !== undefined ? { member } : {}),
       })
     },
     onError: ({ type, meta: variable }) => {
@@ -348,7 +373,8 @@ export function encodeValue(
   input: string,
 ): { success: true; bytes: Uint8Array } | { success: false; error: string } {
   try {
-    return { success: true, bytes: encodeForceValue(input, variable.type) }
+    // An enumeration takes a member name as well as its number, as the editor's force dialog does.
+    return { success: true, bytes: encodeForceValue(input, variable.type, variable.enumValues, variable.enumCodes) }
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }

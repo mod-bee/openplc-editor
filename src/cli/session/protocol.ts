@@ -144,6 +144,8 @@ export const VariableValueSchema = z.object({
   type: z.string(),
   value: z.union([z.boolean(), z.number(), z.string(), z.null()]),
   forced: z.boolean(),
+  /** An enumeration's member for `value` (which stays the number on the wire), when it names one. */
+  member: z.string().optional(),
 })
 export type VariableValue = z.infer<typeof VariableValueSchema>
 

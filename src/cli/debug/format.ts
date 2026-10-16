@@ -15,6 +15,8 @@ const BIT_STRING_TYPES = new Set(['BYTE', 'WORD', 'DWORD', 'LWORD'])
 
 export function formatValue(value: VariableValue): string {
   if (value.value === null) return '<unreadable>'
+  // An enumeration: its member, with the number the runtime holds.
+  if (value.member !== undefined) return `${value.member} (${String(value.value)})`
   if (typeof value.value === 'boolean') return value.value ? 'TRUE' : 'FALSE'
   if (typeof value.value === 'number' && BIT_STRING_TYPES.has(value.type.toUpperCase())) {
     return `16#${value.value.toString(16).toUpperCase()}`
