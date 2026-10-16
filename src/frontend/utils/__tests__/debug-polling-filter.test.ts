@@ -819,6 +819,23 @@ describe('buildActiveIndexSet', () => {
       expect(activeIndexes).toEqual([5])
     })
 
+    it('polls a library block output whose tree key differs in case from the diagram name', () => {
+      // IEC 61131-3 identifiers are not case-sensitive. A compiled library stores its block members in upper
+      // case (NOTOFF), while the diagram keeps the case the programmer typed (sysMode.NotOff).
+      const pou = makePou('Stirrer', 'program', [external('sysMode', 'UT_MODE')], 'ld')
+      const ldFlow = {
+        name: 'Stirrer',
+        rungs: [{ nodes: [{ type: 'contact', data: { variable: { name: 'sysMode.NotOff' } } }] }],
+      }
+      const state = makeState({ pous: [pou], editorName: 'Stirrer', editorLanguage: 'ld', ladderFlows: [ldFlow] })
+      const allLeaves = leaves([
+        [11, 'Config0:sysMode.NOTOFF'],
+        [12, 'Config0:sysMode.ISAUTO'],
+      ])
+      const { activeIndexes } = buildActiveIndexSet(state, allLeaves, null)
+      expect(activeIndexes).toEqual([11])
+    })
+
     it("polls a function block's global without a selected instance", () => {
       const fb = makePou('Pump', 'function-block', [external('DEV', 'UPC_DEV')], 'st')
       fb.body.value = 'DEV.mode := 1;'

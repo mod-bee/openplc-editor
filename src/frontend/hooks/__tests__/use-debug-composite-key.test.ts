@@ -14,7 +14,11 @@ type State = {
       pous: Array<{ name: string; pouType: string; interface: { variables: Array<{ name: string; class: string }> } }>
     }
   }
-  workspace: { fbSelectedInstance: Map<string, string>; fbDebugInstances: Map<string, unknown[]> }
+  workspace: {
+    fbSelectedInstance: Map<string, string>
+    fbDebugInstances: Map<string, unknown[]>
+    debugVariableIndexes: Map<string, number>
+  }
 }
 let state: State
 
@@ -42,7 +46,7 @@ beforeEach(() => {
         ],
       },
     },
-    workspace: { fbSelectedInstance: new Map(), fbDebugInstances: new Map() },
+    workspace: { fbSelectedInstance: new Map(), fbDebugInstances: new Map(), debugVariableIndexes: new Map() },
   }
 })
 
@@ -56,5 +60,17 @@ describe('useDebugCompositeKey', () => {
   it("reads the POU's own variable under the POU", () => {
     const { result } = renderHook(() => useDebugCompositeKey())
     expect(result.current('run')).toBe('Stirrer:run')
+  })
+
+  it("reads a name typed in another case under the debug tree's spelling", () => {
+    // A compiled library stores block members in upper case; IEC names are not case-sensitive.
+    state.workspace.debugVariableIndexes = new Map([
+      ['Config0:mixerMotor.RUNNING', 4],
+      ['Stirrer:RUN', 5],
+    ])
+    const { result } = renderHook(() => useDebugCompositeKey())
+    expect(result.current('mixerMotor.Running')).toBe('Config0:mixerMotor.RUNNING')
+    expect(result.current('run')).toBe('Stirrer:RUN')
+    expect(result.current('notInTree')).toBe('Stirrer:notInTree')
   })
 })

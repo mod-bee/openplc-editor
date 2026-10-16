@@ -1,7 +1,12 @@
 import { useCallback, useMemo } from 'react'
 
 import { useOpenPLCStore } from '../store'
-import { buildReferenceCompositeKey, externalNamesOf } from '../utils/debug-variable-finder'
+import {
+  buildReferenceCompositeKey,
+  canonicalCompositeKey,
+  compositeKeyIndex,
+  externalNamesOf,
+} from '../utils/debug-variable-finder'
 
 /**
  * Hook that returns a memoized function to build composite keys for debug variable lookups.
@@ -22,6 +27,10 @@ export const useDebugCompositeKey = () => {
   )
   // A reference to one of the POU's VAR_EXTERNALs is the shared global, keyed as the poller keys it.
   const externals = useMemo(() => externalNamesOf(variables ?? []), [variables])
+  // The debug tree's keys, so a name spelled in another case reads the same value (IEC names are
+  // case-insensitive). Rebuilt only when a debug session builds its tree.
+  const debugVariableIndexes = useOpenPLCStore(useCallback((s) => s.workspace.debugVariableIndexes, []))
+  const keyIndex = useMemo(() => compositeKeyIndex(debugVariableIndexes.keys()), [debugVariableIndexes])
   const fbSelectedInstance = useOpenPLCStore(useCallback((s) => s.workspace.fbSelectedInstance, []))
   const fbDebugInstances = useOpenPLCStore(useCallback((s) => s.workspace.fbDebugInstances, []))
 
@@ -39,9 +48,9 @@ export const useDebugCompositeKey = () => {
       const localPrefix = fbInstanceContext
         ? `${fbInstanceContext.programName}:${fbInstanceContext.fbVariableName}.`
         : `${editorName}:`
-      return buildReferenceCompositeKey(externals, localPrefix, variableName)
+      return canonicalCompositeKey(keyIndex, buildReferenceCompositeKey(externals, localPrefix, variableName))
     },
-    [fbInstanceContext, editorName, externals],
+    [fbInstanceContext, editorName, externals, keyIndex],
   )
 
   return getCompositeKey

@@ -113,6 +113,26 @@ export function buildGlobalCompositeKey(variableName: string): string {
   return `${GLOBAL_CONFIG_NAME}:${variableName}`
 }
 
+/**
+ * The debug tree's composite keys by their upper-case form. IEC 61131-3 identifiers are case-insensitive,
+ * and the two sides spell them differently: the tree takes a library block's member names from the
+ * compiled library, which keeps them upper case (`Config0:sysMode.ISAUTO`), while a diagram keeps what the
+ * user typed (`sysMode.IsAuto`). {@link canonicalCompositeKey} maps the second to the first.
+ */
+export function compositeKeyIndex(keys: Iterable<string>): Map<string, string> {
+  const index = new Map<string, string>()
+  for (const key of keys) {
+    const upper = key.toUpperCase()
+    if (!index.has(upper)) index.set(upper, key)
+  }
+  return index
+}
+
+/** `key` as the debug tree spells it (case-insensitively, see {@link compositeKeyIndex}); itself when absent. */
+export function canonicalCompositeKey(index: ReadonlyMap<string, string>, key: string): string {
+  return index.get(key.toUpperCase()) ?? key
+}
+
 /** A POU's VAR_EXTERNAL names, upper case → as declared (see `buildReferenceCompositeKey`). */
 export function externalNamesOf(variables: readonly { name: string; class?: string }[]): Map<string, string> {
   const externals = new Map<string, string>()

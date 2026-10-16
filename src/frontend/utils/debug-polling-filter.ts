@@ -20,6 +20,8 @@ import type { FbInstanceInfo, PLCPou, PLCVariable } from '../../middleware/share
 import {
   buildGlobalCompositeKey,
   buildReferenceCompositeKey,
+  canonicalCompositeKey,
+  compositeKeyIndex,
   externalNamesOf,
   isExternalReference,
 } from './debug-variable-finder'
@@ -326,6 +328,12 @@ function computeVisibleVariableKeys(
   // A reference to one of the POU's VAR_EXTERNALs is the shared global (see buildReferenceCompositeKey).
   const externals = externalNamesOf(currentPou.interface?.variables ?? [])
 
+  // Every key the debug tree has, so a reference spelled in another case finds it (IEC names are
+  // case-insensitive; see compositeKeyIndex).
+  const leafKeys: string[] = []
+  for (const [, metas] of allLeaves) for (const meta of metas) leafKeys.push(meta.compositeKey)
+  const keyIndex = compositeKeyIndex([...leafKeys, ...state.workspace.debugVariableIndexes.keys()])
+
   // Helper to make composite key respecting FB instance context
   const makeKey = (variableName: string): string | null => {
     if (currentPou.pouType === 'function-block') {
@@ -333,19 +341,17 @@ function computeVisibleVariableKeys(
       const resolved = resolveFbInstance(currentPou.name, fbSelectedInstance, fbDebugInstances)
       if (!resolved && !isExternalReference(externals, variableName)) return null
       const prefix = resolved ? `${resolved.programName}:${resolved.fbVariableName}.` : ''
-      return buildReferenceCompositeKey(externals, prefix, variableName)
+      return canonicalCompositeKey(keyIndex, buildReferenceCompositeKey(externals, prefix, variableName))
     }
-    return buildReferenceCompositeKey(externals, `${currentPou.name}:`, variableName)
+    return canonicalCompositeKey(keyIndex, buildReferenceCompositeKey(externals, `${currentPou.name}:`, variableName))
   }
 
-  // Helper to find all leaf keys matching a prefix in the debug tree
+  // Helper to find all leaf keys matching a prefix in the debug tree (case-insensitively)
+  const leafKeysUpper = leafKeys.map((key) => [key.toUpperCase(), key] as const)
   const addLeavesWithPrefix = (prefix: string) => {
-    for (const [, metas] of allLeaves) {
-      for (const meta of metas) {
-        if (meta.compositeKey.startsWith(prefix)) {
-          keys.add(meta.compositeKey)
-        }
-      }
+    const upperPrefix = prefix.toUpperCase()
+    for (const [upper, key] of leafKeysUpper) {
+      if (upper.startsWith(upperPrefix)) keys.add(key)
     }
   }
 

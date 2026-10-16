@@ -6,6 +6,8 @@ import {
   buildGlobalCompositeKey,
   buildGlobalDebugPath,
   buildReferenceCompositeKey,
+  canonicalCompositeKey,
+  compositeKeyIndex,
   externalNamesOf,
   isExternalReference,
   GLOBAL_CONFIG_NAME,
@@ -340,5 +342,18 @@ describe('buildReferenceCompositeKey — a name as a POU body writes it', () => 
   it('says whether a reference is to a VAR_EXTERNAL', () => {
     expect(isExternalReference(externals, 'pumps[2].RUNNING')).toBe(true)
     expect(isExternalReference(externals, 'speed')).toBe(false)
+  })
+})
+
+describe('canonicalCompositeKey — a key in the debug tree\'s spelling', () => {
+  const index = compositeKeyIndex(['Config0:sysMode.NOTOFF', 'Stirrer:mixerOn', 'Stirrer:MIXERON'])
+
+  it('finds the tree key whatever the case, the first spelling winning', () => {
+    expect(canonicalCompositeKey(index, 'Config0:sysMode.NotOff')).toBe('Config0:sysMode.NOTOFF')
+    expect(canonicalCompositeKey(index, 'stirrer:MixerOn')).toBe('Stirrer:mixerOn')
+  })
+
+  it('returns a key the tree does not have unchanged', () => {
+    expect(canonicalCompositeKey(index, 'Config0:other')).toBe('Config0:other')
   })
 })
