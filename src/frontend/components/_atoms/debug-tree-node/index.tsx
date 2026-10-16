@@ -3,7 +3,9 @@ import { ComponentPropsWithoutRef } from 'react'
 import type { DebugTreeNode } from '../../../../middleware/shared/ports/types'
 import { ArrowIcon } from '../../../assets/icons/interface/Arrow'
 import ViewIcon from '../../../assets/icons/interface/View'
+import { useDebugDisplayOptions } from '../../../hooks/use-debug-display-options'
 import { cn } from '../../../utils/cn'
+import { formatDebugValue, HIDDEN_VALUE, isSecretValue } from '../../../utils/debug-pin-values'
 import { describeInOutLeaf } from '../../../utils/inout-force'
 
 type TreeNodeProps = ComponentPropsWithoutRef<'div'> & {
@@ -74,6 +76,15 @@ const TreeNode = ({
 
   const textColor = isCurrentNodeForced ? (forcedValue ? '#80C000' : '#4080FF') : undefined
 
+  // As the diagrams write it: REAL decimals and hidden passwords per the project's Debugger settings.
+  const { decimals, hideSecrets } = useDebugDisplayOptions()
+  const shownValue = (): string => {
+    const value = getValue?.(node.compositeKey)
+    if (value === undefined) return '-'
+    if (hideSecrets && isSecretValue(node.compositeKey, node.type)) return HIDDEN_VALUE
+    return formatDebugValue(value, node.type, decimals)
+  }
+
   return (
     <div {...rest}>
       <div className='flex h-auto w-full items-center gap-2'>
@@ -134,14 +145,14 @@ const TreeNode = ({
               color: textColor,
               fontWeight: isCurrentNodeForced ? 600 : undefined,
             }}
+            // A leaf the PLC keeps no value for: an interface reference names another block, not a value.
+            title={
+              !node.isComplex && node.debugIndex === undefined
+                ? 'No value to show: a reference to another block (an interface), or not compiled for debugging'
+                : undefined
+            }
           >
-            {node.isComplex && !node.isExpanded
-              ? '...'
-              : node.isComplex
-                ? ''
-                : getValue
-                  ? (getValue(node.compositeKey) ?? '-')
-                  : '-'}
+            {node.isComplex && !node.isExpanded ? '...' : node.isComplex ? '' : shownValue()}
           </p>
         </div>
       </div>

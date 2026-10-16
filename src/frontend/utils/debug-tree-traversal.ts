@@ -231,20 +231,13 @@ function traverseNestedNode<T>(
         // For non-base-types, build the child path for recursive traversal
         const childFullPath = `${fullPath}.${fbVar.name.toUpperCase()}`
 
-        if (fbVar.type.definition === 'derived' || fbVar.type.definition === 'derived-type') {
-          children.push(
-            traverseNestedNode(
-              fbVar.name,
-              childFullPath,
-              childCompositeKey,
-              fbVar.type.value,
-              'derived',
-              context,
-              visitor,
-            ),
-          )
-        } else if (fbVar.type.definition === 'user-data-type') {
-          // Could be FB or struct - check
+        if (
+          fbVar.type.definition === 'derived' ||
+          fbVar.type.definition === 'derived-type' ||
+          fbVar.type.definition === 'user-data-type'
+        ) {
+          // A named type: a function block, or a STRUCT / array type (a library block's in-out record,
+          // `well.Data : UT_VESSEL_DATA`). A library pin names either as 'derived-type'.
           const childTypeDef = isFunctionBlock(fbVar.type.value, projectPous, systemLibraries)
             ? 'derived'
             : 'user-data-type'

@@ -174,6 +174,63 @@ describe('buildDebugTree', () => {
     })
   })
 
+  describe("a library block's in-out record", () => {
+    // well.Data : UT_VESSEL_DATA, a VAR_IN_OUT the library names as 'derived-type': the PLC sends its
+    // members (WELL.DATA.*), so the tree opens it as the STRUCT it is, not as a block it cannot find.
+    const library = {
+      name: 'lib',
+      author: '',
+      version: '1',
+      stPath: '',
+      cPath: '',
+      pous: [
+        {
+          name: 'UT_VESSEL',
+          type: 'function-block' as const,
+          language: 'st' as const,
+          body: '',
+          documentation: '',
+          variables: [
+            {
+              name: 'Level',
+              class: 'input' as const,
+              type: { definition: 'derived-type' as const, value: 'UT_I_MEAS' },
+            },
+            {
+              name: 'Data',
+              class: 'inOut' as const,
+              type: { definition: 'derived-type' as const, value: 'UT_VESSEL_DATA' },
+            },
+          ],
+        },
+      ],
+      dataTypes: [
+        {
+          name: 'UT_VESSEL_DATA',
+          derivation: 'structure' as const,
+          variable: [{ name: 'tanks', type: { definition: 'base-type' as const, value: 'INT' } }],
+        },
+      ],
+    }
+
+    it('expands it, and leaves an interface pin a leaf with no value', () => {
+      const variable = makeUdtVariable('well', 'UT_VESSEL', 'external')
+      const node = buildDebugTree(
+        variable,
+        'Main',
+        INSTANCE_NAME,
+        [makeDebugVar('WELL.DATA.TANKS', 'INT_ENUM', 4)],
+        { dataTypes: [], pous: [] },
+        [library] as never,
+      )
+      const data = node.children?.find((c) => c.name === 'Data')
+      expect(data?.isComplex).toBe(true)
+      expect(data?.children?.map((c) => [c.compositeKey, c.debugIndex])).toEqual([['Config0:well.Data.tanks', 4]])
+      const level = node.children?.find((c) => c.name === 'Level')
+      expect([level?.isComplex, level?.debugIndex]).toEqual([false, undefined])
+    })
+  })
+
   describe('external variables', () => {
     it('builds a leaf node for an external base-type variable with a canonical global key', () => {
       const variable = makeBaseVariable('GLOBAL_FLAG', 'BOOL', 'external')
