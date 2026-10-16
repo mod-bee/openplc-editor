@@ -1972,6 +1972,107 @@ describe('runCompilePipeline — RTOS mode, several tasks', () => {
     expect(entry?.cxx_flags).toEqual(expect.arrayContaining(['-fno-rtti', '-DconfigUSE_MUTEXES=1']))
   })
 
+  describe('keep build output (DeviceConfiguration.buildOutput)', () => {
+    const board = { platform: 'esp32:esp32:esp32s3', core: 'esp32:esp32', compiler: 'arduino-cli' }
+    const kept = { folder: '/p/output/b/2026-10-16_140509_aaaaaaaa', files: ['firmware.bin', 'build.json'] }
+
+    it('keeps a successful board build, describing it in build.json', async () => {
+      const keepBuildOutput = jest.fn().mockResolvedValue(kept)
+      const port = makePort({ keepBuildOutput })
+      const { events, emit } = captureEvents()
+      const result = await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          boardTarget: 'ModBee Node UIO',
+          compileOnly: true,
+          boardEntry: board,
+          buildOutput: { keep: true, count: 3 },
+          editorVersion: '4.3.2',
+        }),
+        port,
+        emit,
+      )
+      expect(result.success).toBe(true)
+      expect(keepBuildOutput).toHaveBeenCalledTimes(1)
+      const [args] = keepBuildOutput.mock.calls[0]
+      expect(args).toMatchObject({ kind: 'firmware', boardTarget: 'ModBee Node UIO', fqbn: board.platform, count: 3 })
+      expect(args.manifest).toMatchObject({
+        kind: 'firmware',
+        board: 'ModBee Node UIO',
+        fqbn: board.platform,
+        programMd5: args.md5,
+        editorVersion: '4.3.2',
+        // An ESP32 board builds in RTOS mode unless the project turns it off.
+        rtosMode: true,
+      })
+      expect(events.some((e) => e.stage === 'build-output' && e.message.includes(kept.folder))).toBe(true)
+    })
+
+    it.each<[string, { keep: boolean } | undefined]>([
+      ['absent', undefined],
+      ['off', { keep: false }],
+    ])('keeps nothing when the setting is %s', async (_label, buildOutput) => {
+      const keepBuildOutput = jest.fn()
+      const port = makePort({ keepBuildOutput })
+      const { emit } = captureEvents()
+      await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          compileOnly: true,
+          boardEntry: board,
+          ...(buildOutput ? { buildOutput } : {}),
+        }),
+        port,
+        emit,
+      )
+      expect(keepBuildOutput).not.toHaveBeenCalled()
+    })
+
+    it('keeps the bundle of a Runtime v4 build, compile only or not', async () => {
+      const keepBuildOutput = jest.fn().mockResolvedValue(kept)
+      const port = makePort({ keepBuildOutput })
+      const { emit } = captureEvents()
+      await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          isRuntimeV4: true,
+          boardRuntime: 'openplc-compiler',
+          compileOnly: true,
+          buildOutput: { keep: true },
+        }),
+        port,
+        emit,
+      )
+      expect(keepBuildOutput).toHaveBeenCalledTimes(1)
+      expect(keepBuildOutput.mock.calls[0][0]).toMatchObject({ kind: 'runtime-v4', count: 10 })
+    })
+
+    it('only warns when the copy cannot be made', async () => {
+      const keepBuildOutput = jest
+        .fn()
+        .mockResolvedValue({ files: [], errors: [{ message: 'disk full', line: 0, column: 0 }] })
+      const port = makePort({ keepBuildOutput })
+      const { events, emit } = captureEvents()
+      const result = await runCompilePipeline(
+        makeArgs({
+          isSimulator: false,
+          boardRuntime: 'arduino-cli',
+          compileOnly: true,
+          boardEntry: board,
+          buildOutput: { keep: true },
+        }),
+        port,
+        emit,
+      )
+      expect(result.success).toBe(true)
+      const line = events.find((e) => e.stage === 'build-output')
+      expect(line).toMatchObject({ level: 'warning' })
+      expect(line?.message).toContain('disk full')
+    })
+  })
+
   describe('PLC data in external memory (target.plcDataMemory)', () => {
     const node = {
       platform: 'esp32:esp32:esp32s3:PSRAM=enabled',

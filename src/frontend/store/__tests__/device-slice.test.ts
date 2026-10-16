@@ -1622,6 +1622,24 @@ describe('createDeviceSlice', () => {
     })
   })
 
+  describe('buildOutput', () => {
+    it('is off (absent) until set, survives a reload, and is removed when turned off', () => {
+      const store = makeStore()
+      expect(store.getState().deviceDefinitions.configuration.buildOutput).toBeUndefined()
+      store.getState().deviceActions.setBuildOutput({ keep: true, count: 5 })
+      expect(store.getState().deviceUpdated.updated).toBe(true)
+
+      const reloaded = makeStore()
+      reloaded.getState().deviceActions.setDeviceDefinitions({
+        configuration: store.getState().deviceDefinitions.configuration,
+      })
+      expect(reloaded.getState().deviceDefinitions.configuration.buildOutput).toEqual({ keep: true, count: 5 })
+
+      reloaded.getState().deviceActions.setBuildOutput(undefined)
+      expect('buildOutput' in reloaded.getState().deviceDefinitions.configuration).toBe(false)
+    })
+  })
+
   // -----------------------------------------------------------------------
   // setCommunicationPort
   // -----------------------------------------------------------------------

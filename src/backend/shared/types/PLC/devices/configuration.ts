@@ -55,6 +55,14 @@ const deviceConfigurationSchema = z.object({
   // runtimes as OPENPLC_OUTPUTS_ON_STOP in defines.h. Retained values are kept
   // either way.
   outputsOnStop: z.enum(['off', 'hold']).optional(),
+  // Keep each successful build's output in the project (output/<board>/...),
+  // outside the build folder that is regenerated. Absent means off.
+  buildOutput: z
+    .object({
+      keep: z.boolean(),
+      count: z.number().int().min(1).max(100).optional(),
+    })
+    .optional(),
   // User picks from VPP `target.platformOptions` (e.g. Nano cpu=atmega328old).
   // Keyed by option `key`, value is the chosen `values[].id`. The compile and
   // upload pipelines fall back to each manifest option's `default` when a key
@@ -69,6 +77,13 @@ type DeviceConfiguration = z.infer<typeof deviceConfigurationSchema>
 type VppPackagePin = z.infer<typeof vppPackagePinSchema>
 
 const outputsOnStopSchema = deviceConfigurationSchema.shape.outputsOnStop
+const buildOutputSchema = deviceConfigurationSchema.shape.buildOutput
 
-export { deviceConfigurationSchema, outputsOnStopSchema, persistentStorageSchema, vppPackagePinSchema }
+export {
+  buildOutputSchema,
+  deviceConfigurationSchema,
+  outputsOnStopSchema,
+  persistentStorageSchema,
+  vppPackagePinSchema,
+}
 export type { DeviceConfiguration, VppPackagePin }

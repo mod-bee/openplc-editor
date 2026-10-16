@@ -388,6 +388,16 @@ const deviceSchema = z
      * are kept either way.
      */
     outputsOnStop: z.enum(['off', 'hold']).optional(),
+    /**
+     * Keep each successful build's output in the project, under
+     * output/<board>/<time>_<md5>/ (firmware files or the Runtime v4
+     * flashable images or the Runtime v4 program.zip, and build.json). `{ "keep": false }` turns it off;
+     * `count` is how many builds per board stay (default 10).
+     */
+    buildOutput: z
+      .object({ keep: z.boolean(), count: z.number().int().min(1).max(100).optional() })
+      .strict()
+      .optional(),
   })
   .strict()
 

@@ -97,6 +97,9 @@ export async function runDescribe(store: OpenPLCStore, args: ParsedArgs, reporte
       ...(state.deviceDefinitions.configuration.outputsOnStop
         ? { outputsOnStop: state.deviceDefinitions.configuration.outputsOnStop }
         : {}),
+      ...(state.deviceDefinitions.configuration.buildOutput?.keep
+        ? { buildOutput: state.deviceDefinitions.configuration.buildOutput }
+        : {}),
     }
     spec.libraries = (state.project.data.libraries ?? []).map((ref) => ({ name: ref.name, version: ref.version }))
     spec.globalVariableLists = (state.project.data.globalVariableLists ?? []).map((list) => ({

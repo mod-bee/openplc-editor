@@ -4,6 +4,7 @@ import type { DeviceLicenseReport } from '../../../../middleware/shared/ports/de
 import type { EtherCATRuntimeStatusResponse } from '../../../../middleware/shared/ports/ethercat-types'
 import type {
   BoardInfo,
+  BuildOutputSetting,
   CommunicationPort,
   DebugMedium,
   DeviceConfiguration,
@@ -331,6 +332,8 @@ export type DeviceActions = {
   setPersistentStorage: (patch: Partial<PersistentStorageSettings>) => void
   /** Outputs on STOP and in ERROR: switched off, or held at their last values. */
   setOutputsOnStop: (mode: OutputsOnStop) => void
+  /** Keep each build's output in the project; `undefined` turns it off. */
+  setBuildOutput: (setting: BuildOutputSetting | undefined) => void
   /** Record (or clear, with `null`) the VPP package a board was authored against. */
   setVppPackagePin: (board: string, pin: VppPackagePin | null) => void
   setVendorScreenData: (persistenceKey: string, data: unknown) => void

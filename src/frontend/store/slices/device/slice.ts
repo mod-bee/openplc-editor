@@ -729,6 +729,15 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
         }),
       )
     },
+    setBuildOutput: (setting): void => {
+      setState(
+        produce(({ deviceDefinitions, deviceUpdated }: DeviceSlice) => {
+          deviceUpdated.updated = true
+          if (setting) deviceDefinitions.configuration.buildOutput = setting
+          else delete deviceDefinitions.configuration.buildOutput
+        }),
+      )
+    },
     setPersistentStorage: (patch): void => {
       setState(
         produce(({ deviceDefinitions, deviceUpdated, deviceAvailableOptions }: DeviceSlice) => {
@@ -915,6 +924,7 @@ function mergeDeviceConfigWithDefaults(
     ...(provided.persistentStorage ? { persistentStorage: provided.persistentStorage } : {}),
     ...(provided.persistentStorageByBoard ? { persistentStorageByBoard: provided.persistentStorageByBoard } : {}),
     ...(provided.outputsOnStop ? { outputsOnStop: provided.outputsOnStop } : {}),
+    ...(provided.buildOutput ? { buildOutput: provided.buildOutput } : {}),
     // Must merge — otherwise every project load drops the saved pin and
     // board.tsx's drift detection sees a blank slate instead of the real
     // prior pin, so a project with a VPP board always opens as if unpinned.

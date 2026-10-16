@@ -101,6 +101,7 @@ export interface PipelineProgressEvent {
     | 'confs'
     | 'firmware-bundle'
     | 'runtime-v4-bundle'
+    | 'build-output'
     | 'embed-c-blocks'
     | 'core-install'
     | 'lib-install'
@@ -315,6 +316,9 @@ export interface RunCompilePipelineArgs {
   /** Outputs on STOP and in ERROR, `DeviceConfiguration.outputsOnStop`:
    *  'hold' adds `OPENPLC_OUTPUTS_ON_STOP 1` to defines.h for both runtimes. */
   outputsOnStop?: import('../../../middleware/shared/ports/types').OutputsOnStop
+  /** Keep each successful build's output in the project, `DeviceConfiguration.buildOutput`
+   *  (absent or `keep: false`: nothing is kept, as before). */
+  buildOutput?: import('../../../middleware/shared/ports/types').BuildOutputSetting
   /** User-authored configuration-screen data from
    *  `DeviceConfiguration.vendorScreenData`.  The platform adapter
    *  reads `devices/configuration.json` (editor) or the store (web)
@@ -575,6 +579,7 @@ async function runCompilePipelineInner(
     persistentStorage,
     targetHidesPersistentStorage,
     outputsOnStop,
+    buildOutput,
     vendorScreenData,
     editorVersion,
   } = args
@@ -835,6 +840,32 @@ async function runCompilePipelineInner(
     emit({ stage: 'st', message: strucppResult.debugMapSummary, level: 'info' })
   }
 
+  // The project's "Keep build output": a copy of what this build produced, outside the build folder
+  // that is regenerated. Never fails the build - a copy that cannot be made is a warning.
+  const keepBuildOutput = async (kind: 'firmware' | 'runtime-v4', details: Record<string, unknown> = {}) => {
+    if (buildOutput?.keep !== true || !port.keepBuildOutput) return
+    const fqbn = typeof boardEntry.platform === 'string' && boardEntry.platform !== '' ? boardEntry.platform : undefined
+    const manifest: Record<string, unknown> = {
+      kind,
+      board: boardTarget,
+      ...(fqbn ? { fqbn } : {}),
+      programMd5: md5,
+      ...(editorVersion ? { editorVersion } : {}),
+      builtAt: new Date().toISOString(),
+      ...details,
+    }
+    const kept = await port.keepBuildOutput(
+      { kind, boardTarget, ...(fqbn ? { fqbn } : {}), md5, count: buildOutput.count ?? 10, manifest },
+      makePlatformLog(emit, 'build-output'),
+    )
+    if (kept.folder) {
+      emit({ stage: 'build-output', message: `Build output kept in ${kept.folder}`, level: 'info' })
+    } else {
+      const why = kept.errors?.map((e) => e.message).join('; ') || 'nothing to copy'
+      emit({ stage: 'build-output', message: `Could not keep the build output: ${why}`, level: 'warning' })
+    }
+  }
+
   // Cache the debug-map.json bytes so the debugger can map variable
   // addresses without re-reading them from disk later.
   const strucppFilesMap: Record<string, string> = {}
@@ -998,6 +1029,7 @@ async function runCompilePipelineInner(
         level: 'info',
       })
     }
+    await keepBuildOutput('runtime-v4')
 
     if (compileOnly) {
       emit({ stage: 'done', message: 'Compile only mode — skipping upload to runtime.', level: 'info' })
@@ -1613,6 +1645,11 @@ async function runCompilePipelineInner(
     emit({ stage: 'done', message: 'Simulator firmware ready', level: 'info' })
     return { success: true, md5, binary: compileResult.binary, uploaded: false }
   }
+
+  await keepBuildOutput('firmware', {
+    rtosMode: inRtosMode && !rtosFallback,
+    ...(freeRamBytes !== undefined ? { freeRamBytes } : {}),
+  })
 
   // Compile-only: skip the physical upload step.
   if (compileOnly) {

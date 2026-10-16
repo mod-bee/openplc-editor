@@ -458,6 +458,35 @@ export interface CompilerPlatformPort {
     args: MaterializeRuntimeV4BundleArgs,
     log: PlatformLog,
   ): Promise<MaterializeRuntimeV4BundleResult>
+
+  /**
+   * Keep this build's output in the project (`DeviceConfiguration.buildOutput`): copy it to
+   * `<project>/output/<board>/<time>_<md5>/` with a `build.json`, then remove the oldest beyond
+   * `count`. Called after a successful board firmware build, and after a Runtime v4 bundle is
+   * written. Optional: a platform without a project folder omits it and nothing is kept.
+   */
+  keepBuildOutput?(args: KeepBuildOutputArgs, log: PlatformLog): Promise<KeepBuildOutputResult>
+}
+
+/** What to keep: the firmware files of a board build, or the bundle a Runtime v4 build uploads. */
+export interface KeepBuildOutputArgs {
+  kind: 'firmware' | 'runtime-v4'
+  boardTarget: string
+  /** The board's FQBN, for a firmware build (where arduino-cli exported the files). */
+  fqbn?: string
+  /** The program's MD5, which names the folder with the time. */
+  md5: string
+  /** How many builds to keep for this board. */
+  count: number
+  /** Written as `build.json`, with the list of files kept added. */
+  manifest: Record<string, unknown>
+}
+
+export interface KeepBuildOutputResult {
+  /** The folder written; absent when nothing was kept. */
+  folder?: string
+  files: string[]
+  errors?: StructuredCompileError[]
 }
 
 export interface MaterializeRuntimeV4BundleArgs {

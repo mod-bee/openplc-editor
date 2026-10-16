@@ -999,6 +999,17 @@ export interface PersistentStorageSettings {
 /** What the outputs do when the PLC stops or goes to ERROR (CODESYS: "Behaviour of outputs in Stop"). */
 export type OutputsOnStop = 'off' | 'hold'
 
+/**
+ * Keep each successful build's output under `<project>/output/<board>/<time>_<md5>/`, outside the build
+ * folder the editor regenerates: the images a board build flashes (`firmware.bin`, `firmware.merged.bin`, ...)
+ * or the `program.zip` a Runtime v4 build uploads, and a `build.json`. The newest `count` are kept.
+ */
+export interface BuildOutputSetting {
+  keep: boolean
+  /** How many builds to keep per board; the oldest go first. Default 10. */
+  count?: number
+}
+
 export interface DeviceConfiguration {
   deviceBoard: string
   communicationPort: string
@@ -1009,6 +1020,8 @@ export interface DeviceConfiguration {
   persistentStorageByBoard?: Record<string, PersistentStorageSettings>
   /** Outputs on STOP and in ERROR: switched off (absent, the default) or held at their last values. */
   outputsOnStop?: OutputsOnStop
+  /** Keep each build's output in the project (absent: off, as before). */
+  buildOutput?: BuildOutputSetting
   /** Active board's VPP vendor-screen data; always mirrors `vendorScreenDataByBoard[deviceBoard]`. */
   vendorScreenData?: Record<string, unknown>
   /** Per-board archive of vendor-screen data, since VPP screens are board-specific. Legacy flat data is migrated on load. */

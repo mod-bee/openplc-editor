@@ -231,10 +231,19 @@ import { app as electronApp, MessageChannelMain } from 'electron'
 import JSZip from 'jszip'
 
 import type { ThirdPartyLibraryRequest } from '../../../middleware/shared/ports/compiler-platform-port'
-import type { OutputsOnStop, PersistentStorageSettings, PlatformOption } from '../../../middleware/shared/ports/types'
+import type {
+  BuildOutputSetting,
+  OutputsOnStop,
+  PersistentStorageSettings,
+  PlatformOption,
+} from '../../../middleware/shared/ports/types'
 import { BoardInfoResolver } from '../../shared/hardware/board-info-resolver'
 import { findVppDeviceByBoardName } from '../../shared/hardware/find-vpp-device'
-import { outputsOnStopSchema, persistentStorageSchema } from '../../shared/types/PLC/devices/configuration'
+import {
+  buildOutputSchema,
+  outputsOnStopSchema,
+  persistentStorageSchema,
+} from '../../shared/types/PLC/devices/configuration'
 import type { AvailableBoards } from '../hardware/types'
 import { formatPackageIntegrityError, PackageManagerModule } from '../package-manager'
 import { createDesktopLibraryBuildPort } from './desktop-library-build-port'
@@ -3045,6 +3054,9 @@ class CompilerModule {
     let targetHidesPersistentStorage = false
     // Outputs on STOP and in ERROR, from the same file; absent is 'off'.
     let outputsOnStop: OutputsOnStop = 'off'
+    // Keep build output, from the same file; absent (or unreadable) is off.
+    let buildOutput: BuildOutputSetting | undefined
+    let buildOutputInvalid = false
     const isArduinoFirmware = !isSimulator && !isRuntimeV3 && !isRuntimeV4
     if (isRuntimeV4 || isArduinoFirmware) {
       const devicesConfigurationFilePath = join(normalizedProjectPath, 'devices', 'configuration.json')
@@ -3068,6 +3080,9 @@ class CompilerModule {
         const parsedOutputs = outputsOnStopSchema.safeParse(deviceConfig.outputsOnStop)
         if (parsedOutputs.success) outputsOnStop = parsedOutputs.data ?? 'off'
         else outputsOnStopInvalid = true
+        const parsedBuildOutput = buildOutputSchema.safeParse(deviceConfig.buildOutput)
+        if (parsedBuildOutput.success) buildOutput = parsedBuildOutput.data
+        else buildOutputInvalid = true
       } catch {
         // No configuration.json — a project that never configured storage, which
         // generateRetainConf treats as "emit nothing".
@@ -3098,6 +3113,15 @@ class CompilerModule {
         })
         _mainProcessPort.close()
         return
+      }
+      // Not a reason to stop: the build is the same either way, only the copy is not made.
+      if (buildOutputInvalid) {
+        _mainProcessPort.postMessage({
+          logLevel: 'warning',
+          message:
+            'The "Keep build output" setting in devices/configuration.json could not be read; this build is not ' +
+            'kept. Open the device configuration and set it again.',
+        })
       }
       // Same reasoning: building without it would switch held outputs off.
       if (outputsOnStopInvalid) {
@@ -3166,6 +3190,7 @@ class CompilerModule {
         ...(persistentStorage ? { persistentStorage } : {}),
         targetHidesPersistentStorage,
         outputsOnStop,
+        ...(buildOutput ? { buildOutput } : {}),
         vendorScreenData: effectiveVendorScreenData,
         // Compared against the `minEditorVersion` a runtime publishes at
         // `/api/capabilities` (DOPE-448). Injected because the pipeline

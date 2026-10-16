@@ -44,6 +44,8 @@ import type {
   CompilerPlatformPort,
   InstallArduinoCoreArgs,
   InstallArduinoLibArgs,
+  KeepBuildOutputArgs,
+  KeepBuildOutputResult,
   MaterializeRuntimeV4BundleArgs,
   MaterializeRuntimeV4BundleResult,
   PackageVppPluginArgs,
@@ -64,6 +66,7 @@ import { promises as fs } from 'fs'
 import { dirname, join } from 'path'
 
 import type { CompilerModule } from './compiler-module'
+import { keepBuildOutputFiles } from './keep-build-output'
 
 /**
  * Subset of `CompilerModule` the port adapter calls into.  Declared
@@ -708,6 +711,21 @@ export function createEditorCompilerPlatformPort(
         const message = error instanceof Error ? error.message : String(error)
         log(`Could not write build artifacts: ${message}`, 'error')
         return { written: 0, errors: [{ message, line: 0, column: 0, severity: 'error' }] }
+      }
+    },
+
+    async keepBuildOutput(args: KeepBuildOutputArgs, log: PlatformLog): Promise<KeepBuildOutputResult> {
+      try {
+        return await keepBuildOutputFiles(args, {
+          projectPath: context.normalizedProjectPath,
+          compilationPath: context.compilationPath,
+          sourceFolderPath: context.sourceTargetFolderPath,
+          compressSourceFolder: context.compressSourceFolder,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log(`Could not keep the build output: ${message}`, 'warning')
+        return { files: [], errors: [{ message, line: 0, column: 0, severity: 'error' }] }
       }
     },
 
