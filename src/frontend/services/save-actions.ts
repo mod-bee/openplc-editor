@@ -411,11 +411,13 @@ export async function executeSaveProject(
     }
 
     // A path this save writes must never also be in deletions: desktop applies deletions after writes, so this
-    // guards real data loss. Compared case-insensitively for macOS/Windows case-only renames.
+    // guards real data loss. A deletion differing only in case (an element renamed `main` -> `Main`) is kept:
+    // whether that is the file just written depends on the file system, which the backend checks
+    // (ProjectService.writeProjectFiles) — on Linux it is a second, stale file that must go.
     const writtenPaths = new Set(
-      [...pouFiles, ...serverFiles, ...remoteDeviceFiles, ...dataTypeFiles].map((f) => f.relativePath.toLowerCase()),
+      [...pouFiles, ...serverFiles, ...remoteDeviceFiles, ...dataTypeFiles].map((f) => f.relativePath),
     )
-    const deletionsBeforeSave = [...new Set(pendingDeletions)].filter((path) => !writtenPaths.has(path.toLowerCase()))
+    const deletionsBeforeSave = [...new Set(pendingDeletions)].filter((path) => !writtenPaths.has(path))
 
     const files: WriteProjectFiles = {
       projectPath: project.meta.path,

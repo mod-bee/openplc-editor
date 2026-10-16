@@ -381,7 +381,9 @@ describe('save-actions', () => {
       })
 
       // macOS/Windows treat these paths as one file; an exact-string filter would unlink the new write under the old name.
-      it('does not delete a path that differs from a written one only by case', async () => {
+      it('passes a deletion that differs from a written path only in case on, for the backend to resolve', async () => {
+        // On Linux `Recased.dt` and `recased.dt` are two files and the old one must go; on macOS / Windows
+        // they are one, and ProjectService.writeProjectFiles keeps it (write-project-files-case-rename.test.ts).
         store.getState().datatypeActions.create({ name: 'Recased', derivation: 'structure' })
         store.getState().datatypeActions.delete('Recased')
         store.getState().datatypeActions.create({ name: 'recased', derivation: 'structure' })
@@ -389,7 +391,7 @@ describe('save-actions', () => {
         const projectPort = makeProjectPort()
         await executeSaveProject(store, projectPort, capabilities)
 
-        expect(savedFiles(projectPort).deletions).not.toContain('datatypes/Recased.dt')
+        expect(savedFiles(projectPort).deletions).toContain('datatypes/Recased.dt')
         expect(savedFiles(projectPort).dataTypeFiles).toEqual(
           expect.arrayContaining([expect.objectContaining({ relativePath: 'datatypes/recased.dt' })]),
         )

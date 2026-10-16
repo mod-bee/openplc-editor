@@ -31,6 +31,23 @@ function isAbsolutePath(candidate: string): boolean {
   return resolve(candidate) === candidate
 }
 
+/** Whether two paths name one file on disk (one file under two spellings on a case-insensitive file system). */
+async function isSameFile(a: string, b: string): Promise<boolean> {
+  try {
+    const [sa, sb] = await Promise.all([promises.stat(a, { bigint: true }), promises.stat(b, { bigint: true })])
+    return sa.dev === sb.dev && sa.ino === sb.ino
+  } catch {
+    return false
+  }
+}
+
+/** Give a file its new name's case, through a temporary name (a case-insensitive file system ignores a direct one). */
+async function renameCaseOnly(from: string, to: string): Promise<void> {
+  const temporary = `${from}.case-rename`
+  await promises.rename(from, temporary)
+  await promises.rename(temporary, to)
+}
+
 class ProjectService {
   /**
    * `serviceManager` is the window native dialogs are parented to, and only
@@ -554,13 +571,28 @@ class ProjectService {
 
       await Promise.all(projectJson.map(writeEntry))
 
-      // Process deletions
+      // Process deletions. A deletion may name, in another case, a file this save just wrote: an element
+      // renamed only in case (`main` -> `Main`). On a case-insensitive file system (macOS, Windows) the two
+      // names are one file, the one just written, and deleting the old name would delete it; its name is
+      // put in the new case instead. On a case-sensitive one (Linux) they are two files, and the old one
+      // must go, or the project holds the element twice.
+      const writtenByLowerCase = new Map(
+        contents.map((entry) => [entry.relativePath.toLowerCase(), entry.relativePath]),
+      )
       for (const relativePath of deletions) {
         const filePath = join(dir, relativePath)
         try {
-          if (fileOrDirectoryExists(filePath)) {
-            await promises.unlink(filePath)
+          if (!fileOrDirectoryExists(filePath)) continue
+          const writtenAs = writtenByLowerCase.get(relativePath.toLowerCase())
+          if (writtenAs === relativePath) continue
+          if (writtenAs !== undefined) {
+            const writtenPath = join(dir, writtenAs)
+            if (await isSameFile(filePath, writtenPath)) {
+              await renameCaseOnly(filePath, writtenPath)
+              continue
+            }
           }
+          await promises.unlink(filePath)
         } catch (deleteError) {
           console.error(`Error deleting file ${filePath}:`, deleteError)
         }
