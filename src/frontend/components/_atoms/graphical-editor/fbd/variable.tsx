@@ -4,7 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { PLCVariable } from '../../../../../middleware/shared/ports/types'
 import { useDebugger } from '../../../../../middleware/shared/providers'
 import { useDebugCompositeKey } from '../../../../hooks/use-debug-composite-key'
-import { useDebugValue, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
+import { useDebugValue, useDebugVariableType, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
 import { forceDebugVariable, releaseDebugVariable } from '../../../../services/debug-force-variable'
 import { resolveScopeExpressionType } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
@@ -55,6 +55,8 @@ const VariableElement = (block: VariableProps) => {
   const getCompositeKey = useDebugCompositeKey()
   const compositeKey = getCompositeKey(data.variable.name)
   const { value: debugValue, isForced, forcedValue: forcedBoolValue, debugIndex } = useDebugValue(compositeKey)
+  // The type of a member or element, which the POU does not declare by that name (see useDebugVariableType).
+  const treeType = useDebugVariableType(compositeKey)
 
   const inputVariableRef = useRef<
     HTMLTextAreaElement & {
@@ -282,7 +284,7 @@ const VariableElement = (block: VariableProps) => {
     const variable = (pou.interface?.variables ?? []).find(
       (v: PLCVariable) => v.name.toLowerCase() === data.variable.name.toLowerCase(),
     )
-    return variable?.type.value
+    return variable?.type.value ?? treeType
   }
 
   const debuggerColor = (() => {

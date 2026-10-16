@@ -51,6 +51,15 @@ export function useForcedValue(compositeKey: string): boolean | undefined {
   return useOpenPLCStore(useCallback((s) => s.workspace.debugForcedVariables.get(compositeKey), [compositeKey]))
 }
 
+/**
+ * The type of the value a key reads, from the debug tree (`BOOL`, `STRING(64)`, `UDINT`, ...). A diagram's
+ * name can be a member or an element (`IO.dout[2].q`, `LINK.sts.wifiIp`) that the POU never declares by
+ * that name; the tree has walked to it and knows its type. Undefined outside a debug session.
+ */
+export function useDebugVariableType(compositeKey: string): string | undefined {
+  return useOpenPLCStore(useCallback((s) => s.workspace.debugVariableTree.get(compositeKey)?.type, [compositeKey]))
+}
+
 /** The protocol index for force/release transport. */
 export function useDebugVariableIndex(compositeKey: string): number | undefined {
   return useOpenPLCStore(useCallback((s) => s.workspace.debugVariableIndexes.get(compositeKey), [compositeKey]))
