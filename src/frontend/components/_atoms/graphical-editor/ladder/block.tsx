@@ -21,7 +21,7 @@ import { reconcileBranchesIfNeeded } from '../../../_molecules/graphical-editor/
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { InputWithRef } from '../../input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../tooltip'
-import { BlockOutputDebugBadges } from '../block-output-debug-badges'
+import { BlockPinDebugBadges } from '../block-pin-debug-badges'
 import { EdgePinMarker, pinEdge } from '../edge-pin-marker'
 import { InOutPinMarker } from '../in-out-pin-marker'
 import { BlockVariant as newBlockVariant } from '../types/block'
@@ -499,7 +499,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
   // once per rendered block; keyed on the flows reference it runs only when the
   // ladder is edited.
   const ladderFlows = useOpenPLCStore((state) => state.ladderFlows)
-  const connectedOutputKey = useMemo(() => {
+  const connectedPinKey = useMemo(() => {
     const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
     if (!rung) return ''
     const names: string[] = []
@@ -510,27 +510,38 @@ const Block = <T extends object>(block: BlockProps<T>) => {
         block?: { id?: string; handleId?: string }
         variable?: { name?: string }
       }
-      if (nd.variant !== 'output') continue
+      if (nd.variant !== 'output' && nd.variant !== 'input') continue
       if (nd.block?.id !== id) continue
       if (!nd.block?.handleId) continue
       if (!nd.variable?.name) continue
-      names.push(nd.block.handleId)
+      names.push(`${nd.variant}\u0001${nd.block.handleId}`)
     }
     return names.sort().join('\u0000')
   }, [ladderFlows, pouName, id])
 
-  const connectedOutputNames = useMemo(() => {
-    // Union with the cache: where it DOES carry an output entry, honour it.
-    const names = new Set<string>(connectedOutputKey ? connectedOutputKey.split('\u0000') : [])
-    if (Array.isArray(data.connectedVariables)) {
-      for (const cv of data.connectedVariables) {
-        if (cv.type === 'output' && cv.variable) {
-          names.add(cv.handleId)
-        }
+  // The pins on one side with a named element attached, which shows the value itself.
+  const connectedPinNames = (side: 'input' | 'output', connectedKey: string, connected: unknown): Set<string> => {
+    // Union with the cache: where it DOES carry an entry, honour it.
+    const names = new Set<string>()
+    for (const entry of connectedKey ? connectedKey.split('\u0000') : []) {
+      const [variant, handleId] = entry.split('\u0001')
+      if (variant === side && handleId) names.add(handleId)
+    }
+    if (Array.isArray(connected)) {
+      for (const cv of connected as Array<{ type?: string; variable?: unknown; handleId: string }>) {
+        if (cv.type === side && cv.variable) names.add(cv.handleId)
       }
     }
     return names
-  }, [connectedOutputKey, data.connectedVariables])
+  }
+  const connectedOutputNames = useMemo(
+    () => connectedPinNames('output', connectedPinKey, data.connectedVariables),
+    [connectedPinKey, data.connectedVariables],
+  )
+  const connectedInputNames = useMemo(
+    () => connectedPinNames('input', connectedPinKey, data.connectedVariables),
+    [connectedPinKey, data.connectedVariables],
+  )
 
   const inputVariableRef = useRef<
     HTMLTextAreaElement & {
@@ -1081,16 +1092,19 @@ const Block = <T extends object>(block: BlockProps<T>) => {
           }
         />
       ))}
-      <BlockOutputDebugBadges
+      <BlockPinDebugBadges
         blockType={(data.variant as BlockVariant).type}
         blockName={(data.variant as BlockVariant).name}
         blockVariableName={data.variable?.name ?? ''}
         numericId={data.numericId}
-        outputVariables={(data.variant as BlockVariant).variables}
+        variables={(data.variant as BlockVariant).variables}
+        inputHandles={(data as BasicNodeData).inputHandles}
+        outputHandles={(data as BasicNodeData).outputHandles}
         connectorStartY={DEFAULT_BLOCK_CONNECTOR_Y}
         connectorOffsetY={DEFAULT_BLOCK_CONNECTOR_Y_OFFSET}
         blockWidth={width ?? DEFAULT_BLOCK_WIDTH}
         connectedOutputNames={connectedOutputNames}
+        connectedInputNames={connectedInputNames}
       />
     </div>
   )

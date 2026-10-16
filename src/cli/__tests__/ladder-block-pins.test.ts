@@ -70,7 +70,7 @@ describe('applyLadderBody — a pin name shared by two blocks', () => {
 /**
  * Naming a pin's variable is only half of what the GUI does: it also records the
  * connection on the BLOCK, in `data.connectedVariables`. That list is what tells
- * the editor a pin already shows its own value — `BlockOutputDebugBadges` skips
+ * the editor a pin already shows its own value — `BlockPinDebugBadges` skips
  * an output it finds there. Leaving it empty drew the debug value twice on every
  * named output pin, once from the element and once from the block.
  */

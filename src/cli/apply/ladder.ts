@@ -101,8 +101,8 @@ function nameBlockPins(
    * What the GUI records on the BLOCK when a pin's variable is named
    * (`ladder/variable.tsx`'s `updateRelatedNode`). Naming the element is only
    * half the job: the block's `connectedVariables` is what tells the editor a
-   * pin already shows its own value, and `BlockOutputDebugBadges` skips an
-   * output found there. Leaving it empty drew the value twice on every named
+   * pin already shows its own value, and `BlockPinDebugBadges` skips a
+   * pin found there. Leaving it empty drew the value twice on every named
    * output pin — once from the element, once from the block.
    */
   const connections = new Map<string, { rungId: string; block: Node; entries: unknown[] }>()

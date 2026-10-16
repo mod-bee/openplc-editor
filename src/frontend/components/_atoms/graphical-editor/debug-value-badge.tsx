@@ -6,6 +6,11 @@ type DebugValueBadgeProps = {
   compositeKey: string
   variableType: string | undefined
   position?: 'right' | 'left' | 'below'
+  /**
+   * Show a BOOL too, as TRUE / FALSE. Off by default: a contact, a coil or a variable element colours
+   * itself, but a block pin has no colour of its own.
+   */
+  showBool?: boolean
 }
 
 /**
@@ -15,7 +20,12 @@ type DebugValueBadgeProps = {
  *
  * Designed to be used by both FBD and LD variable/block nodes.
  */
-const DebugValueBadge = ({ compositeKey, variableType, position = 'right' }: DebugValueBadgeProps) => {
+const DebugValueBadge = ({
+  compositeKey,
+  variableType,
+  position = 'right',
+  showBool = false,
+}: DebugValueBadgeProps) => {
   // Multi-mount: badges render only on the visible POU.  Inactive
   // editors stay alive in the DOM (display: none) so debug-state
   // subscriptions across N tabs would otherwise multiply polling work
@@ -26,12 +36,15 @@ const DebugValueBadge = ({ compositeKey, variableType, position = 'right' }: Deb
   if (!isActive) {
     return null
   }
-  if (!variableType || variableType.toUpperCase() === 'BOOL') {
+  const isBool = variableType?.toUpperCase() === 'BOOL'
+  if (!variableType || (isBool && !showBool)) {
     return null
   }
   if (value === undefined) {
     return null
   }
+  // The poller reports a BOOL as 1 / 0 or TRUE / FALSE.
+  const boolValue = isBool ? value === '1' || value.toUpperCase() === 'TRUE' : undefined
 
   const positionClasses: Record<string, string> = {
     right: 'left-full ml-1 top-1/2 -translate-y-1/2',
@@ -43,12 +56,12 @@ const DebugValueBadge = ({ compositeKey, variableType, position = 'right' }: Deb
     <div
       className={cn(
         'pointer-events-none absolute z-20 flex items-center whitespace-nowrap rounded px-1.5 py-0.5',
-        'bg-[#2E7D32] text-[10px] font-semibold leading-tight text-white',
-        'dark:bg-[#388E3C]',
+        'text-[10px] font-semibold leading-tight text-white',
+        boolValue === false ? 'bg-neutral-500 dark:bg-neutral-600' : 'bg-[#2E7D32] dark:bg-[#388E3C]',
         positionClasses[position],
       )}
     >
-      {value}
+      {boolValue === undefined ? value : boolValue ? 'TRUE' : 'FALSE'}
     </div>
   )
 }

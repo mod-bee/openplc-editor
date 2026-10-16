@@ -20,7 +20,7 @@ import { useBoundEditorModel, useBoundPou } from '../../../_features/[workspace]
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { InputWithRef } from '../../input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../tooltip'
-import { BlockOutputDebugBadges } from '../block-output-debug-badges'
+import { BlockPinDebugBadges } from '../block-pin-debug-badges'
 import { EdgePinMarker, pinEdge } from '../edge-pin-marker'
 import { InOutPinMarker } from '../in-out-pin-marker'
 import { BlockVariant } from '../types/block'
@@ -450,6 +450,19 @@ const Block = <T extends object>(block: BlockProps<T>) => {
       const targetNode = rung.nodes.find((n) => n.id === edge.target)
       if (targetNode && typeof targetNode.type === 'string' && targetNode.type.includes('variable')) {
         if (edge.sourceHandle) names.add(edge.sourceHandle)
+      }
+    }
+    return names
+  }, [rung, id])
+
+  // Inputs fed by a variable node, which shows the value itself
+  const connectedInputNames = useMemo(() => {
+    const names = new Set<string>()
+    if (!rung) return names
+    for (const edge of rung.edges.filter((e) => e.target === id)) {
+      const sourceNode = rung.nodes.find((n) => n.id === edge.source)
+      if (sourceNode && typeof sourceNode.type === 'string' && sourceNode.type.includes('variable')) {
+        if (edge.targetHandle) names.add(edge.targetHandle)
       }
     }
     return names
@@ -994,16 +1007,19 @@ const Block = <T extends object>(block: BlockProps<T>) => {
           }
         />
       ))}
-      <BlockOutputDebugBadges
+      <BlockPinDebugBadges
         blockType={(data.variant as BlockVariant).type}
         blockName={(data.variant as BlockVariant).name}
         blockVariableName={data.variable?.name ?? ''}
         numericId={data.numericId}
-        outputVariables={(data.variant as BlockVariant).variables}
+        variables={(data.variant as BlockVariant).variables}
+        inputHandles={data.inputHandles}
+        outputHandles={data.outputHandles}
         connectorStartY={DEFAULT_BLOCK_CONNECTOR_Y}
         connectorOffsetY={DEFAULT_BLOCK_CONNECTOR_Y_OFFSET}
         blockWidth={width ?? DEFAULT_BLOCK_WIDTH}
         connectedOutputNames={connectedOutputNames}
+        connectedInputNames={connectedInputNames}
       />
     </div>
   )
