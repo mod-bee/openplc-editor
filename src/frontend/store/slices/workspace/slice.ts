@@ -52,6 +52,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
     debugLocalMd5: null,
     debugGraphList: [],
     debugWatchList: [],
+    debugXrefKeys: [],
     debugDataStale: false,
     debugMd5Mismatch: null,
     debugTargetEndian: 'le',
@@ -170,6 +171,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           workspace.debugExpandedNodes = new Map()
           // Project-scoped: the next project reads its own watch file.
           workspace.debugWatchList = []
+          workspace.debugXrefKeys = []
           workspace.fbDebugInstances = new Map()
           workspace.fbSelectedInstance = new Map()
           workspace.debugHarness = null
@@ -360,6 +362,13 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
       setState(
         produce(({ workspace }: WorkspaceSlice) => {
           workspace.debugLocalMd5 = md5
+        }),
+      )
+    },
+    setDebugXrefKeys: (keys: string[]) => {
+      setState(
+        produce(({ workspace }: WorkspaceSlice) => {
+          workspace.debugXrefKeys = keys
         }),
       )
     },

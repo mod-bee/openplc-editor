@@ -31,6 +31,7 @@ import {
   getVariableRestrictionType,
   inOutVariableNames,
 } from '../utils'
+import { XrefContextMenu } from '../xref-menu-items'
 import { buildBlockNode } from './buildNodes'
 import { CustomHandle, type CustomHandleProps } from './handle'
 import { BasicNodeData, BlockNodeData, BlockProps } from './utils'
@@ -432,6 +433,8 @@ const Block = <T extends object>(block: BlockProps<T>) => {
   const [blockVariableValue, setBlockVariableValue] = useState<string>('')
   const [wrongVariable, setWrongVariable] = useState<boolean>(false)
   const [hoveringBlock, setHoveringBlock] = useState(false)
+  // Right-click: Find references / Go to declaration for the block's instance.
+  const [xrefMenu, setXrefMenu] = useState<{ x: number; y: number } | null>(null)
 
   const { rung, node, variables } = getFBDPouVariablesRungNodeAndEdges(pouName, pous, flow ? [flow] : [], {
     nodeId: id ?? '',
@@ -904,6 +907,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
         'opacity-40': id.startsWith('copycat'),
       })}
       onMouseEnter={() => setHoveringBlock(true)}
+      onContextMenu={(e) => {
+        if (!data.variable?.name?.trim()) return
+        e.preventDefault()
+        e.stopPropagation()
+        setXrefMenu({ x: e.clientX, y: e.clientY })
+      }}
       onMouseLeave={() => setHoveringBlock(false)}
     >
       {/* Execution-order badge. Only when the block carries an order (> 0 --
@@ -1007,6 +1016,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
           }
         />
       ))}
+      <XrefContextMenu
+        position={xrefMenu}
+        onClose={() => setXrefMenu(null)}
+        pou={pouName}
+        expression={data.variable?.name}
+      />
       <BlockPinDebugBadges
         blockType={(data.variant as BlockVariant).type}
         blockName={(data.variant as BlockVariant).name}

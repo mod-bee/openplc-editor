@@ -8,7 +8,8 @@ const createSearchSlice: StateCreator<SearchSlice, [], [], SearchSlice> = (setSt
   searchResults: [],
   sensitiveCase: false,
   regularExpression: false,
-  searchNodePosition: { x: 0, y: 0 },
+  revealTarget: null,
+  xrefRequest: null,
 
   searchActions: {
     setSearchQuery: (searchQuery) => {
@@ -52,10 +53,24 @@ const createSearchSlice: StateCreator<SearchSlice, [], [], SearchSlice> = (setSt
         searchResults: state.searchResults.filter((item) => item.searchID !== itemID),
       })),
 
-    setSearchNodePosition: (searchNodePosition) => {
+    showCrossReferences: (request) => {
       setState(
         produce((state: SearchSlice) => {
-          state.searchNodePosition = searchNodePosition
+          state.xrefRequest = { ...request, seq: (state.xrefRequest?.seq ?? 0) + 1 }
+        }),
+      )
+    },
+    closeCrossReferences: () => {
+      setState(
+        produce((state: SearchSlice) => {
+          state.xrefRequest = null
+        }),
+      )
+    },
+    revealInProject: (target) => {
+      setState(
+        produce((state: SearchSlice) => {
+          state.revealTarget = { ...target, seq: (state.revealTarget?.seq ?? 0) + 1 }
         }),
       )
     },
@@ -67,7 +82,8 @@ const createSearchSlice: StateCreator<SearchSlice, [], [], SearchSlice> = (setSt
           state.searchResults = []
           state.sensitiveCase = false
           state.regularExpression = false
-          state.searchNodePosition = { x: 0, y: 0 }
+          state.revealTarget = null
+          state.xrefRequest = null
         }),
       )
     },

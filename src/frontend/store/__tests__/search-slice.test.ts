@@ -18,7 +18,8 @@ function makeProject(overrides: Partial<Project> = {}): Project {
         'function-block': [],
       },
       dataTypes: [],
-      resource: { globalVariable: '', task: '', instance: '' },
+      globals: [],
+      resource: { task: '', instance: '' },
     },
     searchID: 'id-1',
     ...overrides,
@@ -41,7 +42,7 @@ describe('createSearchSlice', () => {
     expect(state.searchResults).toEqual([])
     expect(state.sensitiveCase).toBe(false)
     expect(state.regularExpression).toBe(false)
-    expect(state.searchNodePosition).toEqual({ x: 0, y: 0 })
+    expect(state.revealTarget).toBeNull()
   })
 
   // -------------------------------------------------------------------------
@@ -129,11 +130,14 @@ describe('createSearchSlice', () => {
   })
 
   // -------------------------------------------------------------------------
-  // setSearchNodePosition
+  // revealInProject
   // -------------------------------------------------------------------------
-  it('setSearchNodePosition', () => {
-    store.getState().searchActions.setSearchNodePosition({ x: 100, y: 200 })
-    expect(store.getState().searchNodePosition).toEqual({ x: 100, y: 200 })
+  it('revealInProject makes every Go to a new request, even to the same place', () => {
+    const target = { kind: 'pou' as const, pou: 'PUMP', rungId: 'r1', nodeId: 'n1' }
+    store.getState().searchActions.revealInProject(target)
+    const first = store.getState().revealTarget
+    store.getState().searchActions.revealInProject(target)
+    expect(store.getState().revealTarget).toEqual({ ...target, seq: (first?.seq ?? 0) + 1 })
   })
 
   // -------------------------------------------------------------------------
@@ -144,7 +148,7 @@ describe('createSearchSlice', () => {
     store.getState().searchActions.setSearchResults(makeProject())
     store.getState().searchActions.setSensitiveCase(true)
     store.getState().searchActions.setRegularExpression(true)
-    store.getState().searchActions.setSearchNodePosition({ x: 50, y: 50 })
+    store.getState().searchActions.revealInProject({ kind: 'globals', variable: 'x' })
 
     store.getState().searchActions.clearSearch()
 
@@ -153,6 +157,6 @@ describe('createSearchSlice', () => {
     expect(state.searchResults).toEqual([])
     expect(state.sensitiveCase).toBe(false)
     expect(state.regularExpression).toBe(false)
-    expect(state.searchNodePosition).toEqual({ x: 0, y: 0 })
+    expect(state.revealTarget).toBeNull()
   })
 })

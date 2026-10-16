@@ -8,6 +8,7 @@ import { cn } from '../../../utils/cn'
 import { canForceDebugLeaf, forcedStateOf } from '../../../utils/inout-force'
 import { isForcedValueHigh } from '../../../utils/variable-sizes'
 import { TreeNode } from '../../_atoms/debug-tree-node'
+import { XrefMenuItems,xrefOfDebugKey } from '../../_atoms/graphical-editor/xref-menu-items'
 import { ForceValueDialog } from '../force-value-dialog'
 
 type Variable = {
@@ -477,6 +478,7 @@ const VariablesPanel = ({
               </div>
             )
           })()}
+          <XrefMenuItems {...xrefOfDebugKey(contextMenuState.compositeKey)} onDone={handleCloseContextMenu} />
         </ContextMenu>
       )}
 

@@ -317,12 +317,15 @@ type IProjectSearchTreeVariableLeafProps = ComponentPropsWithoutRef<'li'> & {
   label?: string | null
   hasVariable?: boolean
   hasComment?: boolean
+  /** Where it is: `rung 3 · contact`, `line 12`. */
+  detail?: string
 }
 
 const ProjectSearchTreeVariableLeaf = ({
   label,
   hasVariable,
   hasComment,
+  detail,
   ...res
 }: IProjectSearchTreeVariableLeafProps) => {
   return (
@@ -341,6 +344,11 @@ const ProjectSearchTreeVariableLeaf = ({
           )}
           dangerouslySetInnerHTML={{ __html: label || '' }}
         />
+        {detail && (
+          <span className='ml-2 flex-shrink-0 whitespace-nowrap pr-2 font-caption text-xs text-neutral-500 dark:text-neutral-400'>
+            {detail}
+          </span>
+        )}
       </li>
     )
   )

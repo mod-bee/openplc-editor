@@ -53,7 +53,7 @@ export default function LadderEditor() {
   // identity stable when other POUs' flows (or unrelated slices) change.
   const flow = useOpenPLCStore((state) => state.ladderFlows.find((f) => f.name === pouName))
   const ladderFlowActions = useOpenPLCStore((state) => state.ladderFlowActions)
-  const searchNodePosition = useOpenPLCStore((state) => state.searchNodePosition)
+  const revealTarget = useOpenPLCStore((state) => state.revealTarget)
   const blockElementModal = useOpenPLCStore((state) => state.modals['block-ladder-element'])
   const contactElementModal = useOpenPLCStore((state) => state.modals['contact-ladder-element'])
   const coilElementModal = useOpenPLCStore((state) => state.modals['coil-ladder-element'])
@@ -148,15 +148,20 @@ export default function LadderEditor() {
   }, [flow?.rungs, userLibraries, systemLibraries, pous])
 
   const scrollableRef = useRef<HTMLDivElement>(null)
+  // Go to (a search hit, a cross reference): once this editor shows, scroll the element (or the rung) into
+  // the middle. The element, not the rung: a rung of many parallel branches is taller than the view.
   useEffect(() => {
-    if (scrollableRef.current) {
-      scrollableRef.current.scrollTo({
-        top: searchNodePosition.y,
-        left: searchNodePosition.x,
-        behavior: 'smooth',
-      })
-    }
-  }, [searchNodePosition])
+    if (!revealTarget || revealTarget.kind !== 'pou' || revealTarget.pou !== pouName || !revealTarget.rungId) return
+    const { rungId, nodeId } = revealTarget
+    const timer = window.setTimeout(() => {
+      const rung = scrollableRef.current?.querySelector(`[id="${CSS.escape(rungId)}"]`)
+      const node = nodeId ? rung?.querySelector(`.react-flow__node[data-id="${CSS.escape(nodeId)}"]`) : null
+      ;(node ?? rung)?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+    }, 150)
+    return () => window.clearTimeout(timer)
+    // Once per Go to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealTarget?.seq])
 
   /**
    * Queue the flow → project JSON write-back. The scheduler debounces it

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PLCPou } from '../../../../../../middleware/shared/ports/types'
 import { useAI, useCapabilities, useEdgeAccountPort, useProject } from '../../../../../../middleware/shared/providers'
+import { useRevealInProject } from '../../../../../hooks/use-reveal-in-project'
 import { useStDebugDecorations } from '../../../../../hooks/use-st-debug-decorations'
 import { registerAIInlineCompletions } from '../../../../../services/ai/inline-completions'
 import { getCppMemberCompletions, projectTypeNamePredicate } from '../../../../../services/cpp-scope'
@@ -17,6 +18,8 @@ import { applyAcceptedHunks, computeHunks } from '../../../../../utils/ai-diff-r
 import { memberChainBefore } from '../../../../../utils/cpp/member-chain'
 import { getExtensionFromLanguage, getFolderFromPouType } from '../../../../../utils/PLC/pou-file-extensions'
 import { parseHybridPouFromString, parseTextualPouFromString } from '../../../../../utils/PLC/pou-text-parser'
+import { nameChainAt } from '../../../../../utils/project-xref'
+import { declarationTargetOf } from '../../../../_atoms/graphical-editor/xref-menu-items'
 import { Modal, ModalContent, ModalTitle } from '../../../../_molecules/modal'
 import { toast } from '../../../[app]/toast/use-toast'
 import { renderDiffReview } from './ai-diff-review'
@@ -82,6 +85,7 @@ const MonacoEditor = (props: monacoEditorProps): ReturnType<typeof PrimitiveEdit
   const edgeAccount = useEdgeAccountPort()
   const projectPort = useProject()
   const store = useOpenPLCStoreApi()
+  const reveal = useRevealInProject()
 
   const {
     editor,
@@ -688,6 +692,34 @@ const MonacoEditor = (props: monacoEditorProps): ReturnType<typeof PrimitiveEdit
     setEditorInstanceId((id) => id + 1)
 
     if (!editorInstance || !monacoInstance) return
+
+    // Right-click on a name: where it is used in the whole project, or where it is declared.
+    const nameAtCursor = (): string | undefined => {
+      const position = editorInstance.getPosition()
+      const line = position ? editorInstance.getModel()?.getLineContent(position.lineNumber) : undefined
+      return position && line !== undefined ? nameChainAt(line, position.column) : undefined
+    }
+    editorInstance.addAction({
+      id: 'openplc.findReferencesInProject',
+      label: 'Find References in Project',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.7,
+      run: () => {
+        const expression = nameAtCursor()
+        if (expression) store.getState().searchActions.showCrossReferences({ pou: name, expression })
+      },
+    })
+    editorInstance.addAction({
+      id: 'openplc.goToVariableDeclaration',
+      label: 'Go to Variable Declaration',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.8,
+      run: () => {
+        const expression = nameAtCursor()
+        const target = expression ? declarationTargetOf(store.getState(), name, expression) : undefined
+        if (target) reveal(target)
+      },
+    })
 
     const model = editorInstance.getModel()
     if (model) {

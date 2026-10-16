@@ -7,10 +7,11 @@ import {
   OnChangeFn,
   useReactTable,
 } from '@tanstack/react-table'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { ProjectResponse } from '../../../store/slices/project'
 import { cn } from '../../../utils/cn'
+import { XrefContextMenu } from '../graphical-editor/xref-menu-items'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../table'
 
 type GenericTableProps<T> = {
@@ -24,6 +25,8 @@ type GenericTableProps<T> = {
   filterValue?: string
   columnFilters?: ColumnFiltersState
   setColumnFilters?: OnChangeFn<ColumnFiltersState> | undefined
+  /** Right-click on a row (not in a field being edited): Find references / Go to declaration of its variable. */
+  rowXref?: { pou: string | undefined; nameOf: (row: T) => string | undefined }
 }
 
 function GenericTable<T>({
@@ -36,8 +39,10 @@ function GenericTable<T>({
   filterValue,
   columnFilters,
   setColumnFilters,
+  rowXref,
 }: GenericTableProps<T>) {
   const tableHeaderRef = useRef<HTMLTableSectionElement>(null)
+  const [xrefMenu, setXrefMenu] = useState<{ x: number; y: number; name: string } | null>(null)
   const tableBodyRef = useRef<HTMLTableSectionElement>(null)
   const tableBodyRowRef = useRef<HTMLTableRowElement>(null)
 
@@ -118,6 +123,7 @@ function GenericTable<T>({
   })
 
   return (
+    <>
     <Table context={tableContext} className='mr-1 w-full'>
       <TableHeader ref={tableHeaderRef}>
         {table.getHeaderGroups().map((headerGroup) => (
@@ -147,6 +153,15 @@ function GenericTable<T>({
             key={row.id}
             className='h-8 cursor-pointer'
             onClick={(e) => handleRowClick(e.currentTarget)}
+            onContextMenu={(e) => {
+              if (!rowXref) return
+              // A field keeps its own menu (copy, paste).
+              if ((e.target as HTMLElement).closest('input, textarea, select')) return
+              const name = rowXref.nameOf(row.original)
+              if (!name?.trim()) return
+              e.preventDefault()
+              setXrefMenu({ x: e.clientX, y: e.clientY, name })
+            }}
             selected={selectedRow === parseInt(row.id)}
             ref={selectedRow === parseInt(row.id) ? tableBodyRowRef : null}
           >
@@ -171,6 +186,13 @@ function GenericTable<T>({
         ))}
       </TableBody>
     </Table>
+    <XrefContextMenu
+      position={xrefMenu}
+      onClose={() => setXrefMenu(null)}
+      pou={rowXref?.pou}
+      expression={xrefMenu?.name}
+    />
+    </>
   )
 }
 

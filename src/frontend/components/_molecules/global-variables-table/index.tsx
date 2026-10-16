@@ -145,6 +145,7 @@ const GlobalVariablesTable = ({ tableData, selectedRow, handleRowClick }: PLCVar
       tableData={tableData}
       selectedRow={selectedRow}
       handleRowClick={handleRowClick}
+      rowXref={{ pou: undefined, nameOf: (variable) => variable.name }}
       updateData={(rowIndex, columnId, value) => {
         captureAndPush(name)
         const result = updateVariable({ scope: 'global', rowId: rowIndex, data: { [columnId]: value } })
@@ -182,6 +183,7 @@ const GlobalVariableListTable = ({
       tableData={tableData}
       selectedRow={selectedRow}
       handleRowClick={handleRowClick}
+      rowXref={{ pou: undefined, nameOf: (variable) => variable.name }}
       updateData={(rowIndex, columnId, value) => {
         const result = updateVariable({
           scope: 'global-variable-list',

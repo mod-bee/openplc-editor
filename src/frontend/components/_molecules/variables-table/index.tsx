@@ -166,6 +166,7 @@ const VariablesTable = ({
       tableData={tableData}
       selectedRow={selectedRow}
       handleRowClick={handleRowClick}
+      rowXref={{ pou: name, nameOf: (variable) => variable.name }}
       updateData={(rowIndex, columnId, value) => {
         captureAndPush(name)
 

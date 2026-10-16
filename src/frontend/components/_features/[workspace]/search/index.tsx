@@ -1,7 +1,8 @@
 import { CloseIcon } from '../../../../assets/icons/interface/Close'
+import { useRevealInProject } from '../../../../hooks/use-reveal-in-project'
 import { useOpenPLCStore } from '../../../../store'
 import type { Project } from '../../../../store/slices/search'
-import { extractSearchQuery } from '../../../../store/slices/search/utils'
+import { escapeRegExp, extractSearchQuery } from '../../../../store/slices/search/utils'
 import type { TabsProps } from '../../../../store/slices/tabs'
 import { CreateEditorObjectFromTab } from '../../../../store/slices/tabs/utils'
 import { Accordion } from '../../../_atoms/accordion'
@@ -45,7 +46,19 @@ interface SearchProps {
   items: Project[]
 }
 
+const escapeHtml = (text: string) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** A hit's text as HTML, the query marked: project text (code, comments) is shown as text, never as markup. */
+const highlight = (text: string, query: string): string => {
+  const safe = escapeHtml(text)
+  if (!query) return safe
+  const regex = new RegExp(`(${escapeRegExp(escapeHtml(query))})`, 'gi')
+  return safe.replace(regex, (m) => `<span class='bg-brand-light dark:bg-brand-medium-dark border-0 rounded-sm'>${m}</span>`)
+}
+
 const Search = ({ items }: SearchProps) => {
+  const reveal = useRevealInProject()
   const {
     searchActions: { removeSearchResult, setSearchQuery },
     tabsActions: { updateTabs },
@@ -115,59 +128,37 @@ const Search = ({ items }: SearchProps) => {
                         key={pouType}
                         branchTarget={pouType as 'function' | 'program' | 'function-block'}
                       >
-                        {(item.functions.pous[pouType as 'function' | 'program' | 'function-block'] ?? []).map(
-                          (pou, pouIndex) =>
-                            pou.variable || pou.language === 'st' || pou.language === 'il' ? (
-                              <ProjectSearchTreeVariableBranch
-                                key={pouIndex}
-                                label={extractSearchQuery(pou.name, item.searchQuery)}
-                                leafLang={pou.language}
-                                onClick={() => {
-                                  handleCreateTab({
-                                    name: pou.name,
-                                    path: `/data/pous/${pou.pouType}/${pou.name}`,
-                                    elementType: { type: pou.pouType, language: pou.language },
-                                  })
-                                }}
-                              >
-                                {pou.variable &&
-                                  pou.variable
-                                    .split(', ')
-                                    .map((variable, variableIndex) => (
-                                      <ProjectSearchTreeVariableLeaf
-                                        key={variableIndex}
-                                        label={extractSearchQuery(variable, item.searchQuery)}
-                                        hasVariable
-                                        onClick={() => setSearchQuery(variable)}
-                                      />
-                                    ))}
-                                {(pou.language === 'st' || pou.language === 'il') &&
-                                  pou.body
-                                    .split(', ')
-                                    .map((line, lineIndex) => (
-                                      <ProjectSearchTreeVariableLeaf
-                                        key={lineIndex}
-                                        label={extractSearchQuery(line, item.searchQuery)}
-                                        hasComment
-                                        onClick={() => setSearchQuery(line)}
-                                      />
-                                    ))}
-                              </ProjectSearchTreeVariableBranch>
-                            ) : (
-                              <ProjectSearchTreeLeaf
-                                key={pouIndex}
-                                label={extractSearchQuery(pou.name, item.searchQuery)}
-                                leafLang={pou.language}
-                                onClick={() => {
-                                  handleCreateTab({
-                                    name: pou.name,
-                                    path: `/data/pous/${pou.pouType}/${pou.name}`,
-                                    elementType: { type: pou.pouType, language: pou.language },
-                                  })
-                                  setSearchQuery(item.searchQuery)
-                                }}
-                              />
-                            ),
+                        {(item.functions.pous[pouType as 'function' | 'program' | 'function-block'] ?? []).map((pou) =>
+                          pou.hits.length > 0 ? (
+                            <ProjectSearchTreeVariableBranch
+                              key={pou.name}
+                              label={highlight(pou.name, item.searchQuery)}
+                              leafLang={pou.language}
+                              onClick={() => reveal({ kind: 'pou', pou: pou.name })}
+                            >
+                              {pou.hits.map((hit, hitIndex) => (
+                                <ProjectSearchTreeVariableLeaf
+                                  key={hitIndex}
+                                  label={highlight(hit.text, item.searchQuery)}
+                                  detail={hit.where}
+                                  hasVariable={hit.target.kind === 'pou' && hit.target.variable !== undefined}
+                                  hasComment={hit.target.kind === 'pou' && hit.target.variable === undefined}
+                                  onClick={(e) => {
+                                    // The POU row around it opens the POU only; this goes to the hit.
+                                    e.stopPropagation()
+                                    reveal(hit.target)
+                                  }}
+                                />
+                              ))}
+                            </ProjectSearchTreeVariableBranch>
+                          ) : (
+                            <ProjectSearchTreeLeaf
+                              key={pou.name}
+                              label={highlight(pou.name, item.searchQuery)}
+                              leafLang={pou.language}
+                              onClick={() => reveal({ kind: 'pou', pou: pou.name })}
+                            />
+                          ),
                         )}
                       </ProjectSearchTreeBranch>
                     ))}
@@ -192,25 +183,19 @@ const Search = ({ items }: SearchProps) => {
                       </ProjectSearchTreeBranch>
                     )}
 
-                    {(item.functions.resource.globalVariable ||
+                    {(item.functions.globals.length > 0 ||
                       item.functions.resource.task ||
                       item.functions.resource.instance) && (
                       <ProjectSearchTreeBranch branchTarget='resource'>
-                        {item.functions.resource.globalVariable && (
+                        {item.functions.globals.length > 0 && (
                           <ProjectSearchTreeVariableBranch label='Global Variables' leafLang='res'>
-                            {item.functions.resource.globalVariable.split(', ').map((variable, variableIndex) => (
+                            {item.functions.globals.map((hit, hitIndex) => (
                               <ProjectSearchTreeVariableLeaf
-                                key={variableIndex}
-                                label={extractSearchQuery(variable, item.searchQuery)}
+                                key={hitIndex}
+                                label={highlight(hit.text, item.searchQuery)}
+                                detail={hit.where}
                                 hasVariable
-                                onClick={() => {
-                                  handleCreateTab({
-                                    name: 'Resource',
-                                    path: `/data/configuration/resource`,
-                                    elementType: { type: 'resource' },
-                                  })
-                                  setSearchQuery(item.searchQuery)
-                                }}
+                                onClick={() => reveal(hit.target)}
                               />
                             ))}
                           </ProjectSearchTreeVariableBranch>

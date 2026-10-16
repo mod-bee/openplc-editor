@@ -17,6 +17,7 @@ import { ClearConsoleButton } from '../components/_atoms/buttons/console/clear-c
 import { BranchStatusBar } from '../components/_features/[workspace]/branches'
 import { BranchMergeView } from '../components/_features/[workspace]/branches/branch-merge-view'
 import { CommitHistoryView } from '../components/_features/[workspace]/commit-history'
+import { CrossReferences } from '../components/_features/[workspace]/cross-references'
 import { DataTypeEditor } from '../components/_features/[workspace]/data-type'
 import { BuildSettingsEditor } from '../components/_features/[workspace]/editor/build-settings'
 import { DeviceEditor } from '../components/_features/[workspace]/editor/device'
@@ -404,12 +405,24 @@ const WorkspaceScreen = () => {
   }, [debugWatchList.length, isDebuggerVisible])
   const consoleFollowRequestId = useOpenPLCStore((state) => state.followRequestId)
   const hasSearchResults = searchResults.length > 0
+  const xrefRequest = useOpenPLCStore((state) => state.xrefRequest)
 
   const togglePanel = () => {
     if (panelRef.current) {
       panelRef.current.resize(25)
     }
   }
+
+  // Find references: show the panel, the bottom panel opened if it was folded away.
+  useEffect(() => {
+    if (!xrefRequest) {
+      setActiveTab((prev) => (prev === 'xref' ? 'console' : prev))
+      return
+    }
+    setActiveTab('xref')
+    if (consolePanelRef.current?.isCollapsed()) consolePanelRef.current.expand()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xrefRequest?.seq])
 
   useEffect(() => {
     if (hasSearchResults) {
@@ -799,7 +812,7 @@ const WorkspaceScreen = () => {
                       onValueChange={setActiveTab}
                       className='relative flex h-full min-h-0 w-full flex-col gap-2 overflow-hidden'
                     >
-                      <Tabs.List className='flex h-7 w-64 select-none gap-4'>
+                      <Tabs.List className='flex h-7 w-fit select-none gap-4'>
                         <Tabs.Trigger
                           value='console'
                           className='h-7 w-16 rounded-md bg-neutral-100 text-xs font-medium text-brand-light data-[state=active]:bg-blue-500 data-[state=active]:text-white dark:bg-neutral-900 dark:text-neutral-700 dark:data-[state=active]:bg-blue-500 dark:data-[state=active]:text-white'
@@ -820,6 +833,14 @@ const WorkspaceScreen = () => {
                             className='h-7 w-16 rounded-md bg-neutral-100 text-xs font-medium text-brand-light data-[state=active]:bg-blue-500 data-[state=active]:text-white dark:bg-neutral-900 dark:text-neutral-700 dark:data-[state=active]:bg-blue-500 dark:data-[state=active]:text-white'
                           >
                             Search
+                          </Tabs.Trigger>
+                        )}
+                        {xrefRequest && (
+                          <Tabs.Trigger
+                            value='xref'
+                            className='h-7 whitespace-nowrap rounded-md bg-neutral-100 px-2 text-xs font-medium text-brand-light data-[state=active]:bg-blue-500 data-[state=active]:text-white dark:bg-neutral-900 dark:text-neutral-700 dark:data-[state=active]:bg-blue-500 dark:data-[state=active]:text-white'
+                          >
+                            Cross references
                           </Tabs.Trigger>
                         )}
                         {isPlcLogsVisible && (
@@ -881,6 +902,14 @@ const WorkspaceScreen = () => {
                               <Search items={searchResults} />
                             </ResizablePanel>
                           </ResizablePanelGroup>
+                        </Tabs.Content>
+                      )}
+                      {xrefRequest && (
+                        <Tabs.Content
+                          value='xref'
+                          className='flex h-full min-h-0 w-full overflow-hidden data-[state=inactive]:hidden'
+                        >
+                          <CrossReferences />
                         </Tabs.Content>
                       )}
                       {isPlcLogsVisible && (

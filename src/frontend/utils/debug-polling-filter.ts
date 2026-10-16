@@ -42,6 +42,8 @@ export interface DebugPollingState {
     debugGraphList: string[]
     /** The project's watch list (`debugger/watch.json`); absent reads as empty. */
     debugWatchList?: string[]
+    /** What the Cross references panel shows online; absent reads as empty. */
+    debugXrefKeys?: string[]
     fbSelectedInstance: Map<string, string>
     fbDebugInstances: Map<string, FbInstanceInfo[]>
     /** Generated program the session is running, when it runs one the
@@ -96,6 +98,7 @@ export function buildActiveIndexSet(
     debugExpandedNodes,
     debugGraphList,
     debugWatchList = [],
+    debugXrefKeys = [],
     fbSelectedInstance,
     fbDebugInstances,
     debugHarness,
@@ -152,6 +155,9 @@ export function buildActiveIndexSet(
   //     is opened, like any other watched one (4. below).
   // -----------------------------------------------------------------------
   for (const compositeKey of debugWatchList) {
+    activeKeys.add(compositeKey)
+  }
+  for (const compositeKey of debugXrefKeys) {
     activeKeys.add(compositeKey)
   }
 

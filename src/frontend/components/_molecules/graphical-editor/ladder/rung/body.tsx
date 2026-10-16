@@ -35,7 +35,7 @@ import {
   renderPlaceholderElements,
   searchNearestPlaceholder,
 } from './ladder-utils/elements/placeholder'
-import { findNode, getRungNodesBounds } from './ladder-utils/nodes'
+import { getRungNodesBounds } from './ladder-utils/nodes'
 import { isSameSelection } from './selection'
 
 /**
@@ -102,8 +102,7 @@ export const RungBody = ({ rung, className, nodeDivergences = [], isDebuggerActi
   const updateModelVariables = useOpenPLCStore((state) => state.editorActions.updateModelVariables)
   const deleteVariable = useOpenPLCStore((state) => state.projectActions.deleteVariable)
   const openModal = useOpenPLCStore((state) => state.modalActions.openModal)
-  const searchQuery = useOpenPLCStore((state) => state.searchQuery)
-  const setSearchNodePosition = useOpenPLCStore((state) => state.searchActions.setSearchNodePosition)
+  const revealTarget = useOpenPLCStore((state) => state.revealTarget)
   const pous = useOpenPLCStore((state) => state.project.data.pous)
   const hasProgramInstance = useOpenPLCStore((state) =>
     state.project.data.configurations.resource.instances.some((instance) => instance.program === pouName),
@@ -262,35 +261,20 @@ export const RungBody = ({ rung, className, nodeDivergences = [], isDebuggerActi
     })
   }, [rungLocal.selectedNodes])
 
+  // Go to (a search hit, a cross reference): select the element and bring it into view sideways; the rung
+  // list scrolls the rung itself into view.
   useEffect(() => {
-    if (!searchQuery) return
-
-    const foundNode = rungLocal.nodes.find((node) => (node.data as BasicNodeData)?.variable?.name === searchQuery)
-
-    if (foundNode) {
-      const nodePosition = findNode(rungLocal, foundNode.id).node?.position
-
-      if (!nodePosition) return
-
+    if (!revealTarget || revealTarget.kind !== 'pou' || revealTarget.pou !== pouName) return
+    if (revealTarget.rungId !== rung.id) return
+    const node = revealTarget.nodeId ? rung.nodes.find((n) => n.id === revealTarget.nodeId) : undefined
+    ladderFlowActions.setSelectedNodes({ editorName: pouName, rungId: rung.id, nodes: node ? [node] : [] })
+    if (node) {
       const zoom = reactFlowInstance?.getZoom() ?? 1
-      const pan = reactFlowInstance?.toObject() ?? { x: 0, y: 0 }
-
-      const adjustedSearchNodePosition = {
-        x: nodePosition.x * zoom + ('x' in pan ? pan.x : 0),
-        y: nodePosition.y * zoom + ('y' in pan ? pan.y : 0),
-      }
-
-      setSearchNodePosition(adjustedSearchNodePosition)
-
-      reactFlowViewportRef.current?.scrollTo({
-        top: adjustedSearchNodePosition.y,
-        left: adjustedSearchNodePosition.x - 100,
-        behavior: 'smooth',
-      })
-    } else {
-      setSearchNodePosition({ x: 0, y: 0 })
+      reactFlowViewportRef.current?.scrollTo({ left: Math.max(0, node.position.x * zoom - 100), behavior: 'smooth' })
     }
-  }, [searchQuery, rungLocal, reactFlowInstance])
+    // Once per Go to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealTarget?.seq])
 
   /**
    * Cleanup effect: Reset dragging state when drag ends anywhere (even outside rung)

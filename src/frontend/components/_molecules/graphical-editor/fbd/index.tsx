@@ -234,6 +234,26 @@ export const FBDBody = ({ rung, nodeDivergences = [], isDebuggerActive = false }
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null)
   const reactFlowViewportRef = useRef<HTMLDivElement>(null)
 
+  // Go to (a search hit, a cross reference): select the element and centre it.
+  const revealTarget = useOpenPLCStore((state) => state.revealTarget)
+  useEffect(() => {
+    if (!revealTarget || revealTarget.kind !== 'pou' || revealTarget.pou !== pouName || !revealTarget.nodeId) return
+    const node = rung.nodes.find((n) => n.id === revealTarget.nodeId)
+    if (!node) return
+    fbdFlowActions.setSelectedNodes({ editorName: pouName, nodes: [node] })
+    const timer = window.setTimeout(() => {
+      const width = node.measured?.width ?? node.width ?? 0
+      const height = node.measured?.height ?? node.height ?? 0
+      void reactFlowInstance?.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+        zoom: reactFlowInstance.getZoom(),
+        duration: 300,
+      })
+    }, 100)
+    return () => window.clearTimeout(timer)
+    // Once per Go to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealTarget?.seq])
+
   // Refs, not state: the values are only read inside the paste handler, and
   // state here re-rendered the whole FBDBody on every pointer move over the
   // canvas (~75 commits/s of pure overhead while idle).

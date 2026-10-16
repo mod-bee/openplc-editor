@@ -22,6 +22,7 @@ import { ForcedMarker } from '../../forced-marker'
 import { HighlightedTextArea } from '../../highlighted-textarea'
 import { DebugValuePill } from '../debug-value-pill'
 import { DebugWatchMenuItem } from '../debug-watch-menu-item'
+import { XrefMenuItems } from '../xref-menu-items'
 import { VariablesBlockAutoComplete } from './autocomplete'
 import { CustomHandle } from './handle'
 import { getLadderPouVariablesRungNodeAndEdges, validateVariableType } from './utils'
@@ -309,6 +310,16 @@ const VariableElement = (block: VariableProps) => {
     setIsContextMenuOpen(true)
   }
 
+  // Right-click, offline and online: the element's menu (Find references; online Force and Watch too).
+  const xrefExpression = data.variable.name?.trim() ? data.variable.name : pinVariableName
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!xrefExpression) return
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenuPosition({ x: e.clientX, y: e.clientY })
+    setIsContextMenuOpen(true)
+  }
+
   const variableType = getVariableType()
   const isBoolVariable = debugType()?.toUpperCase() === 'BOOL'
 
@@ -319,6 +330,7 @@ const VariableElement = (block: VariableProps) => {
         // The node's own box, where the layout put its handle; the name is drawn from its wire end.
         style={{ width: block.width ?? DEFAULT_VARIABLE_WIDTH, height: DEFAULT_VARIABLE_HEIGHT }}
         onClick={isDebuggerVisible ? handleClick : undefined}
+        onContextMenu={handleContextMenu}
       >
         {isDebuggerVisible ? (
           /*
@@ -433,7 +445,7 @@ const VariableElement = (block: VariableProps) => {
           </div>
         )}
 
-        {isDebuggerVisible && contextMenuPosition && (
+        {contextMenuPosition && (
           <Popover.Root open={isContextMenuOpen} onOpenChange={setIsContextMenuOpen}>
             <Popover.Portal>
               <Popover.Content
@@ -452,56 +464,66 @@ const VariableElement = (block: VariableProps) => {
                 }}
                 onOpenAutoFocus={(e) => e.preventDefault()}
               >
-                <DebugInOutNote debugIndex={debugIndex} />
-                {canForceDebugLeaf(debugIndex) && (
+                {isDebuggerVisible && (
                   <>
-                    {isBoolVariable ? (
+                    <DebugInOutNote debugIndex={debugIndex} />
+                    {canForceDebugLeaf(debugIndex) && (
                       <>
-                        <div
-                          className='flex w-full cursor-pointer items-center gap-2 rounded-t-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
-                          onClick={(e) => void handleForceTrue(e)}
-                        >
-                          <p>Force True</p>
-                        </div>
-                        <div
-                          className='flex w-full cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
-                          onClick={(e) => void handleForceFalse(e)}
-                        >
-                          <p>Force False</p>
-                        </div>
-                        {isForced && (
-                          <div
-                            className='flex w-full cursor-pointer items-center gap-2 rounded-b-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
-                            onClick={(e) => void handleReleaseForce(e)}
-                          >
-                            <p>Release Force</p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div
-                          className='flex w-full cursor-pointer items-center gap-2 rounded-t-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
-                          onClick={handleForceValueOpen}
-                        >
-                          <p>Force value...</p>
-                        </div>
-                        {isForced && (
-                          <div
-                            className='flex w-full cursor-pointer items-center gap-2 rounded-b-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
-                            onClick={(e) => void handleReleaseForce(e)}
-                          >
-                            <p>Release Force</p>
-                          </div>
+                        {isBoolVariable ? (
+                          <>
+                            <div
+                              className='flex w-full cursor-pointer items-center gap-2 rounded-t-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+                              onClick={(e) => void handleForceTrue(e)}
+                            >
+                              <p>Force True</p>
+                            </div>
+                            <div
+                              className='flex w-full cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+                              onClick={(e) => void handleForceFalse(e)}
+                            >
+                              <p>Force False</p>
+                            </div>
+                            {isForced && (
+                              <div
+                                className='flex w-full cursor-pointer items-center gap-2 rounded-b-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+                                onClick={(e) => void handleReleaseForce(e)}
+                              >
+                                <p>Release Force</p>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div
+                              className='flex w-full cursor-pointer items-center gap-2 rounded-t-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+                              onClick={handleForceValueOpen}
+                            >
+                              <p>Force value...</p>
+                            </div>
+                            {isForced && (
+                              <div
+                                className='flex w-full cursor-pointer items-center gap-2 rounded-b-lg px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+                                onClick={(e) => void handleReleaseForce(e)}
+                              >
+                                <p>Release Force</p>
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     )}
+                    <DebugWatchMenuItem
+                      compositeKey={debugKey}
+                      onDone={() => setIsContextMenuOpen(false)}
+                      first={!canForceDebugLeaf(debugIndex)}
+                    />
                   </>
                 )}
-                <DebugWatchMenuItem
-                  compositeKey={debugKey}
+                <XrefMenuItems
+                  pou={pouName}
+                  expression={xrefExpression}
                   onDone={() => setIsContextMenuOpen(false)}
-                  first={!canForceDebugLeaf(debugIndex)}
+                  first={!isDebuggerVisible}
                 />
               </Popover.Content>
             </Popover.Portal>
