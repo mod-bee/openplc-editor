@@ -199,7 +199,8 @@ describe('interfaces, methods and inheritance in a library project', () => {
     expect(pou('OM_BASE')?.isAbstract).toBe(true)
     expect(pou('OM_VSD')?.extends).toBe('OM_BASE')
     expect(pou('OM_BASE')?.implements).toEqual(['OI_MOTOR'])
-    expect(pou('OM_VSD')?.variables.find((v) => v.name === 'START')?.edge).toBe('R_EDGE')
+    // Pins as the library declared them (IEC names are case-insensitive; see stlib-to-system-library).
+    expect(pou('OM_VSD')?.variables.find((v) => v.name === 'Start')?.edge).toBe('R_EDGE')
     expect(pou('OP_PUMP')?.executionControl).toBe(true)
     expect(pou('OM_VSD')?.methods?.map((m) => m.name)).toEqual(['CODE', 'ISRUNNING'])
   })
@@ -287,8 +288,8 @@ describe('a project wiring a library instance to an interface pin in Ladder', ()
     const transpiled = transpileToSt(fromSchemaShape(ipc as unknown as SchemaProjectData))
     expect(transpiled.errors).toEqual([])
     const st = transpiled.programSt ?? ''
-    expect(st).toContain('Motor1(EN := TRUE, HZ := 50);')
-    expect(st).toContain('Pump1(EN := Go, MOTOR := Motor1);')
+    expect(st).toContain('Motor1(EN := TRUE, Hz := 50);')
+    expect(st).toContain('Pump1(EN := Go, Motor := Motor1);')
 
     const archive = loadStlibFromString(JSON.stringify(lib.archive))
     const result = compile(st, { libraries: [archive] })
