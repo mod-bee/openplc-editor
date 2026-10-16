@@ -120,6 +120,60 @@ describe('buildDebugTree', () => {
     })
   })
 
+  describe('a library STRUCT', () => {
+    // IO.dout[2].q: an array of a library's STRUCT (UT_IO_DO) inside the project's own struct. The
+    // tree walks it through `SystemLibrary.dataTypes`, behind the project's own types.
+    const library = {
+      name: 'lib',
+      author: '',
+      version: '1',
+      stPath: '',
+      cPath: '',
+      pous: [],
+      dataTypes: [
+        {
+          name: 'UT_IO_DO',
+          derivation: 'structure' as const,
+          variable: [
+            { name: 'q', type: { definition: 'base-type' as const, value: 'BOOL' } },
+            { name: 'holdOff', type: { definition: 'base-type' as const, value: 'TIME' } },
+          ],
+        },
+      ],
+    }
+
+    it('expands its members, by the names the library declared', () => {
+      const array = makeArrayVariable('dout', 'UT_IO_DO', '1..2', 'external')
+      const variable = {
+        ...array,
+        type: {
+          ...array.type,
+          data: {
+            baseType: { definition: 'user-data-type' as const, value: 'UT_IO_DO' },
+            dimensions: [{ dimension: '1..2' }],
+          },
+        },
+      }
+      const debugVars = [makeDebugVar('DOUT[2].Q', 'BOOL_ENUM', 7), makeDebugVar('DOUT[2].HOLDOFF', 'TIME_ENUM', 8)]
+      const node = buildDebugTree(variable, 'Main', INSTANCE_NAME, debugVars, { dataTypes: [], pous: [] }, [
+        ...SYSTEM_LIBS,
+        library,
+      ])
+      const second = node.children?.[1]
+      expect(second?.children?.map((c) => [c.compositeKey, c.debugIndex])).toEqual([
+        ['Config0:dout[2].q', 7],
+        ['Config0:dout[2].holdOff', 8],
+      ])
+    })
+
+    it('loses to a project type of the same name', () => {
+      const variable = makeUdtVariable('d', 'UT_IO_DO', 'external')
+      const own = makeStructDataType('UT_IO_DO', [makeBaseVariable('mine', 'INT')])
+      const node = buildDebugTree(variable, 'Main', INSTANCE_NAME, [], { dataTypes: [own], pous: [] }, [library])
+      expect(node.children?.map((c) => c.name)).toEqual(['mine'])
+    })
+  })
+
   describe('external variables', () => {
     it('builds a leaf node for an external base-type variable with a canonical global key', () => {
       const variable = makeBaseVariable('GLOBAL_FLAG', 'BOOL', 'external')

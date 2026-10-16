@@ -44,6 +44,7 @@ import type {
   SystemLibraryPou,
   SystemLibraryVariable,
 } from '../../middleware/shared/ports/library-types'
+import type { PLCDataType, PLCVariableType } from '../../middleware/shared/ports/types'
 
 const GENERIC_TYPE_NAMES = new Set([
   'ANY',
@@ -105,6 +106,71 @@ function typeRef(typeName: string): SystemLibraryVariable['type'] {
  * folded: projects store them and look them up by that spelling.
  */
 const pinName = (pin: StlibPinDTO): string => pin.declaredName ?? pin.name
+
+/** Every IEC 61131-3 elementary type (Table 10), which a struct member of the library may have. */
+const ELEMENTARY_TYPE_NAMES = new Set([
+  ...BASE_TYPE_NAMES,
+  'LTIME',
+  'LDATE',
+  'LTOD',
+  'LDT',
+  'TIME_OF_DAY',
+  'DATE_AND_TIME',
+  'LTIME_OF_DAY',
+  'LDATE_AND_TIME',
+  'CHAR',
+  'WCHAR',
+])
+
+type LibraryTypeDTO = StlibArchiveDTO['manifest']['types'][number]
+type LibraryFieldDTO = NonNullable<LibraryTypeDTO['fields']>[number]
+
+/** A library struct member's type in the project's shape: elementary, a named type, or an inline array. */
+function fieldType(field: LibraryFieldDTO): PLCVariableType {
+  const named = (name: string) =>
+    ELEMENTARY_TYPE_NAMES.has(name.toUpperCase())
+      ? { definition: 'base-type' as const, value: name.toUpperCase() }
+      : { definition: 'user-data-type' as const, value: name }
+  if (field.elementTypeName !== undefined && (field.arrayDimensions?.length ?? 0) > 0) {
+    const dimensions = (field.arrayDimensions ?? []).map((d) => ({ dimension: `${d.start}..${d.end}` }))
+    return {
+      definition: 'array',
+      value: `ARRAY [${dimensions.map((d) => d.dimension).join(', ')}] OF ${field.elementTypeName}`,
+      data: { baseType: named(field.elementTypeName), dimensions },
+    }
+  }
+  return named(field.type)
+}
+
+/**
+ * The library's STRUCT and enumerated types as project data types (see `SystemLibrary.dataTypes`), names
+ * as the library declared them. An alias has no members to walk, so it is left out: a value of one is a
+ * single leaf either way.
+ */
+function toDataTypes(types: readonly LibraryTypeDTO[]): PLCDataType[] {
+  const out: PLCDataType[] = []
+  for (const type of types) {
+    if (type.kind === 'struct' && type.fields) {
+      out.push({
+        name: type.name,
+        derivation: 'structure',
+        variable: type.fields.map((field) => ({ name: field.declaredName ?? field.name, type: fieldType(field) })),
+      })
+    } else if (type.kind === 'enum' && type.members) {
+      const names = type.declaredMembers ?? type.members
+      out.push({
+        name: type.name,
+        derivation: 'enumerated',
+        ...(type.baseType !== undefined ? { baseType: type.baseType } : {}),
+        values: names.map((description, i) => {
+          const value = type.values?.[i]
+          return value !== undefined && value !== null ? { description, value } : { description }
+        }),
+      })
+    }
+  }
+  return out
+}
 
 function classFromDirection(d: 'input' | 'output' | 'inout'): SystemLibraryVariable['class'] {
   if (d === 'inout') return 'inOut'
@@ -233,6 +299,8 @@ export function stlibToSystemLibrary(
   }
   if (m.displayName) result.displayName = m.displayName
   if (interfaces.length > 0) result.interfaces = interfaces
+  const dataTypes = toDataTypes(m.types ?? [])
+  if (dataTypes.length > 0) result.dataTypes = dataTypes
   return result
 }
 

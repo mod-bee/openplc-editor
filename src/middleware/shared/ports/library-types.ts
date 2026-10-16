@@ -1,3 +1,5 @@
+import type { PLCDataType } from './types'
+
 export type LibraryPouType = 'function' | 'function-block'
 /** Body language as the library presents it to consumers.  `cpp` and
  *  `python` surface native function blocks: strucpp doesn't compile
@@ -121,6 +123,12 @@ export interface SystemLibrary {
   pous: SystemLibraryPou[]
   /** The library's interfaces; absent when it declares none. */
   interfaces?: SystemLibraryInterface[]
+  /**
+   * The library's STRUCT and enumerated types, in the project's data-type shape, so the debugger can
+   * walk a value of one (`IO.dout[2].q`, a project struct holding a library's). Absent when it declares
+   * none. A project's own type of the same name wins.
+   */
+  dataTypes?: PLCDataType[]
 }
 
 export interface UserLibrary {

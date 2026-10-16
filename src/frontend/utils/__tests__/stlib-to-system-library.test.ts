@@ -160,6 +160,63 @@ describe('stlibToSystemLibrary — declared spelling', () => {
   })
 })
 
+describe('stlibToSystemLibrary — data types', () => {
+  it('gives the debugger the STRUCT and enumerated types, as declared', () => {
+    const lib = stlibToSystemLibrary(
+      makeArchive({
+        types: [
+          {
+            name: 'UT_IO_DO',
+            kind: 'struct',
+            fields: [
+              { name: 'Q', declaredName: 'q', type: 'BOOL' },
+              { name: 'HOLDOFF', declaredName: 'holdOff', type: 'LTIME' },
+              { name: 'SRC', type: 'UT_SRC' },
+              { name: 'HIST', type: 'ARRAY', elementTypeName: 'INT', arrayDimensions: [{ start: 1, end: 4 }] },
+            ],
+          },
+          {
+            name: 'E_MODE',
+            kind: 'enum',
+            members: ['OFF', 'AUTO'],
+            declaredMembers: ['Off', 'Auto'],
+            values: [null, '5'],
+          },
+          { name: 'T_SPEED', kind: 'alias', baseType: 'REAL' },
+        ],
+      }),
+    )
+    expect(lib.dataTypes).toEqual([
+      {
+        name: 'UT_IO_DO',
+        derivation: 'structure',
+        variable: [
+          { name: 'q', type: { definition: 'base-type', value: 'BOOL' } },
+          { name: 'holdOff', type: { definition: 'base-type', value: 'LTIME' } },
+          { name: 'SRC', type: { definition: 'user-data-type', value: 'UT_SRC' } },
+          {
+            name: 'HIST',
+            type: {
+              definition: 'array',
+              value: 'ARRAY [1..4] OF INT',
+              data: { baseType: { definition: 'base-type', value: 'INT' }, dimensions: [{ dimension: '1..4' }] },
+            },
+          },
+        ],
+      },
+      {
+        name: 'E_MODE',
+        derivation: 'enumerated',
+        values: [{ description: 'Off' }, { description: 'Auto', value: '5' }],
+      },
+    ])
+  })
+
+  it('has no dataTypes when the library declares none', () => {
+    expect(stlibToSystemLibrary(makeArchive()).dataTypes).toBeUndefined()
+  })
+})
+
 describe('stlibToSystemLibrary — native (C/C++, Python) blocks', () => {
   const nativeArchive = (
     blocks: Array<{ name: string; implementation: 'cpp' | 'python'; sourceFile?: string; documentation?: string }>,

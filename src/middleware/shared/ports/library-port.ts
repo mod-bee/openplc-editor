@@ -132,6 +132,11 @@ export interface StlibArchiveDTO {
       baseType?: string
       documentation?: string
       category?: string
+      /** An enum's members, folded; `declaredMembers` as the library spelled them, when one differs. */
+      members?: string[]
+      declaredMembers?: string[]
+      /** Each member's explicit value as ST text, parallel to `members` (`null` where none was written). */
+      values?: Array<string | null>
       /** A STRUCT's members (absent in an archive built before strucpp exported them). An inline
        *  array member carries its element type and dimensions. */
       fields?: Array<{

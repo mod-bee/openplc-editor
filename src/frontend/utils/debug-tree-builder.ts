@@ -147,7 +147,8 @@ export function buildDebugTree(
   const context: TraversalContext = {
     debugVariables,
     projectPous: projectData.pous,
-    dataTypes: projectData.dataTypes,
+    // The project's types first, so one of its own wins over a library type of the same name.
+    dataTypes: [...projectData.dataTypes, ...systemLibraries.flatMap((library) => library.dataTypes ?? [])],
     systemLibraries,
     instanceName,
     pouName,
