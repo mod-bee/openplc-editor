@@ -234,3 +234,29 @@ describe('function-call temporaries of strings of different lengths', () => {
     expect(text(pouWithSel('outShort', 'long', 'short', vars))).toMatch(/_TMP_SEL7001_OUT : STRING\(64\);/)
   })
 })
+
+describe('function-call temporaries of strings, the block before the variables it is wired to', () => {
+  it('holds the longest even when a longer text is typed only after the block', () => {
+    const vars: TranspilePou['interface']['variables'] = [
+      { name: 'sw', class: 'local', type: { definition: 'base-type', value: 'BOOL' } },
+      { name: 'short', class: 'local', type: { definition: 'base-type', value: 'STRING(32)' } },
+      { name: 'unknown', class: 'local', type: { definition: 'derived', value: 'NOT_A_TYPE' } },
+      { name: 'outLong', class: 'local', type: { definition: 'base-type', value: 'STRING(64)' } },
+    ]
+    // The order the walker meets them: the short input, the block, then its output variable.
+    const pou = pouWithSel('outLong', 'short', 'unknown.x', vars)
+    const rung = (pou.body as unknown as { value: { rungs: { nodes: RFNode[] }[] } }).value.rungs[0]
+    const order = ['L', '902', 'SEL', '901', '903', '904', 'R']
+    rung.nodes.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+    expect(text(pou)).toMatch(/_TMP_SEL7001_OUT : STRING\(64\);/)
+  })
+
+  it('never cuts a text of unknown length: a SEL of a STRING and a literal stays as before', () => {
+    const vars: TranspilePou['interface']['variables'] = [
+      { name: 'sw', class: 'local', type: { definition: 'base-type', value: 'BOOL' } },
+      { name: 'any', class: 'local', type: { definition: 'base-type', value: 'STRING' } },
+      { name: 'out', class: 'local', type: { definition: 'base-type', value: 'STRING' } },
+    ]
+    expect(text(pouWithSel('out', 'any', "''", vars))).toMatch(/_TMP_SEL7001_OUT : STRING;/)
+  })
+})

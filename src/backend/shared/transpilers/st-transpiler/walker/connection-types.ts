@@ -67,6 +67,8 @@ interface Graph {
 class PinTypes {
   types = new Map<string, string>()
   related: string[][] = []
+  /** Each block's generic pin groups, with the pins of what they connect to: widened at the end (widenStrings). */
+  groups: { blockId: string; pins: string[] }[] = []
 
   extractRelated(pin: string): string[] {
     for (let i = 0; i < this.related.length; i++) {
@@ -192,6 +194,7 @@ export function computeConnectionTypes(body: RFBody, ctx: TypeContext): Map<stri
     computeBlockInputTypes(graph, pt, node, data, infos)
   }
 
+  widenStrings(pt)
   return pt.types
 }
 
@@ -239,6 +242,8 @@ function computeBlockInputTypes(graph: Graph, pt: PinTypes, node: RFNode, data: 
   }
 
   for (const [anyClass, pins] of undefinedGroups) {
+    const targets = pins.filter((pin) => pin.startsWith(`out:${node.id}:`)).flatMap((pin) => targetPins(graph, pin))
+    pt.groups.push({ blockId: node.id, pins: [...pins, ...targets] })
     let varType = anyClass
     const related: string[] = []
     for (const pin of pins) {
@@ -251,10 +256,11 @@ function computeBlockInputTypes(graph: Graph, pt: PinTypes, node: RFNode, data: 
   }
 }
 
-/** A STRING's or WSTRING's kind and length (STRING alone: 254, as the runtime sizes it), or null. */
+/** A sized STRING's or WSTRING's kind and length (`STRING(32)`, `STRING[32]`), or null - a bare STRING (a text
+ *  literal is typed so) is no length to compare. */
 function stringWidth(type: string): { kind: string; length: number } | null {
-  const m = /^\s*(STRING|WSTRING)\s*(?:[([]\s*(\d+)\s*[)\]])?\s*$/i.exec(type)
-  return m ? { kind: m[1].toUpperCase(), length: m[2] ? Number(m[2]) : 254 } : null
+  const m = /^\s*(STRING|WSTRING)\s*[([]\s*(\d+)\s*[)\]]\s*$/i.exec(type)
+  return m ? { kind: m[1].toUpperCase(), length: Number(m[2]) } : null
 }
 
 /**
@@ -268,6 +274,53 @@ function wider(current: string, known: string): string {
   const b = stringWidth(known)
   if (a && b && a.kind === b.kind) return a.length >= b.length ? current : known
   return known
+}
+
+/** The input pins an output pin drives. */
+function targetPins(graph: Graph, out: string): string[] {
+  const [, nodeId, handle] = out.split(':')
+  const pins: string[] = []
+  for (const [target, edges] of graph.incoming) {
+    for (const edge of edges) {
+      if (edge.source !== nodeId || (edge.sourceHandle ?? '') !== handle) continue
+      // A block's input by its pin name; any other element's one input, as pass 1 keys it.
+      pins.push(graph.byId.get(target)?.type === 'block' ? pinIn(target, edge.targetHandle ?? '') : pinIn(target))
+    }
+  }
+  return pins
+}
+
+/** STRING or WSTRING, sized or not: its kind, or null. */
+function stringKind(type: string): string | null {
+  const m = /^\s*(STRING|WSTRING)\b/i.exec(type)
+  return m ? m[1].toUpperCase() : null
+}
+
+/**
+ * Once every variable is typed: a block whose generic pins and what they connect to are all texts of one kind
+ * widens a pin of its own that is a shorter sized STRING to the longest sized one among them. A block typed before
+ * the variables after it in the diagram took the type of the ones it had seen, and could cut a longer text it is
+ * wired to. Only ever wider: a bare STRING (a literal, or a library pin whose length is not kept) is never cut.
+ */
+function widenStrings(pt: PinTypes): void {
+  for (const group of pt.groups) {
+    const known = group.pins
+      .map((pin) => pt.types.get(pin))
+      .filter((t): t is string => t !== undefined && !t.startsWith('ANY'))
+    const kinds = new Set(known.map(stringKind))
+    if (known.length === 0 || kinds.size !== 1 || kinds.has(null)) continue
+    let longest: { type: string; length: number } | null = null
+    for (const type of known) {
+      const w = stringWidth(type)
+      if (w !== null && (longest === null || w.length > longest.length)) longest = { type, length: w.length }
+    }
+    if (longest === null) continue
+    for (const pin of group.pins) {
+      if (!pin.startsWith(`in:${group.blockId}:`) && !pin.startsWith(`out:${group.blockId}:`)) continue
+      const own = stringWidth(pt.types.get(pin) ?? '')
+      if (own !== null && own.length < longest.length) pt.types.set(pin, longest.type)
+    }
+  }
 }
 
 /** SynthesizePermissiveBlockInfos (PLCGenerator.py:732-763). */
