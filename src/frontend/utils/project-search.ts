@@ -31,7 +31,20 @@ export function makeMatcher(query: string, options: SearchOptions): Matcher {
 }
 
 type FlowNode = { id: string; type?: string; data?: unknown }
-type NodeData = { variable?: { name?: string }; variant?: string | { name?: string }; content?: string }
+type NodeData = {
+  variable?: { name?: string }
+  variant?: string | { name?: string }
+  content?: string
+  block?: { id?: string; variableType?: { name?: string } }
+}
+
+/** The block pin a Ladder variable element sits on, to mark it on the block. */
+function pinOf(node: FlowNode): { blockId?: string; pin?: string } {
+  const block = ((node.data ?? {}) as NodeData).block
+  return node.type === 'variable' && block?.id && block.variableType?.name
+    ? { blockId: block.id, pin: block.variableType.name }
+    : {}
+}
 
 const ELEMENT: Record<string, string> = {
   contact: 'contact',
@@ -116,7 +129,7 @@ export function searchProject(
               add({
                 text,
                 where: `rung ${index + 1} · ${what}`,
-                target: { kind: 'pou', pou: pou.name, rungId: rung.id, nodeId: node.id },
+                target: { kind: 'pou', pou: pou.name, rungId: rung.id, nodeId: node.id, ...pinOf(node) },
                 count: m,
               })
             }

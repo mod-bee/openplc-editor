@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { useDebugger } from '../../../../../middleware/shared/providers'
 import { useDebugCompositeKey } from '../../../../hooks/use-debug-composite-key'
 import { useDebugValue, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
+import { useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { forceDebugVariable, releaseDebugVariable } from '../../../../services/debug-force-variable'
 import { isExpressionValidForType } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
@@ -113,6 +114,7 @@ const Coil = (block: CoilProps) => {
     return displayState ? '#00FF00' : '#0464FB'
   })()
 
+  const { revealed, pulsing: revealPulsing } = useRevealHighlight(id)
   const [isContextMenuOpen, setIsContextMenuOpen] = useState<boolean>(false)
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null)
 
@@ -205,6 +207,9 @@ const Coil = (block: CoilProps) => {
           'relative rounded-[1px] border border-transparent hover:outline hover:outline-2 hover:outline-offset-[3px] hover:outline-brand',
           {
             'outline outline-2 outline-offset-[3px] outline-brand': selected,
+            // Go to (a search hit, a cross reference) landed here.
+            'bg-amber-300/60 outline outline-[3px] outline-offset-[3px] outline-amber-500 dark:bg-amber-500/40': revealed,
+            'animate-pulse': revealed && revealPulsing,
           },
         )}
         style={{ width: DEFAULT_COIL_BLOCK_WIDTH, height: DEFAULT_COIL_BLOCK_HEIGHT }}

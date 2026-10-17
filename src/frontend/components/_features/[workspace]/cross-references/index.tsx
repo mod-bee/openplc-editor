@@ -20,7 +20,7 @@ import {
   indexConstantsOf,
   resolveConstantIndexes,
 } from '../../../../utils/debug-variable-finder'
-import type { XrefProject, XrefUse } from '../../../../utils/project-xref'
+import type { XrefProject, XrefTarget, XrefUse } from '../../../../utils/project-xref'
 import { buildProjectXref, findXrefUses, GLOBAL_OWNER, resolveXrefTarget } from '../../../../utils/project-xref'
 
 const ACCESS_LABEL: Record<XrefUse['access'], string> = {
@@ -39,11 +39,28 @@ const ACCESS_CLASS: Record<XrefUse['access'], string> = {
   call: 'text-emerald-700 dark:text-emerald-400',
 }
 
-/** Where Go to takes a use. */
-function revealTargetOf(use: XrefUse): RevealTarget {
+/**
+ * Where Go to takes a use, and the block pin to mark there: the pin a variable is wired to, or, for a call
+ * of a block whose member was asked for (`levelLimit.LoLo` at `levelLimit`'s call), that member's pin.
+ */
+function revealTargetOf(use: XrefUse, target?: XrefTarget): RevealTarget {
   if (use.pou === undefined) return { kind: 'globals', variable: use.expression, list: use.list }
   if (use.access === 'declaration') return { kind: 'pou', pou: use.pou, variable: use.expression }
-  return { kind: 'pou', pou: use.pou, rungId: use.rungId, nodeId: use.nodeId, line: use.line, column: use.column }
+  const member = use.access === 'call' && target ? /^\.([A-Za-z_][A-Za-z0-9_]*)/.exec(target.path.slice(use.path.length)) : null
+  const pinAt = member
+    ? { blockId: use.nodeId, pin: member[1] }
+    : use.blockId && use.pin
+      ? { blockId: use.blockId, pin: use.pin }
+      : {}
+  return {
+    kind: 'pou',
+    pou: use.pou,
+    rungId: use.rungId,
+    nodeId: use.nodeId,
+    line: use.line,
+    column: use.column,
+    ...pinAt,
+  }
 }
 
 function whereOf(use: XrefUse): string {
@@ -193,7 +210,7 @@ const CrossReferences = () => {
               <tr
                 key={index}
                 data-testid='xref-row'
-                onClick={() => reveal(revealTargetOf(use))}
+                onClick={() => reveal(revealTargetOf(use, target))}
                 className='cursor-pointer border-t border-neutral-100 text-neutral-850 hover:bg-neutral-100 dark:border-neutral-850 dark:text-neutral-200 dark:hover:bg-neutral-850'
               >
                 <td className='px-2 py-1'>{use.pou ?? 'Configuration'}</td>
@@ -211,4 +228,4 @@ const CrossReferences = () => {
   )
 }
 
-export { CrossReferences }
+export { CrossReferences, revealTargetOf }

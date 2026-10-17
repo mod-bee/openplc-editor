@@ -6,6 +6,7 @@ import { useDebugger } from '../../../../../middleware/shared/providers'
 import { useDebugCompositeKey } from '../../../../hooks/use-debug-composite-key'
 import { useDebugDisplayOptions } from '../../../../hooks/use-debug-display-options'
 import { useDebugValue, useDebugVariableType, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
+import { REVEAL_HIGHLIGHT, useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { forceDebugVariable, releaseDebugVariable } from '../../../../services/debug-force-variable'
 import { resolveScopeExpressionType } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
@@ -320,6 +321,9 @@ const VariableElement = (block: VariableProps) => {
     setIsContextMenuOpen(true)
   }
 
+  // Go to (a search hit, a cross reference) landed here; the block marks the pin too.
+  const { revealed, pulsing: revealPulsing } = useRevealHighlight(id)
+
   const variableType = getVariableType()
   const isBoolVariable = debugType()?.toUpperCase() === 'BOOL'
 
@@ -343,6 +347,8 @@ const VariableElement = (block: VariableProps) => {
             className={cn(
               'absolute top-0 flex items-center whitespace-nowrap text-xs leading-3',
               data.variant === 'output' ? 'left-0' : 'right-0',
+              revealed && cn(REVEAL_HIGHLIGHT, 'px-0.5'),
+              revealed && revealPulsing && 'animate-pulse',
             )}
             style={{ height: DEFAULT_VARIABLE_HEIGHT }}
           >
@@ -378,7 +384,12 @@ const VariableElement = (block: VariableProps) => {
           // Wide enough for the name on one line (as the layout reserves room for it), grown away from
           // the block from the wire end: the node itself, and so its handle, stays where the layout put it.
           <div
-            className={cn('absolute top-0', data.variant === 'output' ? 'left-0' : 'right-0')}
+            className={cn(
+              'absolute top-0',
+              data.variant === 'output' ? 'left-0' : 'right-0',
+              revealed && REVEAL_HIGHLIGHT,
+              revealed && revealPulsing && 'animate-pulse',
+            )}
             style={{
               width: variableElementWidth(variableElementText(variableValue, data.block.variableType.type.value)),
               height: DEFAULT_VARIABLE_HEIGHT,

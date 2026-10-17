@@ -40,6 +40,9 @@ export interface XrefUse {
   /** 1-based, as the editor numbers rungs. */
   rungIndex?: number
   nodeId?: string
+  /** For a variable on a block pin: the block element and the pin's name. */
+  blockId?: string
+  pin?: string
   /** 1-based line and column in an ST / IL body. */
   line?: number
   column?: number
@@ -58,10 +61,11 @@ export interface XrefTarget {
 }
 
 type FlowNode = { id: string; type?: string; data?: unknown }
+type FlowEdge = { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }
 export interface XrefProject {
   pous: PLCPou[]
   ladderFlows: Array<{ name: string; rungs: Array<{ id: string; nodes: FlowNode[] }> }>
-  fbdFlows: Array<{ name: string; rung: { nodes: FlowNode[] } }>
+  fbdFlows: Array<{ name: string; rung: { nodes: FlowNode[]; edges?: FlowEdge[] } }>
   globalVariables: Array<Pick<PLCVariable, 'name'> & Partial<PLCVariable>>
   globalVariableLists?: PLCGlobalVariableList[]
 }
@@ -386,6 +390,7 @@ export function buildProjectXref(project: XrefProject): XrefUse[] {
             addExpression(pou, name, {
               ...at,
               nodeId: node.id,
+              ...(data.block?.id && pin?.name ? { blockId: data.block.id, pin: pin.name } : {}),
               element: 'variable',
               access: pin?.class === 'inOut' ? 'inout' : variant === 'output' ? 'write' : 'read',
               detail: `${pin?.class === 'inOut' ? 'in-out' : variant === 'output' ? 'output' : 'input'} ${pin?.name ?? ''} of ${of}`.replace(/\s+/g, ' '),
@@ -404,11 +409,22 @@ export function buildProjectXref(project: XrefProject): XrefUse[] {
       })
     } else if (language === 'fbd') {
       const flow = project.fbdFlows.find((f) => f.name.toUpperCase() === pou.name.toUpperCase())
+      const fbdBlocks = new Set((flow?.rung.nodes ?? []).filter((n) => n.type === 'block').map((n) => n.id))
       for (const node of flow?.rung.nodes ?? []) {
         const data = (node.data ?? {}) as NodeData
         const name = data.variable?.name ?? ''
         if (!name.trim()) continue
-        const at = { pou: pou.name, language: 'fbd' as const, nodeId: node.id }
+        // The block pin a variable is wired to: the edge's handle on the block is the pin's name.
+        const wire = (flow?.rung.edges ?? []).find(
+          (e) => (e.source === node.id && fbdBlocks.has(e.target)) || (e.target === node.id && fbdBlocks.has(e.source)),
+        )
+        const pinAt =
+          wire && node.type !== 'block'
+            ? wire.source === node.id
+            ? { blockId: wire.target, pin: wire.targetHandle ?? undefined }
+            : { blockId: wire.source, pin: wire.sourceHandle ?? undefined }
+          : {}
+        const at = { pou: pou.name, language: 'fbd' as const, nodeId: node.id, ...pinAt }
         if (node.type === 'input-variable') {
           addExpression(pou, name, { ...at, element: 'variable', access: 'read', detail: 'input variable' })
         } else if (node.type === 'output-variable') {

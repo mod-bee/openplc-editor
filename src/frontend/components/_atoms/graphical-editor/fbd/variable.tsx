@@ -5,6 +5,7 @@ import { PLCVariable } from '../../../../../middleware/shared/ports/types'
 import { useDebugger } from '../../../../../middleware/shared/providers'
 import { useDebugCompositeKey } from '../../../../hooks/use-debug-composite-key'
 import { useDebugValue, useDebugVariableType, useIsDebuggerVisible } from '../../../../hooks/use-debug-value'
+import { useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { forceDebugVariable, releaseDebugVariable } from '../../../../services/debug-force-variable'
 import { resolveScopeExpressionType } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
@@ -46,6 +47,7 @@ const VariableElement = (block: VariableProps) => {
   const elementWidth = getVariableNodeWidth(block)
   const textAreaWidth = elementWidth - (VARIABLE_ELEMENT_SIZE - DEFAULT_VARIABLE_WIDTH)
   const pouName = useBoundPou()
+  const { revealed, pulsing: revealPulsing } = useRevealHighlight(id)
   const updateModelFBD = useOpenPLCStore((state) => state.editorActions.updateModelFBD)
   const updateNode = useOpenPLCStore((state) => state.fbdFlowActions.updateNode)
   const pous = useOpenPLCStore((state) => state.project.data.pous)
@@ -445,6 +447,9 @@ const VariableElement = (block: VariableProps) => {
                 'hover:border-transparent hover:ring-2 hover:ring-brand',
                 {
                   'border-transparent ring-2 ring-brand': selected && !debuggerColor,
+                  // Go to (a search hit, a cross reference) landed here.
+                  'border-transparent bg-amber-300/60 ring-[3px] ring-amber-500 dark:bg-amber-500/40': revealed,
+                  'animate-pulse': revealed && revealPulsing,
                 },
               )}
               onMouseEnter={onMouseEnter}

@@ -60,6 +60,13 @@ const createSearchSlice: StateCreator<SearchSlice, [], [], SearchSlice> = (setSt
         }),
       )
     },
+    clearReveal: () => {
+      setState(
+        produce((state: SearchSlice) => {
+          state.revealTarget = null
+        }),
+      )
+    },
     closeCrossReferences: () => {
       setState(
         produce((state: SearchSlice) => {

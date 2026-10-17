@@ -155,6 +155,26 @@ test('find, go to, find references', async () => {
       await shot('6-xref-goto-row.png')
     }
 
+    // 4b. A block call of the variable: the asked-for member's pin is marked on the block.
+    const call = rows.filter({ hasText: ' block' }).filter({ hasText: 'Call' })
+    if ((await call.count()) > 0) {
+      await call.first().click()
+      await page.waitForTimeout(1500)
+      await shot('6b-call-pin.png')
+    }
+
+    // 4c. A variable on a block pin: the variable and the block's pin are marked.
+    await page.evaluate(() =>
+      window.__openplcE2E!.store.getState().searchActions.showCrossReferences({ expression: 'resetAll' }),
+    )
+    await page.waitForTimeout(800)
+    const onPin = page.getByTestId('xref-row').filter({ hasText: /input Reset of/ })
+    if ((await onPin.count()) > 0) {
+      await onPin.first().click()
+      await page.waitForTimeout(1500)
+      await shot('6c-variable-pin.png')
+    }
+
     // 5. Go to declaration from the panel.
     await page.getByText('Go to declaration', { exact: true }).locator('visible=true').first().click()
     await page.waitForTimeout(1500)

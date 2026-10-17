@@ -12,6 +12,9 @@ export type RevealTarget =
       column?: number
       /** A row of the POU's variable table. */
       variable?: string
+      /** The block whose pin the place is on, and that pin: highlighted on the block. */
+      blockId?: string
+      pin?: string
     }
   | { kind: 'globals'; variable?: string; list?: string }
 
@@ -73,6 +76,8 @@ export type SearchActions = {
   removeSearchResult: (itemID: string) => void
   revealInProject: (target: RevealTarget) => void
   showCrossReferences: (request: { pou?: string; expression: string }) => void
+  /** End the Go to highlight (a click in the diagram). */
+  clearReveal: () => void
   closeCrossReferences: () => void
   clearSearch: () => void
 }

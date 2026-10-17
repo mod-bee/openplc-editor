@@ -3,6 +3,7 @@ import { FocusEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PLCVariable } from '../../../../../middleware/shared/ports/types'
 import { RefreshIcon } from '../../../../assets/icons/interface/Refresh'
+import { REVEAL_HIGHLIGHT, useRevealedPin, useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { isBlockInstanceInScope } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import { checkVariableName } from '../../../../store/slices/project/validation/variables'
@@ -307,6 +308,14 @@ export const BlockNodeElement = <T extends object>({
     setInputNameFocus(true)
   }
 
+  // Go to (a search hit, a cross reference) landed on this block: its pin, or the block itself.
+  const { pin: revealedPin, pulsing: pinPulsing } = useRevealedPin(nodeId)
+  const { revealed: blockRevealed, pulsing: blockPulsing } = useRevealHighlight(nodeId)
+  const pinMark = (connector: string) =>
+    revealedPin !== undefined && connector.toUpperCase() === revealedPin
+      ? cn(REVEAL_HIGHLIGHT, 'px-0.5', pinPulsing && 'animate-pulse')
+      : undefined
+
   return (
     <div
       className={cn(
@@ -315,6 +324,9 @@ export const BlockNodeElement = <T extends object>({
           'hover:border-transparent hover:ring-2 hover:ring-brand': !disabled,
           'border-transparent ring-1 ring-red-500': wrongVariable || wrongName,
           'border-transparent ring-2 ring-brand': selected,
+          // Go to the block's call (no pin to mark): the block in amber.
+          'border-transparent ring-2 ring-amber-500': blockRevealed && !revealedPin,
+          'animate-pulse': blockRevealed && !revealedPin && blockPulsing,
         },
       )}
       style={{
@@ -346,7 +358,7 @@ export const BlockNodeElement = <T extends object>({
       {inputConnectors.map((connector, index) => (
         <div
           key={index}
-          className='absolute text-xs'
+          className={cn('absolute text-xs', pinMark(connector))}
           style={{ top: connectorLabelTop(data.inputHandles, connector, index), left: 6 }}
         >
           <EdgePinMarker edge={pinEdge(blockVariables, connector)} />
@@ -357,7 +369,7 @@ export const BlockNodeElement = <T extends object>({
       {outputConnectors.map((connector, index) => (
         <div
           key={index}
-          className='absolute text-xs'
+          className={cn('absolute text-xs', pinMark(connector))}
           style={{ top: connectorLabelTop(data.outputHandles, connector, index), right: 6 }}
         >
           {connector}

@@ -54,6 +54,7 @@ export default function LadderEditor() {
   const flow = useOpenPLCStore((state) => state.ladderFlows.find((f) => f.name === pouName))
   const ladderFlowActions = useOpenPLCStore((state) => state.ladderFlowActions)
   const revealTarget = useOpenPLCStore((state) => state.revealTarget)
+  const clearReveal = useOpenPLCStore((state) => state.searchActions.clearReveal)
   const blockElementModal = useOpenPLCStore((state) => state.modals['block-ladder-element'])
   const contactElementModal = useOpenPLCStore((state) => state.modals['contact-ladder-element'])
   const coilElementModal = useOpenPLCStore((state) => state.modals['coil-ladder-element'])
@@ -266,7 +267,13 @@ export default function LadderEditor() {
   }
 
   return (
-    <div className='h-full w-full overflow-y-auto' ref={scrollableRef} style={{ scrollbarGutter: 'stable' }}>
+    <div
+      className='h-full w-full overflow-y-auto'
+      ref={scrollableRef}
+      style={{ scrollbarGutter: 'stable' }}
+      // A click in the diagram ends the Go to highlight.
+      onPointerDown={() => revealTarget && clearReveal()}
+    >
       <div className='flex flex-1 flex-col gap-4 px-2'>
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
           <div

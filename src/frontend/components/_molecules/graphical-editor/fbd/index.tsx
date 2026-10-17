@@ -236,6 +236,7 @@ export const FBDBody = ({ rung, nodeDivergences = [], isDebuggerActive = false }
 
   // Go to (a search hit, a cross reference): select the element and centre it.
   const revealTarget = useOpenPLCStore((state) => state.revealTarget)
+  const fbdClearReveal = useOpenPLCStore((state) => state.searchActions.clearReveal)
   useEffect(() => {
     if (!revealTarget || revealTarget.kind !== 'pou' || revealTarget.pou !== pouName || !revealTarget.nodeId) return
     const node = rung.nodes.find((n) => n.id === revealTarget.nodeId)
@@ -775,6 +776,8 @@ export const FBDBody = ({ rung, nodeDivergences = [], isDebuggerActive = false }
     <div
       className='h-full w-full rounded-lg border p-1 dark:border-neutral-800'
       ref={reactFlowViewportRef}
+      // A click in the diagram ends the Go to highlight.
+      onPointerDown={() => revealTarget && fbdClearReveal()}
       onMouseEnter={() => {
         insideViewportRef.current = true
       }}

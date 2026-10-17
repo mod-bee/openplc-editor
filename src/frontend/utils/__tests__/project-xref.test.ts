@@ -119,6 +119,31 @@ describe('project cross references', () => {
     expect(motor.find((u) => u.nodeId === 'b1')).toMatchObject({ access: 'call', detail: 'UT_MOTOR block' })
   })
 
+  it('knows the block pin a Ladder variable sits on', () => {
+    const dryRun = findXrefUses(uses, resolveXrefTarget(project, 'PUMP', 'dryRun')!)
+    expect(dryRun.find((u) => u.nodeId === 'v1')).toMatchObject({ blockId: 'b1', pin: 'Interlock' })
+  })
+
+  it('knows the block pin an FBD variable is wired to', () => {
+    const fbd = buildProjectXref({
+      ...project,
+      pous: [pou('MIX', 'fbd', [v('speed')])],
+      fbdFlows: [
+        {
+          name: 'MIX',
+          rung: {
+            nodes: [
+              node('in1', 'input-variable', { variable: { name: 'speed' } }),
+              node('blk', 'block', { variable: { name: 'ramp' }, variant: { name: 'RAMP' } }),
+            ],
+            edges: [{ source: 'in1', target: 'blk', sourceHandle: null, targetHandle: 'Setpoint' }],
+          },
+        },
+      ],
+    })
+    expect(fbd.find((u) => u.nodeId === 'in1')).toMatchObject({ blockId: 'blk', pin: 'Setpoint', access: 'read' })
+  })
+
   it('counts a constant in a subscript as read where it is used', () => {
     const fn = findXrefUses(uses, resolveXrefTarget(project, 'PUMP', 'FN_RUN')!)
     expect(fn.find((u) => u.nodeId === 'v2')).toMatchObject({ access: 'read', detail: 'subscript in IO.din[FN_RUN].q' })

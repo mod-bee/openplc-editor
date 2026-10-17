@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { PLCVariable } from '../../../../../middleware/shared/ports'
 import { PLCPou } from '../../../../../middleware/shared/ports'
 import { RefreshIcon } from '../../../../assets/icons/interface/Refresh'
+import { REVEAL_HIGHLIGHT, useRevealedPin, useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { isBlockInstanceInScope } from '../../../../services/graphical-scope'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import { LibraryState } from '../../../../store/slices/library'
@@ -362,6 +363,14 @@ export const BlockNodeElement = <T extends object>({
     setInputNameFocus(true)
   }
 
+  // Go to (a search hit, a cross reference) landed on this block: its pin, or the block itself.
+  const { pin: revealedPin, pulsing: pinPulsing } = useRevealedPin(nodeId)
+  const { revealed: blockRevealed, pulsing: blockPulsing } = useRevealHighlight(nodeId)
+  const pinMark = (connector: string) =>
+    revealedPin !== undefined && connector.toUpperCase() === revealedPin
+      ? cn(REVEAL_HIGHLIGHT, 'px-0.5', pinPulsing && 'animate-pulse')
+      : undefined
+
   return (
     <div
       className={cn(
@@ -370,6 +379,9 @@ export const BlockNodeElement = <T extends object>({
           'hover:border-transparent hover:ring-2 hover:ring-brand': !disabled,
           'border-transparent ring-1 ring-red-500': wrongVariable || wrongName,
           'border-transparent ring-2 ring-brand': selected,
+          // Go to the block's call (no pin to mark): the block in amber.
+          'border-transparent ring-2 ring-amber-500': blockRevealed && !revealedPin,
+          'animate-pulse': blockRevealed && !revealedPin && blockPulsing,
         },
       )}
       style={{
@@ -402,7 +414,7 @@ export const BlockNodeElement = <T extends object>({
         const top =
           (handle?.relPosition?.y ?? DEFAULT_BLOCK_CONNECTOR_Y + index * DEFAULT_BLOCK_CONNECTOR_Y_OFFSET) - 10
         return (
-          <div key={index} className='absolute text-xs' style={{ top, left: 6 }}>
+          <div key={index} className={cn('absolute text-xs', pinMark(connector))} style={{ top, left: 6 }}>
             <EdgePinMarker edge={pinEdge(blockVariables, connector)} />
             {connector}
             {inOutConnectors.has(connector) && <InOutPinMarker />}
@@ -414,7 +426,7 @@ export const BlockNodeElement = <T extends object>({
         const top =
           (handle?.relPosition?.y ?? DEFAULT_BLOCK_CONNECTOR_Y + index * DEFAULT_BLOCK_CONNECTOR_Y_OFFSET) - 10
         return (
-          <div key={index} className='absolute text-xs' style={{ top, right: 6 }}>
+          <div key={index} className={cn('absolute text-xs', pinMark(connector))} style={{ top, right: 6 }}>
             {connector}
           </div>
         )

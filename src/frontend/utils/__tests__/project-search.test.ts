@@ -28,6 +28,11 @@ const input: SearchInput = {
           nodes: [
             { id: 'c1', type: 'contact', data: { variable: { name: 'levelLimit.Trip' } } },
             { id: 'b1', type: 'block', data: { variable: { name: 'lim' }, variant: { name: 'UT_LIMIT' } } },
+            {
+              id: 'v1',
+              type: 'variable',
+              data: { variable: { name: 'resetAll' }, block: { id: 'b1', variableType: { name: 'Reset' } } },
+            },
           ],
         } as never,
       ],
@@ -91,6 +96,11 @@ describe('Find in project', () => {
     expect(functions.dataTypes).toEqual([{ name: 'UT_LIMIT_SET', type: 'structure' }])
     expect(searchProject(input, 'fault lamp', { caseSensitive: false, regex: false }).functions.pous.program![0].hits[0])
       .toMatchObject({ where: 'rung 1 · comment', target: { rungId: 'r0' } })
+  })
+
+  it('marks the block pin of a variable on a block', () => {
+    const hit = searchProject(input, 'resetAll', { caseSensitive: false, regex: false }).functions.pous.program![0].hits[0]
+    expect(hit.target).toMatchObject({ nodeId: 'v1', blockId: 'b1', pin: 'Reset' })
   })
 
   it('respects case and the filters', () => {
