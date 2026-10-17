@@ -243,12 +243,31 @@ function computeBlockInputTypes(graph: Graph, pt: PinTypes, node: RFNode, data: 
     const related: string[] = []
     for (const pin of pins) {
       const known = pt.types.get(pin)
-      if (known !== undefined && !known.startsWith('ANY')) varType = known
+      if (known !== undefined && !known.startsWith('ANY')) varType = wider(varType, known)
       else related.push(...pt.extractRelated(pin))
     }
     if (varType.startsWith('ANY') && related.length > 0) pt.related.push(related)
     else pt.assign(related, varType)
   }
+}
+
+/** A STRING's or WSTRING's kind and length (STRING alone: 254, as the runtime sizes it), or null. */
+function stringWidth(type: string): { kind: string; length: number } | null {
+  const m = /^\s*(STRING|WSTRING)\s*(?:[([]\s*(\d+)\s*[)\]])?\s*$/i.exec(type)
+  return m ? { kind: m[1].toUpperCase(), length: m[2] ? Number(m[2]) : 254 } : null
+}
+
+/**
+ * The type a generic pin group takes from one more known member. As python's generator, the last known type -
+ * except between texts of one kind: STRING(32) and STRING(64) are the same type STRING (IEC 61131-3 6.6.2.5.10
+ * overloads the selection functions on all data types), and the temporary must hold the longest, whichever pin it
+ * is on. The result is then assigned like any STRING (truncated to the variable it drives).
+ */
+function wider(current: string, known: string): string {
+  const a = stringWidth(current)
+  const b = stringWidth(known)
+  if (a && b && a.kind === b.kind) return a.length >= b.length ? current : known
+  return known
 }
 
 /** SynthesizePermissiveBlockInfos (PLCGenerator.py:732-763). */

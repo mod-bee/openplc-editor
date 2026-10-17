@@ -216,3 +216,21 @@ describe('function-call temporaries through a library structure type', () => {
     expect(libText(pouWithSel('d.LIM.Set.stage[2].start', '3', '4', devVars))).toMatch(/_TMP_SEL7001_OUT : LREAL;/)
   })
 })
+
+describe('function-call temporaries of strings of different lengths', () => {
+  const vars: TranspilePou['interface']['variables'] = [
+    { name: 'sw', class: 'local', type: { definition: 'base-type', value: 'BOOL' } },
+    { name: 'short', class: 'local', type: { definition: 'base-type', value: 'STRING(32)' } },
+    { name: 'long', class: 'local', type: { definition: 'base-type', value: 'STRING(64)' } },
+    { name: 'outShort', class: 'local', type: { definition: 'base-type', value: 'STRING(32)' } },
+    { name: 'outLong', class: 'local', type: { definition: 'base-type', value: 'STRING(64)' } },
+  ]
+
+  it('holds the longest: a SEL of STRING(32) and STRING(64) into STRING(64)', () => {
+    expect(text(pouWithSel('outLong', 'short', 'long', vars))).toMatch(/_TMP_SEL7001_OUT : STRING\(64\);/)
+  })
+
+  it('holds the longest input whichever pin it is on, and whatever the output drives', () => {
+    expect(text(pouWithSel('outShort', 'long', 'short', vars))).toMatch(/_TMP_SEL7001_OUT : STRING\(64\);/)
+  })
+})
