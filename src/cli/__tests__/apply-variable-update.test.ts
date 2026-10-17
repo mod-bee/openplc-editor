@@ -75,7 +75,9 @@ describe('re-applying a function-block-typed in-out pin', () => {
         name: 'FB_USER',
         kind: 'function-block' as const,
         language: 'st' as const,
-        variables: [{ name: 'NODE', class: 'inOut' as const, type: { definition: 'derived' as const, value: 'FB_NODE' } }],
+        variables: [
+          { name: 'NODE', class: 'inOut' as const, type: { definition: 'derived' as const, value: 'FB_NODE' } },
+        ],
         body: { text: '' },
       },
     ],
@@ -131,5 +133,20 @@ describe('re-applying a variable whose name changed only in case', () => {
     const result = await apply(globalSpec('GLAMP') as Partial<ApplySpec>)
     expect(result.errors).toEqual([])
     expect(globals()).toEqual(['GLAMP'])
+  })
+})
+
+describe('re-applying globals in a new order', () => {
+  const names = () => store.getState().project.data.configurations.resource.globalVariables.map((v) => v.name)
+  const spec = (...list: string[]) => ({
+    globalVariables: list.map((name) => ({ name, class: 'global' as const, type: BOOL })),
+  })
+
+  it('shows them in the spec order, a global the spec moved to the top included', async () => {
+    await apply(spec('A', 'B', 'C'))
+    expect(names()).toEqual(['A', 'B', 'C'])
+    // C moves to the top, D is new: both where the spec puts them, not appended.
+    await apply(spec('C', 'D', 'A', 'B'))
+    expect(names()).toEqual(['C', 'D', 'A', 'B'])
   })
 })

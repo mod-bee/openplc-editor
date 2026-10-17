@@ -98,6 +98,8 @@ export async function applySpec(
     // Variables are compared with the POUs just applied, so they go last.
     pruneVariables(store, spec, changes, errors)
     pruneProtocols(store, spec, changes)
+    // With pruning the spec is the whole list, so the resource's table shows it in the spec's order.
+    orderGlobalVariables(store, spec, changes)
   }
 
   // Any `location` that was bound changes the IEC address map, and nothing
@@ -107,6 +109,20 @@ export async function applySpec(
   }
 
   return { changes, errors }
+}
+
+/**
+ * Puts the resource's global variables in the spec's order. Applying only updates a global in place and appends a
+ * new one, so a global the spec moves to the top (say a firmware version) stayed where it was first created.
+ */
+function orderGlobalVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[]): void {
+  ;(spec.globalVariables ?? []).forEach((wanted, index) => {
+    const globals = store.getState().project.data.configurations.resource.globalVariables ?? []
+    const current = globals.findIndex((entry) => entry.name.toUpperCase() === wanted.name.toUpperCase())
+    if (current < 0 || current === index) return
+    store.getState().projectActions.rearrangeVariables({ scope: 'global', rowId: current, newIndex: index })
+    changes.push({ kind: 'variable', action: 'update', name: wanted.name })
+  })
 }
 
 function specBindsLocation(spec: ApplySpec): boolean {
@@ -162,7 +178,11 @@ function applyDevice(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChang
   }
   if (spec.device.debugDisplay !== undefined) {
     store.getState().deviceActions.setDebugDisplay(spec.device.debugDisplay)
-    changes.push({ kind: 'device', action: 'update', name: `debugDisplay = ${JSON.stringify(spec.device.debugDisplay)}` })
+    changes.push({
+      kind: 'device',
+      action: 'update',
+      name: `debugDisplay = ${JSON.stringify(spec.device.debugDisplay)}`,
+    })
   }
 
   const rest = { ...configuration }
