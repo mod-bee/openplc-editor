@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover'
+import { useNodesData } from '@xyflow/react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PLCVariable } from '../../../../../middleware/shared/ports'
@@ -46,21 +47,19 @@ const VariableElement = (block: VariableProps) => {
   const treeType = useDebugVariableType(compositeKey)
   // The block pin this element is attached to, read when the element itself names no variable: an empty
   // pin, a literal or a constant shows the value the block holds at that pin (see blockPinVariableName).
-  const ladderFlows = useOpenPLCStore((state) => state.ladderFlows)
+  // The block is in this element's own rung: read it from the rung's diagram, which changes only with the rung
+  // (all the project's flows change with any edit anywhere, and a large POU holds a thousand of these).
+  const blockNode = useNodesData(data.block?.id ?? '')
   const { blockInputs } = useDebugDisplayOptions()
   const pinVariableName = useMemo(() => {
-    const blockId = data.block?.id
     const handleId = data.block?.handleId
-    if (!blockId || !handleId) return undefined
-    const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
-    const blockNode = rung?.nodes.find((node) => node.id === blockId)
-    if (!blockNode) return undefined
+    if (!blockNode || !handleId) return undefined
     return blockPinVariableName(
       blockNode.data as Parameters<typeof blockPinVariableName>[0],
       handleId,
       data.variant === 'output' ? 'output' : 'input',
     )
-  }, [ladderFlows, pouName, id, data.block?.id, data.block?.handleId, data.variant])
+  }, [blockNode, data.block?.handleId, data.variant])
 
   const inputVariableRef = useRef<
     HTMLTextAreaElement & {
@@ -299,9 +298,6 @@ const VariableElement = (block: VariableProps) => {
     setIsContextMenuOpen(false)
     setForceValueModalOpen(true)
   }
-
-
-
 
   const handleClick = (e: React.MouseEvent) => {
     if (!isDebuggerVisible || !debugKey) return
@@ -552,7 +548,15 @@ const VariableElement = (block: VariableProps) => {
         enumCodes={debugNode?.enumCodes}
         onForce={async (value, text) => {
           if (debugKey)
-            await forceDebugVariable(store, debugger_, debugKey, debugIndex, value, isForcedValueHigh(text), debugType())
+            await forceDebugVariable(
+              store,
+              debugger_,
+              debugKey,
+              debugIndex,
+              value,
+              isForcedValueHigh(text),
+              debugType(),
+            )
         }}
       />
 

@@ -20,7 +20,8 @@ export const GenericTextCell = ({
 }) => {
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { searchQuery } = useOpenPLCStore()
+  // Only the search query: one of these per table cell, so not a subscription to the whole store.
+  const searchQuery = useOpenPLCStore((state) => state.searchQuery)
   const formattedCellValue = searchQuery ? extractSearchQuery(value, searchQuery) : value
 
   const [isEditing, setIsEditing] = useState(false)

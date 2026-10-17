@@ -1,4 +1,5 @@
 import type { SystemLibrary } from '@root/middleware/shared/ports/library-types'
+import { useStore } from '@xyflow/react'
 import { FocusEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -509,17 +510,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
   // carries for ET): online, an element shows the value of its own variable or,
   // when it names none, the value the block holds at its pin (ladder/variable.tsx),
   // so the block draws no second value for that pin.
-  // Subscribe to the flows array only (a stable reference until the ladder
-  // actually changes), then derive in a memo. As a live selector this ran its
-  // whole-POU scan on EVERY store update — a debug-value tick, a cursor move —
-  // once per rendered block; keyed on the flows reference it runs only when the
-  // ladder is edited.
-  const ladderFlows = useOpenPLCStore((state) => state.ladderFlows)
-  const connectedPinKey = useMemo(() => {
-    const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
-    if (!rung) return ''
+  // Read from this block's own rung (its diagram's store), as a string key, so the block draws again only when
+  // that key changes: all the project's flows change with any edit anywhere, and a large POU holds hundreds of
+  // blocks.
+  const connectedPinKey = useStore((flow) => {
     const names: string[] = []
-    for (const node of rung.nodes) {
+    for (const node of flow.nodes) {
       if (node.type !== 'variable') continue
       const nd = node.data as {
         variant?: string
@@ -532,7 +528,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
       names.push(`${nd.variant}\u0001${nd.block.handleId}`)
     }
     return names.sort().join('\u0000')
-  }, [ladderFlows, pouName, id])
+  })
 
   // The pins on one side with an element attached (named, a constant, or an empty pin), which shows the
   // value itself (ladder/variable.tsx).
@@ -554,23 +550,31 @@ const Block = <T extends object>(block: BlockProps<T>) => {
     () => connectedPinNames('output', connectedPinKey, data.connectedVariables),
     [connectedPinKey, data.connectedVariables],
   )
-  // Inputs wired straight from another block's output: read that output (a function keeps no inputs).
-  const inputSources = useMemo(() => {
-    const sources = new Map<string, string>()
-    const rung = ladderFlows.find((flow) => flow.name === pouName)?.rungs.find((r) => r.nodes.some((n) => n.id === id))
-    for (const edge of rung?.edges ?? []) {
+  // Inputs wired straight from another block's output: read that output (a function keeps no inputs). From this
+  // block's own rung, as a key (pin, then the output's variable), like connectedPinKey above.
+  const inputSourcesKey = useStore((flow) => {
+    const pairs: string[] = []
+    for (const edge of flow.edges) {
       if (edge.target !== id || !edge.targetHandle || !edge.sourceHandle) continue
-      const source = rung?.nodes.find((node) => node.id === edge.source)
+      const source = flow.nodeLookup.get(edge.source)
       if (source?.type !== 'block') continue
       const name = blockPinVariableName(
         source.data as Parameters<typeof blockPinVariableName>[0],
         edge.sourceHandle,
         'output',
       )
-      if (name !== undefined) sources.set(edge.targetHandle, name)
+      if (name !== undefined) pairs.push(`${edge.targetHandle}\u0001${name}`)
+    }
+    return pairs.join('\u0000')
+  })
+  const inputSources = useMemo(() => {
+    const sources = new Map<string, string>()
+    for (const pair of inputSourcesKey ? inputSourcesKey.split('\u0000') : []) {
+      const [pin, name] = pair.split('\u0001')
+      sources.set(pin, name)
     }
     return sources
-  }, [ladderFlows, pouName, id])
+  }, [inputSourcesKey])
   const connectedInputNames = useMemo(
     () => connectedPinNames('input', connectedPinKey, data.connectedVariables),
     [connectedPinKey, data.connectedVariables],

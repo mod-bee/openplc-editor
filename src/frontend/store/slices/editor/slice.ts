@@ -209,6 +209,8 @@ export const createEditorSlice: StateCreator<EditorSlice, [], [], EditorSlice> =
             if (openRung) {
               const { rungId, open } = openRung
               const rung = editor.graphical.openedRungs.find((r) => r.rungId === rungId)
+              // Unchanged: no new state, so nothing redraws (every rung reports itself as it is drawn).
+              if (rung?.open === open) return
               if (rung) {
                 editor.graphical.openedRungs = editor.graphical.openedRungs.map((r) =>
                   r.rungId === rungId ? { ...r, open } : r,

@@ -394,6 +394,17 @@ describe('editor slice', () => {
       })
     })
 
+    it('leaves the state untouched when the rung is already so (every rung reports itself as it is drawn)', () => {
+      const { editorActions: a } = store.getState()
+      const ld = makeGraphical('L', 'ld')
+      a.addModel(ld)
+      a.setEditor(ld)
+      a.updateModelLadder({ openRung: { rungId: 'r1', open: true } })
+      const before = store.getState()
+      a.updateModelLadder({ openRung: { rungId: 'r1', open: true } })
+      expect(store.getState()).toBe(before)
+    })
+
     it('no-op when openRung undefined', () => {
       const { editorActions: a } = store.getState()
       const ld = makeGraphical('L', 'ld')

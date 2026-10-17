@@ -64,13 +64,6 @@ const Contact = (block: ContactProps) => {
   const [openAutocomplete, setOpenAutocomplete] = useState<boolean>(false)
   const [keyPressedAtTextarea, setKeyPressedAtTextarea] = useState<string>('')
 
-  useEffect(() => {
-    if (inputVariableRef.current && inputWrapperRef.current) {
-      // top
-      inputWrapperRef.current.style.top = inputVariableRef.current.scrollHeight >= 24 ? '-24px' : '-20px'
-    }
-  }, [contactVariableValue])
-
   /**
    * useEffect to sync contactVariableValue with data.variable.name when it changes externally
    * (e.g., from variable rename propagation)
@@ -217,7 +210,8 @@ const Contact = (block: ContactProps) => {
           {
             'outline outline-2 outline-offset-[3px] outline-brand': selected,
             // Go to (a search hit, a cross reference) landed here.
-            'bg-amber-300/60 outline outline-[3px] outline-offset-[3px] outline-amber-500 dark:bg-amber-500/40': revealed,
+            'bg-amber-300/60 outline outline-[3px] outline-offset-[3px] outline-amber-500 dark:bg-amber-500/40':
+              revealed,
             'animate-pulse': revealed && revealPulsing,
           },
         )}
@@ -238,6 +232,10 @@ const Contact = (block: ContactProps) => {
             inputHeight={{
               height: 24,
               scrollLimiter: 32,
+            }}
+            // Two lines of name sit higher above the element.
+            onHeightChange={(height) => {
+              if (inputWrapperRef.current) inputWrapperRef.current.style.top = height >= 24 ? '-24px' : '-20px'
             }}
             ref={inputVariableRef}
             textAreaClassName='text-center text-xs leading-3'

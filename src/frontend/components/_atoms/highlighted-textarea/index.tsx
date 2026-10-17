@@ -1,5 +1,5 @@
 import type { ChangeEvent, ComponentPropsWithRef, UIEvent } from 'react'
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 
 import { useOpenPLCStore } from '../../../store'
 import { extractSearchQuery } from '../../../store/slices/search/utils'
@@ -20,6 +20,54 @@ type HighlightedTextAreaProps = ComponentPropsWithRef<'textarea'> & {
   highlightClassName?: string
   scrollableIndicator?: boolean
   scrollableIndicatorClassName?: string
+  /** The area's height each time it is sized to its text (no extra layout: it comes from the batch below). */
+  onHeightChange?: (height: number) => void
+}
+
+/** One text area to size to its text: the height is the text's, or `height` once the text reaches `scrollLimiter`. */
+type SizingJob = {
+  input: HTMLTextAreaElement
+  highlight: HTMLDivElement
+  indicator: HTMLDivElement | null
+  scrollLimiter?: number
+  height?: number
+  report: (height: number) => void
+}
+
+const sizingQueue = new Set<SizingJob>()
+
+/**
+ * Sizes every queued text area at once: all heights reset, then all read, then all set. Reading a height right
+ * after changing one forces the browser to lay the page out again, so done one area at a time a diagram of a
+ * thousand elements laid the page out a thousand times. Runs before the frame is painted.
+ */
+function flushSizing(): void {
+  const jobs = [...sizingQueue]
+  sizingQueue.clear()
+  for (const job of jobs) {
+    job.input.style.height = 'auto'
+    job.highlight.style.height = 'auto'
+  }
+  const textHeights = jobs.map((job) => job.input.scrollHeight)
+  jobs.forEach((job, index) => {
+    const textHeight = textHeights[index]
+    const limited = job.scrollLimiter !== undefined && job.height !== undefined
+    const height = limited && textHeight >= job.scrollLimiter! ? job.height! : textHeight
+    job.input.style.height = `${height}px`
+    job.highlight.style.height = `${height}px`
+    // What the area's scrollHeight is now: its text, or the set height when that is taller.
+    const shown = Math.max(textHeight, height)
+    // The area scrolls when its text is taller than the limit.
+    if (job.indicator && job.scrollLimiter !== undefined) {
+      job.indicator.style.display = shown > job.scrollLimiter ? 'block' : 'none'
+    }
+    job.report(shown)
+  })
+}
+
+function scheduleSizing(job: SizingJob): void {
+  if (sizingQueue.size === 0) queueMicrotask(flushSizing)
+  sizingQueue.add(job)
 }
 
 const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaProps>(
@@ -37,11 +85,14 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
         enter: true,
       },
       inputHeight,
+      onHeightChange,
       ...props
     }: HighlightedTextAreaProps,
     ref,
   ) => {
-    const { searchQuery } = useOpenPLCStore()
+    // Only the search query: a diagram holds one of these per element, and a subscription to the whole store
+    // would redraw every one of them on any change anywhere.
+    const searchQuery = useOpenPLCStore((state) => state.searchQuery)
 
     const inputRef = useRef<HTMLTextAreaElement>(null)
     const scrollableIndicatorRef = useRef<HTMLDivElement>(null)
@@ -49,7 +100,9 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
 
     const [inputFocus, setInputFocus] = useState<boolean>(false)
     const [canSubmit, setCanSubmit] = useState<boolean>(true)
-    const [scrollValue, setScrollValue] = useState<number>(0)
+    // The latest callback, for the batch (callers pass a new function each render).
+    const onHeightChangeRef = useRef(onHeightChange)
+    onHeightChangeRef.current = onHeightChange
     const formattedVariableValue = searchQuery ? extractSearchQuery(textAreaValue, searchQuery) : textAreaValue
 
     // @ts-expect-error - not all properties are used
@@ -66,38 +119,29 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
           }
           setInputFocus(false)
         },
-        scrollHeight: textAreaValue.length === 0 ? 0 : inputRef.current?.scrollHeight,
       }
-    }, [textAreaValue, inputRef, inputFocus])
+    }, [inputRef, inputFocus])
 
     useEffect(() => {
       if (!inputFocus) inputRef.current?.blur()
     }, [inputFocus])
 
-    useEffect(() => {
-      if (inputRef?.current && highlightDivRef.current) {
-        // height
-        inputRef.current.style.height = 'auto'
-        inputRef.current.style.height =
-          inputHeight !== undefined
-            ? `${inputRef.current.scrollHeight < inputHeight.scrollLimiter ? inputRef.current.scrollHeight : inputHeight.height}px`
-            : `${inputRef.current.scrollHeight}px`
-        highlightDivRef.current.style.height = 'auto'
-        highlightDivRef.current.style.height = inputRef.current.style.height
+    // The limits as numbers, not the object: callers pass a new object each render.
+    const scrollLimiter = inputHeight?.scrollLimiter
+    const limitedHeight = inputHeight?.height
 
-        // scrollable indicator
-        if (scrollableIndicatorRef.current && inputHeight) {
-          scrollableIndicatorRef.current.style.display =
-            inputRef.current.scrollHeight > inputHeight.scrollLimiter ? 'block' : 'none'
-        }
+    useLayoutEffect(() => {
+      if (inputRef.current && highlightDivRef.current) {
+        scheduleSizing({
+          input: inputRef.current,
+          highlight: highlightDivRef.current,
+          indicator: scrollableIndicatorRef.current,
+          scrollLimiter,
+          height: limitedHeight,
+          report: (height) => onHeightChangeRef.current?.(height),
+        })
       }
-    }, [textAreaValue, inputHeight])
-
-    useEffect(() => {
-      if (highlightDivRef.current) {
-        highlightDivRef.current.scrollTop = scrollValue
-      }
-    }, [scrollValue])
+    }, [textAreaValue, scrollLimiter, limitedHeight])
 
     const onChangeHandler = (e: ChangeEvent<HTMLTextAreaElement>) => {
       setTextAreaValue(e.target.value)
@@ -105,7 +149,9 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
     }
 
     const onScrollHandler = (e: UIEvent<HTMLTextAreaElement>) => {
-      setScrollValue(e.currentTarget.scrollTop)
+      // The highlight follows the text straight away (as React state this was a render, and a forced layout on
+      // every area as it was first drawn).
+      if (highlightDivRef.current) highlightDivRef.current.scrollTop = e.currentTarget.scrollTop
     }
 
     return (
