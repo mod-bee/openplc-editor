@@ -98,8 +98,10 @@ export async function applySpec(
     // Variables are compared with the POUs just applied, so they go last.
     pruneVariables(store, spec, changes, errors)
     pruneProtocols(store, spec, changes)
-    // With pruning the spec is the whole list, so the resource's table shows it in the spec's order.
+    // With pruning the spec is the whole list, so the resource's tables show it in the spec's order - for the
+    // program instances that is also the order they run in, within their task.
     orderGlobalVariables(store, spec, changes)
+    orderInstances(store, spec, changes)
   }
 
   // Any `location` that was bound changes the IEC address map, and nothing
@@ -122,6 +124,20 @@ function orderGlobalVariables(store: OpenPLCStore, spec: ApplySpec, changes: Pla
     if (current < 0 || current === index) return
     store.getState().projectActions.rearrangeVariables({ scope: 'global', rowId: current, newIndex: index })
     changes.push({ kind: 'variable', action: 'update', name: wanted.name })
+  })
+}
+
+/**
+ * Puts the program instances in the spec's order: the order the programs run in, within a task. Applying appended
+ * a new instance, so a program the spec runs first in its task (one that prepares what the others read) ran last.
+ */
+function orderInstances(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[]): void {
+  ;(spec.instances ?? []).forEach((wanted, index) => {
+    const instances = store.getState().project.data.configurations.resource.instances
+    const current = instances.findIndex((instance) => instance.name === wanted.name)
+    if (current < 0 || current === index) return
+    store.getState().projectActions.rearrangeInstances({ rowId: current, newIndex: index })
+    changes.push({ kind: 'instance', action: 'update', name: wanted.name })
   })
 }
 

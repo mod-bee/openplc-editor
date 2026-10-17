@@ -150,3 +150,27 @@ describe('re-applying globals in a new order', () => {
     expect(names()).toEqual(['C', 'D', 'A', 'B'])
   })
 })
+
+describe('re-applying program instances in a new order', () => {
+  const order = () => store.getState().project.data.configurations.resource.instances.map((i) => i.name)
+  const program = (name: string) => ({
+    name,
+    kind: 'program' as const,
+    language: 'st' as const,
+    variables: [],
+    body: { text: '' },
+  })
+  const spec = (...names: string[]) => ({
+    pous: ['P_A', 'P_B', 'P_C'].map(program),
+    tasks: [{ name: 'main', triggering: 'Cyclic' as const, interval: 'T#10ms', priority: 0 }],
+    instances: names.map((name) => ({ name: `i_${name}`, program: name, task: 'main' })),
+  })
+
+  it('runs them in the spec order, a program the spec adds first included', async () => {
+    await apply(spec('P_B', 'P_C'))
+    expect(order()).toEqual(['i_P_B', 'i_P_C'])
+    // P_A is new and runs first: where the spec puts it, not appended.
+    await apply(spec('P_A', 'P_B', 'P_C'))
+    expect(order()).toEqual(['i_P_A', 'i_P_B', 'i_P_C'])
+  })
+})
