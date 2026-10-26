@@ -14,7 +14,16 @@ import {
   XYPosition,
 } from '@xyflow/react'
 import { debounce, isEqual } from 'lodash'
-import { DragEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DragEvent,
+  MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import type { PLCVariable } from '../../../../../middleware/shared/ports/types'
 import { mapsEqual, useContentStable } from '../../../../hooks/use-content-stable'
@@ -28,9 +37,11 @@ import { usePouSnapshot } from '../../../../hooks/use-pou-snapshot'
 import { useStableCallback } from '../../../../hooks/use-stable-callback'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../store'
 import type { FBDRungState } from '../../../../store/slices/fbd'
+import { cn } from '../../../../utils/cn'
 import { getFbdBlockType, isFbdBlockDrag } from '../../../../utils/graphical/drag-detection'
 import { getFunctionBlockVariablesToCleanup } from '../../../../utils/graphical/get-function-block-variables-to-cleanup'
 import { findOccupiedInOutPin } from '../../../../utils/graphical/in-out-pin-rules'
+import { isFbdPlacementElement, PLACEMENT_TARGET_ATTRIBUTE } from '../../../../utils/graphical/placement-elements'
 import { newGraphicalEditorNodeID } from '../../../../utils/new-graphical-editor-node-id'
 import { buildBlockVariant } from '../../../../utils/PLC/block-variant'
 import { CustomFbdNodeTypes, customNodeTypes } from '../../../_atoms/graphical-editor/fbd'
@@ -40,6 +51,7 @@ import { toast } from '../../../_features/[app]/toast/use-toast'
 import { useBoundEditorModel, useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
 import BlockElement from '../../../_features/[workspace]/editor/graphical/elements/fbd/block'
 import ExecuteElement from '../../../_features/[workspace]/editor/graphical/elements/fbd/execute'
+import { useGraphicalPlacement } from '../../../_features/[workspace]/editor/graphical/placement/placement-context'
 import { buildGenericNode } from './fbd-utils/nodes'
 import { useFBDClipboard } from './fbd-utils/useCopyPaste'
 
@@ -58,6 +70,8 @@ const SNAP_GRID: SnapGrid = [16, 16]
 const PRO_OPTIONS = { hideAttribution: true }
 const NOOP = () => {}
 const CONTROLS_CONFIG = { showInteractive: false }
+const PLACEMENT_SWALLOW_MS = 500
+const PLACEMENT_EXCLUDED_SELECTOR = '.react-flow__controls, .react-flow__minimap, .react-flow__panel'
 
 // --- Debug edge coloring ---
 
@@ -254,6 +268,9 @@ export const FBDBody = ({ rung, nodeDivergences = [], isDebuggerActive = false }
     // Once per Go to.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealTarget?.seq])
+  const placement = useGraphicalPlacement()
+  const armedElement = placement?.language === 'fbd' && !isDebuggerActive ? placement.armed : null
+  const swallowUntilRef = useRef(0)
 
   // Refs, not state: the values are only read inside the paste handler, and
   // state here re-rendered the whole FBDBody on every pointer move over the
@@ -772,12 +789,46 @@ export const FBDBody = ({ rung, nodeDivergences = [], isDebuggerActive = false }
     closeModal()
   }
 
+  /**
+   * Click-to-place: a left click on the canvas inserts the armed element at the
+   * pointer; a click on the canvas controls cancels.
+   */
+  const handlePlacementPointerDown = (event: ReactPointerEvent) => {
+    if (!armedElement || !placement || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    swallowUntilRef.current = performance.now() + PLACEMENT_SWALLOW_MS
+
+    const onControls = event.target instanceof Element && event.target.closest(PLACEMENT_EXCLUDED_SELECTOR) !== null
+    if (onControls || !reactFlowInstance) {
+      placement.cancel()
+      return
+    }
+
+    const element = placement.consume()
+    if (!element || !isFbdPlacementElement(element)) return
+    const position = reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    handleAddElementByDropping(position, element, undefined)
+  }
+
+  const swallowAfterPlacement = (event: SyntheticEvent) => {
+    if (performance.now() > swallowUntilRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.type === 'click') swallowUntilRef.current = 0
+  }
+
   return (
     <div
-      className='h-full w-full rounded-lg border p-1 dark:border-neutral-800'
+      className={cn('h-full w-full rounded-lg border p-1 dark:border-neutral-800', armedElement && 'cursor-crosshair')}
       ref={reactFlowViewportRef}
       // A click in the diagram ends the Go to highlight.
       onPointerDown={() => revealTarget && fbdClearReveal()}
+      {...{ [PLACEMENT_TARGET_ATTRIBUTE]: 'fbd' }}
+      onContextMenu={placement?.handleContextMenu}
+      onPointerDownCapture={armedElement ? handlePlacementPointerDown : undefined}
+      onMouseDownCapture={swallowAfterPlacement}
+      onClickCapture={swallowAfterPlacement}
       onMouseEnter={() => {
         insideViewportRef.current = true
       }}

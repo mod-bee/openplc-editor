@@ -103,6 +103,7 @@ describe('Device slice types', () => {
         plcData: null,
         ipAddress: null,
         runtimeVersion: null,
+        runtimeFeatures: null,
         selectedDevice: null,
         storedCredentials: null,
         timingStats: null,
@@ -150,6 +151,7 @@ describe('Device slice types', () => {
         plcData: null,
         ipAddress: '192.168.1.1',
         runtimeVersion: 'v4.1.9',
+        runtimeFeatures: null,
         selectedDevice: {
           orchestratorId: 'o',
           orchestratorAgentId: 'a',
@@ -196,6 +198,7 @@ describe('Device slice types', () => {
           plcData: null,
           ipAddress: null,
           runtimeVersion: null,
+          runtimeFeatures: null,
           selectedDevice: null,
           storedCredentials: null,
           timingStats: null,

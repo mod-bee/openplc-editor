@@ -30,6 +30,7 @@ import type {
   PinPullSpec,
   PlatformOption,
 } from '../../../middleware/shared/ports/types'
+import { classifyBoardRuntime } from '../../../middleware/shared/utils/target-capabilities/runtime-kind'
 import type { ManifestCapabilities } from '../../../middleware/shared/utils/target-capabilities/types'
 import { findVppDeviceByBoardName } from './find-vpp-device'
 
@@ -253,9 +254,6 @@ export interface BoardBuildInfo {
 // Resolver
 // ---------------------------------------------------------------------------
 
-/** `boardName` literal that classifies as legacy Runtime v3. */
-const RUNTIME_V3_NAME = 'OpenPLC Runtime v3'
-
 export class BoardInfoResolver {
   constructor(private readonly config: BoardInfoResolverConfig) {}
 
@@ -387,11 +385,7 @@ export class BoardInfoResolver {
     boardName: string,
     base: Omit<BoardBuildInfo, 'boardRuntime' | 'isSimulator' | 'isRuntimeV3' | 'isRuntimeV4'>,
   ): BoardBuildInfo {
-    const boardRuntime = base.compiler
-    const isRuntimeV3 = boardName === RUNTIME_V3_NAME
-    const isRuntimeV4 = boardRuntime === 'openplc-compiler' && !isRuntimeV3
-    const isSimulator = boardRuntime === 'simulator'
-    return { ...base, boardRuntime, isSimulator, isRuntimeV3, isRuntimeV4 }
+    return { ...base, ...classifyBoardRuntime(boardName, base.compiler) }
   }
 
   #mapTargetTypeToCompiler(targetType: string): string {

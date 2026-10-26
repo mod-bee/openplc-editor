@@ -2050,6 +2050,22 @@ describe('createProjectSlice', () => {
       expect(result.message).toBe('Server already exists')
     })
 
+    it('refuses a second server of a protocol, naming the one that holds it', () => {
+      store.getState().projectActions.createServer({ data: makeModbusTcpServer('mb_a') })
+      const result = store.getState().projectActions.createServer({ data: makeModbusTcpServer('mb_b') })
+
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain('mb_a')
+      expect(store.getState().project.data.servers).toHaveLength(1)
+    })
+
+    it('lets one server of each protocol live side by side', () => {
+      expect(store.getState().projectActions.createServer({ data: makeModbusTcpServer('mb') }).ok).toBe(true)
+      expect(store.getState().projectActions.createServer({ data: { name: 's7', protocol: 's7comm' } }).ok).toBe(true)
+      expect(store.getState().projectActions.createServer({ data: { name: 'ua', protocol: 'opcua' } }).ok).toBe(true)
+      expect(store.getState().project.data.servers).toHaveLength(3)
+    })
+
     it('creates a server with unknown protocol type without adding config', () => {
       const result = store.getState().projectActions.createServer({
         data: { name: 'EtherNet', protocol: 'ethernet-ip' },
@@ -3461,6 +3477,36 @@ describe('createProjectSlice', () => {
       // unmapped entry is returned unchanged.
       expect(entries[0].iecAddress).toBe('%QX0.0')
       expect(entries[1].iecAddress).toBe('NOPE')
+    })
+
+    it('compacts byte channels and restores their aliases by module, slot and channel', () => {
+      seedVppBoard(store)
+      const entry = (channelName: string, iecAddress: string) => ({
+        slot: 1,
+        channelName,
+        channelType: 'analogInput',
+        dataType: 'USINT',
+        moduleId: 'ur20-2di-p-ts',
+        moduleName: 'UR20-2DI-P-TS',
+        iecAddress,
+        alias: '',
+      })
+      store.getState().deviceActions.setVendorScreenData('io-mapping', {
+        entries: [entry('input_image_1', '%IB4'), entry('running_number_1', '%IB7')],
+      })
+      store
+        .getState()
+        .projectActions.rememberChannelAlias(vppMemoryKey('ur20-2di-p-ts', 1, 'running_number_1'), 'counter')
+      store.getState().projectActions.rememberChannelAlias(vppMemoryKey('ur20-4di-p', 1, 'input_image_1'), 'stale')
+
+      store.getState().projectActions.recalculateIecAddresses()
+
+      expect(store.getState().deviceDefinitions.configuration.vendorScreenData?.['io-mapping']).toMatchObject({
+        entries: [
+          { channelName: 'input_image_1', iecAddress: '%IB0', alias: '' },
+          { channelName: 'running_number_1', iecAddress: '%IB1', alias: 'counter' },
+        ],
+      })
     })
 
     it('skips devices without a Modbus config during writeback', () => {

@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Autonomy®
 /*
-openplc_retain_weak.cpp - Default retain storage (NODE-94)
-Copyright (C) 2026 OpenPLC - Thiago Alves
+openplc_retain_weak.cpp - Weak fallback backend for retain storage (NODE-94)
 
 The firmware's built-in retain store, and the fallback when there is none.
 Every definition here is WEAK: a VPP or board library that ships its own store

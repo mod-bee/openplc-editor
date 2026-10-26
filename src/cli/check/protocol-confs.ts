@@ -11,6 +11,7 @@
 import type { GenerateConfsInput } from '@root/backend/shared/compile/steps/generate-confs'
 import { generateRuntimeConfs } from '@root/backend/shared/compile/steps/generate-confs'
 import type { PLCProjectData } from '@root/middleware/shared/ports/types'
+import { DEFAULT_S7_PROFILE } from '@root/middleware/shared/utils/target-capabilities'
 
 export interface ProtocolConfSummary {
   /** The file the upload would write, or null when the protocol is off. */
@@ -43,6 +44,8 @@ export function describeProtocolConfs(
       // `check` talks to no device, so the runtime version is unknown, as for
       // a compile with no target: the legacy EtherCAT file is what is reported.
       runtimeVersion: null,
+      // No target either, so S7 is described with the default profile.
+      s7Profile: DEFAULT_S7_PROFILE,
     })
   } catch (error) {
     // OPC-UA and EtherCAT both abort the compile from here rather than emitting

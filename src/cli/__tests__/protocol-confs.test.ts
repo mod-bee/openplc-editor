@@ -66,9 +66,9 @@ describe('which conf files an upload would carry', () => {
     expect(enabledConfs(project([modbus('A', false)]))).toEqual([])
   })
 
-  it('carries s7comm even when the server is disabled', () => {
-    // By design — that plugin reads `enabled` itself and declines to serve.
-    expect(enabledConfs(project([s7('S', false)]))).toEqual(['s7comm'])
+  it('carries nothing for a DISABLED S7 server', () => {
+    // A server that is switched off contributes nothing, as for Modbus.
+    expect(enabledConfs(project([s7('S', false)]))).toEqual([])
   })
 
   it('carries no ethercat.json when the project has no EtherCAT devices', () => {

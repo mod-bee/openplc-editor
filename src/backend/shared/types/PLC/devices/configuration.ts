@@ -20,6 +20,17 @@ const vppPackagePinSchema = z.object({
   contentHash: z.string(),
 })
 
+/**
+ * The vPLC this project targets on web, so reopening the project selects it
+ * again. Identifies the device only: the binding (package, backplane access)
+ * is re-read from the live device listing when the selection is restored.
+ */
+const targetDeviceSchema = z.object({
+  orchestratorId: z.string(),
+  deviceId: z.string(),
+  deviceName: z.string(),
+})
+
 const deviceConfigurationSchema = z.object({
   deviceBoard: z.string().default('OpenPLC Simulator'),
   communicationPort: z.string().default(''),
@@ -80,6 +91,8 @@ const deviceConfigurationSchema = z.object({
   // Optional so every project written before pinning existed still validates;
   // absent simply means "no pin recorded", which warns about nothing.
   vppPackagePinsByBoard: z.record(z.string(), vppPackagePinSchema).optional(),
+  // Optional so every project written before it still validates; absent means no vPLC to restore.
+  targetDevice: targetDeviceSchema.optional(),
 })
 
 type DeviceConfiguration = z.infer<typeof deviceConfigurationSchema>
@@ -95,6 +108,7 @@ export {
   deviceConfigurationSchema,
   outputsOnStopSchema,
   persistentStorageSchema,
+  targetDeviceSchema,
   vppPackagePinSchema,
 }
 export type { DeviceConfiguration, VppPackagePin }

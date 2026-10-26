@@ -21,8 +21,13 @@ import { CrossReferences } from '../components/_features/[workspace]/cross-refer
 import { DataTypeEditor } from '../components/_features/[workspace]/data-type'
 import { BuildSettingsEditor } from '../components/_features/[workspace]/editor/build-settings'
 import { DeviceEditor } from '../components/_features/[workspace]/editor/device'
-import { EtherCATDeviceEditor, EtherCATEditor } from '../components/_features/[workspace]/editor/device/ethercat'
+import {
+  EtherCATDeviceEditor,
+  EtherCATEditor,
+  EtherCATModuleEditor,
+} from '../components/_features/[workspace]/editor/device/ethercat'
 import { RemoteDeviceEditor } from '../components/_features/[workspace]/editor/device/remote-device'
+import { DiagnosticsEditor } from '../components/_features/[workspace]/editor/diagnostics'
 import { DiffViewerEditor } from '../components/_features/[workspace]/editor/diff-viewer'
 import { GraphicalEditor } from '../components/_features/[workspace]/editor/graphical'
 import { LibraryManagerEditor } from '../components/_features/[workspace]/editor/library-manager'
@@ -35,7 +40,7 @@ import { ModbusServerEditor } from '../components/_features/[workspace]/editor/s
 import { OpcUaServerEditor } from '../components/_features/[workspace]/editor/server/opcua-server'
 import { S7CommServerEditor } from '../components/_features/[workspace]/editor/server/s7comm-server'
 import { UserManagementEditor } from '../components/_features/[workspace]/editor/user-management'
-import { VendorScreenEditor } from '../components/_features/[workspace]/editor/vendor-screen'
+import { VendorScreenTabs } from '../components/_features/[workspace]/editor/vendor-screen/vendor-screen-tabs'
 import { GlobalVariableListEditor } from '../components/_features/[workspace]/global-variable-list'
 import { Search } from '../components/_features/[workspace]/search'
 import { SourceControlPanel } from '../components/_features/[workspace]/source-control'
@@ -61,6 +66,7 @@ import {
 import { useDebugWatchFile } from '../hooks/use-debug-watch-file'
 import { useDeviceConnectionMonitor } from '../hooks/use-device-connection-monitor'
 import { useDevicePlcState } from '../hooks/use-device-plc-state'
+import { useRestoreProjectTargetDevice } from '../hooks/use-restore-project-target-device'
 import { useRuntimePolling } from '../hooks/use-runtime-polling'
 import { forceDebugVariable, releaseDebugVariable } from '../services/debug-force-variable'
 import { openPackageManagerTab } from '../services/open-package-manager-tab'
@@ -197,6 +203,7 @@ const WorkspaceScreen = () => {
   useRuntimePolling()
   // The project's watch list, read from and written to <project>/debugger/watch.json.
   useDebugWatchFile()
+  useRestoreProjectTargetDevice()
   // Mirrors a baremetal target's run/stop state from the held device link's existing liveness tick (no timer of its own).
   useDevicePlcState()
   useDeviceConnectionMonitor()
@@ -639,7 +646,7 @@ const WorkspaceScreen = () => {
                         )}
                         {editor['type'] === 'plc-server' && editor.meta.protocol === 's7comm' && <S7CommServerEditor />}
                         {editor['type'] === 'plc-server' && editor.meta.protocol === 'opcua' && <OpcUaServerEditor />}
-                        {editor['type'] === 'plc-vendor-screen' && <VendorScreenEditor />}
+                        {editor['type'] === 'plc-diagnostics' && <DiagnosticsEditor />}
                         {editor['type'] === 'plc-package-manager' && <PackageManagerEditor />}
                         {editor['type'] === 'plc-library-manager' && <LibraryManagerEditor />}
                         {editor['type'] === 'plc-user-management' && <UserManagementEditor />}
@@ -647,6 +654,8 @@ const WorkspaceScreen = () => {
                         {editor['type'] === 'plc-library-manifest' && <LibraryManifestEditor />}
                         {editor['type'] === 'plc-build-settings' && <BuildSettingsEditor />}
                         {editor['type'] === 'diff-viewer' && <DiffViewerEditor />}
+
+                        <VendorScreenTabs />
 
                         {/* Multi-instance (one tab per deviceId), kept mounted so each device's view state survives tab switches. */}
                         {editors
@@ -657,6 +666,25 @@ const WorkspaceScreen = () => {
                             return (
                               <div key={model.meta.deviceId} className={cn('h-full w-full', !isActive && 'hidden')}>
                                 <EtherCATDeviceEditor busName={model.meta.busName} deviceId={model.meta.deviceId} />
+                              </div>
+                            )
+                          })}
+
+                        {editors
+                          .filter((m) => m.type === 'plc-ethercat-module')
+                          .map((model) => {
+                            const isActive =
+                              editor.type === 'plc-ethercat-module' && editor.meta.moduleId === model.meta.moduleId
+                            return (
+                              <div
+                                key={`${model.meta.deviceId}:${model.meta.moduleId}`}
+                                className={cn('h-full w-full', !isActive && 'hidden')}
+                              >
+                                <EtherCATModuleEditor
+                                  busName={model.meta.busName}
+                                  deviceId={model.meta.deviceId}
+                                  moduleId={model.meta.moduleId}
+                                />
                               </div>
                             )
                           })}

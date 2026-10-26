@@ -4,6 +4,7 @@ import { StateCreator } from 'zustand'
 import type { DeviceConfiguration, DevicePin } from '../../../../middleware/shared/ports/types'
 import { DEFAULT_RETAIN_FLUSH_SECONDS } from '../../../../middleware/shared/ports/types'
 import { resolveTargetCapabilities } from '../../../../middleware/shared/utils/target-capabilities'
+import { DEVICE_SETUP_KEY, IO_MAPPING_KEY, MODULE_CONFIGURATION_KEY } from '../../../utils/vpp/persistence-keys'
 import { defaultDeviceConfiguration } from './data/types'
 import type { DeviceLicenseInfo, DeviceSlice, DeviceSliceRoot, PinUpdateResponse } from './types'
 import { PURCHASE_WATCH_WINDOW_MS } from './types'
@@ -112,6 +113,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
     ipAddress: null,
     runtimeUpdateInProgress: false,
     runtimeVersion: null,
+    runtimeFeatures: null,
     selectedDevice: null,
     storedCredentials: null,
     timingStats: null,
@@ -195,6 +197,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.plcData = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
+          runtimeConnection.runtimeFeatures = null
           runtimeConnection.selectedDevice = null
           runtimeConnection.storedCredentials = null
           runtimeConnection.timingStats = null
@@ -569,6 +572,13 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
         }),
       )
     },
+    setRuntimeFeatures: (features): void => {
+      setState(
+        produce(({ runtimeConnection }: DeviceSlice) => {
+          runtimeConnection.runtimeFeatures = features
+        }),
+      )
+    },
     setPlcRuntimeStatus: (status): void => {
       setState(
         produce(({ runtimeConnection }: DeviceSlice) => {
@@ -596,6 +606,22 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
       setState(
         produce(({ runtimeConnection }: DeviceSlice) => {
           runtimeConnection.selectedDevice = device
+        }),
+      )
+    },
+    setTargetDevice: (target): void => {
+      const current = getState().deviceDefinitions.configuration.targetDevice
+      const unchanged = target
+        ? current?.orchestratorId === target.orchestratorId &&
+          current.deviceId === target.deviceId &&
+          current.deviceName === target.deviceName
+        : current === undefined
+      if (unchanged) return
+      setState(
+        produce((draft: DeviceSlice) => {
+          if (target) draft.deviceDefinitions.configuration.targetDevice = { ...target }
+          else delete draft.deviceDefinitions.configuration.targetDevice
+          draft.deviceUpdated.updated = true
         }),
       )
     },
@@ -659,6 +685,7 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
           runtimeConnection.plcData = null
           runtimeConnection.ipAddress = null
           runtimeConnection.runtimeVersion = null
+          runtimeConnection.runtimeFeatures = null
           runtimeConnection.selectedDevice = null
           runtimeConnection.storedCredentials = null
           runtimeConnection.timingStats = null
@@ -816,6 +843,22 @@ const createDeviceSlice: StateCreator<DeviceSliceRoot, [], [], DeviceSlice> = (s
         }),
       )
     },
+    setConfiguratorSnapshot: (configuratorKey, snapshot): void => {
+      setState(
+        produce(({ deviceDefinitions, deviceUpdated }: DeviceSlice) => {
+          deviceUpdated.updated = true
+          if (!deviceDefinitions.configuration.vendorScreenData) {
+            deviceDefinitions.configuration.vendorScreenData = {}
+          }
+          const target = deviceDefinitions.configuration.vendorScreenData
+          target[configuratorKey] = snapshot.configurator
+          target[DEVICE_SETUP_KEY] = snapshot.deviceSetup
+          target[MODULE_CONFIGURATION_KEY] = snapshot.moduleConfiguration
+          target[IO_MAPPING_KEY] = snapshot.ioMapping
+          syncActiveBoardVendorBucket(deviceDefinitions.configuration)
+        }),
+      )
+    },
     /**
      * Restore a contiguous slice of `vendorScreenData` from a snapshot.
      * Used by the vendor-screen tab's "Don't save" revert path: the
@@ -909,12 +952,36 @@ function migrateVendorScreenData(
   return { vendorScreenData: undefined, vendorScreenDataByBoard: undefined }
 }
 
+/** Like `migrateVendorScreenData`; absent stays absent so no retain.conf is emitted. */
+function migratePersistentStorage(
+  provided: Partial<DeviceConfiguration>,
+  deviceBoard: string,
+): Pick<DeviceConfiguration, 'persistentStorage' | 'persistentStorageByBoard'> {
+  const flat = provided.persistentStorage
+  const archive = provided.persistentStorageByBoard
+
+  if (archive && Object.keys(archive).length > 0) {
+    const active = archive[deviceBoard] ?? flat
+    return {
+      persistentStorage: active ? { ...active } : undefined,
+      persistentStorageByBoard: active ? { ...archive, [deviceBoard]: { ...active } } : { ...archive },
+    }
+  }
+
+  if (flat) {
+    return { persistentStorage: { ...flat }, persistentStorageByBoard: { [deviceBoard]: { ...flat } } }
+  }
+
+  return { persistentStorage: undefined, persistentStorageByBoard: undefined }
+}
+
 function mergeDeviceConfigWithDefaults(
   provided: Partial<DeviceConfiguration>,
   defaults: DeviceConfiguration,
 ): DeviceConfiguration {
   const deviceBoard = provided.deviceBoard || defaults.deviceBoard
   const { vendorScreenData, vendorScreenDataByBoard } = migrateVendorScreenData(provided, deviceBoard)
+  const { persistentStorage, persistentStorageByBoard } = migratePersistentStorage(provided, deviceBoard)
   return {
     deviceBoard,
     communicationPort: provided.communicationPort ?? defaults.communicationPort,
@@ -939,6 +1006,11 @@ function mergeDeviceConfigWithDefaults(
     // board.tsx's drift detection sees a blank slate instead of the real
     // prior pin, so a project with a VPP board always opens as if unpinned.
     vppPackagePinsByBoard: provided.vppPackagePinsByBoard ?? defaults.vppPackagePinsByBoard,
+    // Must merge — otherwise the next save (auto-save on build included) drops the RETAIN settings.
+    ...(persistentStorage ? { persistentStorage } : {}),
+    ...(persistentStorageByBoard ? { persistentStorageByBoard } : {}),
+    // Copied: a fresh object per load is what tells the restore hook a project was (re)opened.
+    ...(provided.targetDevice ? { targetDevice: { ...provided.targetDevice } } : {}),
   }
 }
 

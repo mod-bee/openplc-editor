@@ -96,6 +96,8 @@ interface WalkerState {
   /** Connector expressions cached by name, consumed by continuation
    *  visits later in the same rung (FBD-only). */
   connectorExprs: Map<string, ProgramChunk[]>
+  /** Connector names whose upstream walk is in progress — detects a loop of pairs with no block in it. */
+  resolvingConnectors: Set<string>
   /** Cumulative Y-offset per node id — mirrors how `ladder-xml.ts`
    *  globalises rung positions when it serialises React Flow into
    *  PLCOpen XML (each rung's `reactFlowViewport[1]` height adds to
@@ -178,6 +180,7 @@ export function emitLdBody(body: RFBody, typeContext?: TypeContext, language: 'l
     consumersByBlock: new Map(),
     emittedSinks: new Set(),
     connectorExprs: new Map(),
+    resolvingConnectors: new Set(),
     yOffset: new Map(),
     warnings: [],
     connTypes: typeContext ? computeConnectionTypes(body, typeContext) : new Map(),
@@ -342,7 +345,7 @@ function emitSink(state: WalkerState, node: RFNode): void {
   }
   if (node.type === 'block') return emitStandaloneBlock(state, node)
   if (node.type === 'execute') return emitExecuteNode(state, node)
-  if (node.type === 'connector') return emitConnectorNode(state, node)
+  if (node.type === 'connector') emitConnectorNode(state, node)
 }
 
 /**
@@ -549,22 +552,31 @@ function emitInOutVariableNode(state: WalkerState, node: RFNode, data: VariableD
 }
 
 /**
- * Connector emission: walk the connector's single incoming edge,
- * cache the resulting expression chunks under the connector's name
- * for later continuation lookups.  No bytes emitted into
- * `state.program` — the continuation is what surfaces the cached
+ * Connector emission: walk the connector's single incoming edge and
+ * return the resulting expression chunks, caching unordered results
+ * under the connector's name for later continuation lookups.  No bytes
+ * emitted into `state.program` — the continuation is what surfaces the
  * expression at its consumer's call site.
  */
-function emitConnectorNode(state: WalkerState, node: RFNode): void {
+function emitConnectorNode(state: WalkerState, node: RFNode, order = false): ProgramChunk[] | undefined {
   const data = asConnectorData(node.data)
   if (data === null) {
     state.warnings.push(`connector node "${node.id}" has unrecognised data shape`)
-    return
+    return undefined
   }
-  if (state.connectorExprs.has(data.name)) return
-  const paths = pathsFromIncoming(state, node.id, /*order=*/ false)
-  if (paths.length === 0) return
-  state.connectorExprs.set(data.name, pathsToChunks(paths))
+  const cached = state.connectorExprs.get(data.name)
+  if (cached !== undefined) return cached
+  if (state.resolvingConnectors.has(data.name)) {
+    throw new Error(`connector "${data.name}" is fed by its own continuation`)
+  }
+  state.resolvingConnectors.add(data.name)
+  const paths = pathsFromIncoming(state, node.id, order)
+  state.resolvingConnectors.delete(data.name)
+  if (paths.length === 0) return undefined
+  const expr = pathsToChunks(paths)
+  // An ordered walk leaves ordered producers unemitted; caching it would let an unordered consumer skip them.
+  if (!order) state.connectorExprs.set(data.name, expr)
+  return expr
 }
 
 /* ─────────────────────────── execute ("ST Block") ───────────────────────── */
@@ -717,7 +729,7 @@ function visitUpstream(state: WalkerState, node: RFNode, edge: RFEdge, order: bo
       // algebra as a coil passthrough.
       return visitCoilPassthrough(state, node, order)
     case 'continuation':
-      return visitContinuation(state, node)
+      return visitContinuation(state, node, order)
     case 'connector':
       // Connectors are sinks, never sources — skip when encountered
       // as an upstream during a back-walk.
@@ -824,7 +836,7 @@ function visitParallel(state: WalkerState, node: RFNode, order: boolean): PathNo
  * been visited yet (iteration order quirk), resolve it eagerly by
  * walking the connector's incoming edge now.
  */
-function visitContinuation(state: WalkerState, node: RFNode): PathNode | undefined {
+function visitContinuation(state: WalkerState, node: RFNode, order: boolean): PathNode | undefined {
   const data = asContinuationData(node.data)
   if (data === null) {
     state.warnings.push(`continuation node "${node.id}" has unrecognised data shape`)
@@ -834,8 +846,8 @@ function visitContinuation(state: WalkerState, node: RFNode): PathNode | undefin
   if (cached !== undefined) return leafNode([...cached])
   const connector = findConnectorByName(state, data.name)
   if (connector !== undefined) {
-    emitConnectorNode(state, connector)
-    const resolved = state.connectorExprs.get(data.name)
+    // `order` passes through so an ordered consumer does not pull an ordered producer ahead of its turn.
+    const resolved = emitConnectorNode(state, connector, order)
     if (resolved !== undefined) return leafNode([...resolved])
   }
   state.warnings.push(`continuation "${data.name}" has no matching connector`)

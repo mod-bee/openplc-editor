@@ -31,11 +31,12 @@ describe('authoring a slave from a real ESI file', () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
-    // The parser normalizes the ESI's `#x` literals to `0x`, so these are the
-    // bytes that reach the runtime's startup checks.
+    // The parser normalizes the ESI's `#x` literals to `0x`, and a plain number
+    // (the fixture's RevisionNo="42") is decimal, so these are the bytes that
+    // reach the runtime's startup checks.
     expect(result.value.vendorId).toBe('0x00000B95')
     expect(result.value.productCode).toBe('0x00020192')
-    expect(result.value.revisionNo).toBe('0x42')
+    expect(result.value.revisionNo).toBe('0x2A')
     expect(result.value.addedFrom).toBe('repository')
   })
 

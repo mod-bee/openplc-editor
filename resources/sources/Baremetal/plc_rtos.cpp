@@ -639,54 +639,6 @@ void plc_rtos_count_busy(void)
 // Modbus: the lock each function code needs
 // ---------------------------------------------------------------------------
 
-#ifdef MODBUS_ENABLED
-// The image into the register banks, so a request reads the current image.
-// Same mapping as modbusTask().
-static void image_to_banks(void)
-{
-    for (int i = 0; i < MAX_DIGITAL_OUTPUT; i++)
-        if (bool_output[i / 8][i % 8] != NULL) write_discrete(i, COILS, (bool)*bool_output[i / 8][i % 8]);
-    for (int i = 0; i < MAX_ANALOG_OUTPUT; i++)
-        if (int_output[i] != NULL) modbus.holding[i] = *int_output[i];
-    for (int i = 0; i < MAX_DIGITAL_INPUT; i++)
-        if (bool_input[i / 8][i % 8] != NULL) write_discrete(i, INPUTSTATUS, (bool)*bool_input[i / 8][i % 8]);
-    for (int i = 0; i < MAX_ANALOG_INPUT; i++)
-        if (int_input[i] != NULL) modbus.input_regs[i] = *int_input[i];
-    for (int i = 0; i < MAX_MEMORY_WORD; i++)
-        if (int_memory[i] != NULL) modbus.holding[i + MAX_ANALOG_OUTPUT] = *int_memory[i];
-    for (int i = 0; i < MAX_MEMORY_DWORD; i++)
-        if (dint_memory[i] != NULL) modbus.dint_memory[i] = *dint_memory[i];
-    for (int i = 0; i < MAX_MEMORY_LWORD; i++)
-        if (lint_memory[i] != NULL) modbus.lint_memory[i] = *lint_memory[i];
-}
-
-// Back into the image: only what the request changed. The banks matched the
-// image a moment ago under this same hold, so a difference is the client's
-// write. A write to a forced variable's cell is pinned back at the next frame
-// output, before the HAL sees it.
-static void banks_to_image(void)
-{
-    // Outputs held at their last values (STOP or ERROR) take no write.
-    const bool outputs = !runtime_outputs_held();
-    for (int i = 0; outputs && i < MAX_DIGITAL_OUTPUT; i++) {
-        IEC_BOOL *slot = bool_output[i / 8][i % 8];
-        if (slot != NULL) {
-            const bool coil = get_discrete(i, COILS);
-            if (coil != (bool)*slot) *slot = coil;
-        }
-    }
-    for (int i = 0; outputs && i < MAX_ANALOG_OUTPUT; i++)
-        if (int_output[i] != NULL && *int_output[i] != modbus.holding[i]) *int_output[i] = modbus.holding[i];
-    for (int i = 0; i < MAX_MEMORY_WORD; i++)
-        if (int_memory[i] != NULL && *int_memory[i] != modbus.holding[i + MAX_ANALOG_OUTPUT])
-            *int_memory[i] = modbus.holding[i + MAX_ANALOG_OUTPUT];
-    for (int i = 0; i < MAX_MEMORY_DWORD; i++)
-        if (dint_memory[i] != NULL && *dint_memory[i] != modbus.dint_memory[i]) *dint_memory[i] = modbus.dint_memory[i];
-    for (int i = 0; i < MAX_MEMORY_LWORD; i++)
-        if (lint_memory[i] != NULL && *lint_memory[i] != modbus.lint_memory[i]) *lint_memory[i] = modbus.lint_memory[i];
-}
-#endif // MODBUS_ENABLED
-
 // The tasks whose variables a debugger read touches, from the
 // request itself. Bounded by the frame, since the body validates it later.
 static uint32_t debug_request_mask(uint8_t fc)
@@ -717,7 +669,7 @@ static uint32_t debug_request_mask(uint8_t fc)
 void plc_rtos_run_pdu(uint8_t fc, plc_rtos_hook_t pdu_body)
 {
     switch (fc) {
-    // Data: the register banks mirror the process image.
+    // Data: the handlers address the process image directly.
     case MB_FC_READ_COILS:
     case MB_FC_READ_INPUT_STAT:
     case MB_FC_READ_REGS:
@@ -728,10 +680,7 @@ void plc_rtos_run_pdu(uint8_t fc, plc_rtos_hook_t pdu_body)
     case MB_FC_WRITE_REGS:
 #ifdef MODBUS_ENABLED
         runtime_rtos_image_lock();
-        image_to_banks();
         pdu_body();
-        if (fc == MB_FC_WRITE_COIL || fc == MB_FC_WRITE_REG || fc == MB_FC_WRITE_COILS || fc == MB_FC_WRITE_REGS)
-            banks_to_image();
         runtime_rtos_image_unlock();
 #else
         pdu_body();   // not built in: answered ILLEGAL_FUNCTION, touching nothing

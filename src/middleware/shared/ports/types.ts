@@ -707,6 +707,10 @@ export interface VppModuleDefinition {
   name: string
   /** Used by module-discovery to match a detected device. Modules with no hwId can only be added manually. */
   hwId?: string
+  /** Vendor type id the configurator reports for this module; matched by exact string. */
+  typeId?: string
+  /** Bytes this module occupies in the device's input and output process images. */
+  processImage?: { inputBytes: number; outputBytes: number }
   /** True for an always-present part of the device hardware (e.g. Arduino Opta's built-in I/O). Auto-placed and locked in slot 1. */
   fixed?: boolean
   image?: string
@@ -745,9 +749,13 @@ export interface VppMetadata {
   packagePath: string
   screens: Record<string, unknown>
   hidesNativeScreens?: NativeScreenId[]
+  /** Runtime plugin name from the device's `hal.configTemplate`; absent when the device has no valid one. */
+  pluginName?: string
   moduleSystem: {
     enabled: boolean
     maxSlots: number
+    /** The device can report its installed modules on request. */
+    discoverySupported?: boolean
     modules: VppModuleDefinition[]
   } | null
 }
@@ -815,6 +823,8 @@ export interface PackageManifest {
       provisioning?: string
       pluginEntry?: string
       configTemplate?: string
+      /** Shape of the generated plugin config. Absent → "slots". */
+      pluginConfigFormat?: 'slots' | 'io-ranges'
       requirements?: string
       source?: string
       /** Prebuilt arduino-hal library directory, linked via --library alongside `hal.source`. */
@@ -1025,6 +1035,13 @@ export interface DebugDisplaySetting {
   hideSecrets?: boolean
 }
 
+/** The vPLC a project targets, as `devices/configuration.json` records it. */
+export interface ProjectTargetDevice {
+  orchestratorId: string
+  deviceId: string
+  deviceName: string
+}
+
 export interface DeviceConfiguration {
   deviceBoard: string
   communicationPort: string
@@ -1057,6 +1074,8 @@ export interface DeviceConfiguration {
    * absent simply means there is nothing to compare.
    */
   vppPackagePinsByBoard?: Record<string, VppPackagePin>
+  /** The vPLC this project targets on web; reopening the project selects it again when it is still listed. */
+  targetDevice?: ProjectTargetDevice
 }
 
 export type PlcStatus = 'INIT' | 'RUNNING' | 'STOPPED' | 'ERROR' | 'EMPTY' | 'TRANSITIONING' | 'UNKNOWN'

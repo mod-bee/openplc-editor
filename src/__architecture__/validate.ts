@@ -230,6 +230,8 @@ function getLayer(filePath: string): LayerName | null {
   // reachable from adapters/backend/main on both platforms — same `utils` rule
   // set, byte-identical between repos.
   if (rel.startsWith('middleware/shared/runtime-auth/')) return 'utils'
+  // Vendor configurator wire protocol and host client; pure, byte-identical between repos.
+  if (rel.startsWith('middleware/shared/vendor-document/')) return 'utils'
   if (rel.match(/^middleware\/adapters\/[^/]+\/components\//)) return 'adapter-components'
   if (rel.startsWith('middleware/adapters/')) return 'adapters'
 
@@ -466,6 +468,12 @@ const KNOWN_EXCEPTIONS: Record<string, LayerName[]> = {
   // conversion logic itself stays local (mirrors compiler-adapter.ts's
   // portToSchemaProjectData) and has no other backend-shared dependency.
   'frontend/services/export-actions.ts': ['backend-shared'],
+  // I/O image diagnostics — reads the compile pipeline's own sizer and the two
+  // emitters it feeds (`computeIoImage`, `generateImageConf`,
+  // `generateProcessImageDefines`). The point of the tool is to answer what a
+  // BUILD would produce, so calling anything other than the functions the build
+  // calls would make it a second opinion instead of a preview.
+  'frontend/services/io-diagnostics/index.ts': ['backend-shared'],
 }
 
 // ---------------------------------------------------------------------------
