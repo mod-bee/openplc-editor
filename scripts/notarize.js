@@ -13,20 +13,18 @@ exports.default = async function notarizeMacos(context) {
     return
   }
 
-  // Validate required environment variables
   const appleId = process.env.APPLE_ID
   const appleIdPassword = process.env.APPLE_ID_PASSWORD
-  const teamId = process.env.APPLE_TEAM_ID || '66HTP4XT8H'
+  const teamId = process.env.APPLE_TEAM_ID
 
-  if (!appleId || !appleIdPassword) {
-    throw new Error(
-      'Missing required environment variables for notarization. ' +
-        'Please set APPLE_ID and APPLE_ID_PASSWORD.'
-    )
+  // An unsigned build (no Apple credentials) is not notarized.
+  if (!appleId || !appleIdPassword || !teamId) {
+    console.warn('Skipping notarizing step. APPLE_ID, APPLE_ID_PASSWORD and APPLE_TEAM_ID are not all set')
+    return
   }
 
   const appName = context.packager.appInfo.productFilename
-  const appBundleId = `${teamId}.com.autonomylogic.openplceditor`
+  const appBundleId = `${teamId}.${context.packager.appInfo.id}`
 
   console.log(`Notarizing ${appName}.app...`)
 

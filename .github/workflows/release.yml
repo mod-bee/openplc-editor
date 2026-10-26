@@ -79,6 +79,12 @@ jobs:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          # No certificate: the build is unsigned and ad-hoc signed below.
+          if [ -z "$APPLE_CERTIFICATE_P12" ]; then
+            echo "No APPLE_CERTIFICATE_P12 secret: building unsigned"
+            exit 0
+          fi
+
           # Create temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
@@ -105,7 +111,26 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Without a certificate electron-builder must not look for a signing identity.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
         run: npm run package
+
+      - name: Ad-hoc sign the unsigned apps
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          # Apple silicon refuses to run an app with no signature at all.
+          if [ -n "$APPLE_CERTIFICATE_P12" ]; then
+            echo "Signed build: nothing to do"
+            exit 0
+          fi
+          APP_NAME=$(node -p "require('./electron-builder.json').productName")
+          for app in "release/build/mac/${APP_NAME}.app" "release/build/mac-arm64/${APP_NAME}.app"; do
+            if [ -d "$app" ]; then
+              codesign --force --deep --sign - "$app"
+              codesign --verify --deep --strict "$app"
+            fi
+          done
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -119,7 +144,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-x64-dmg
-          path: OpenPLC_Editor_${{ steps.version.outputs.version }}.dmg
+          path: '*_${{ steps.version.outputs.version }}.dmg'
           retention-days: 30
           if-no-files-found: error
 
@@ -127,7 +152,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-arm64-dmg
-          path: OpenPLC_Editor_${{ steps.version.outputs.version }}-ARM.dmg
+          path: '*_${{ steps.version.outputs.version }}-ARM.dmg'
           retention-days: 30
           if-no-files-found: error
 
@@ -473,7 +498,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            --title "OpenPLC Editor v${{ steps.version.outputs.version }}" \
+            --title "ModBee OpenPLC Editor v${{ steps.version.outputs.version }}" \
             --generate-notes \
             ${{ steps.prerelease.outputs.flag }} \
             artifacts/macos-x64-dmg/*.dmg \

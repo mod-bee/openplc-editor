@@ -14,7 +14,7 @@ import {
 } from '../update-service'
 
 const SHA = 'a'.repeat(64)
-const BASE = 'https://github.com/Autonomy-Logic/openplc-editor/releases/download/v4.3.3/'
+const BASE = 'https://github.com/mod-bee/openplc-editor/releases/download/v4.3.3/'
 
 /** `null` for an asset GitHub gave no digest. */
 function asset(name: string, digest: string | null = `sha256:${SHA}`): ReleaseAsset {

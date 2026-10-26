@@ -200,16 +200,16 @@ describe('darwin app menu', () => {
     await newBuilder().buildMenu()
 
     const menu = lastMenu()
-    expect(menu.get('OpenPLC Editor')?.role).toBeUndefined()
-    expect(menu.get('About OpenPLC Editor')?.role).toBe('about')
-    expect(menu.get('Hide OpenPLC Editor')?.role).toBe('hide')
-    expect(menu.get('Quit OpenPLC Editor')?.role).toBe('quit')
+    expect(menu.get('ModBee OpenPLC Editor')?.role).toBeUndefined()
+    expect(menu.get('About ModBee OpenPLC Editor')?.role).toBe('about')
+    expect(menu.get('Hide ModBee OpenPLC Editor')?.role).toBe('hide')
+    expect(menu.get('Quit ModBee OpenPLC Editor')?.role).toBe('quit')
   })
 
   it('keeps the remaining native app menu roles', async () => {
     await newBuilder().buildMenu()
 
-    const appMenu = lastMenu().get('OpenPLC Editor')?.submenu
+    const appMenu = lastMenu().get('ModBee OpenPLC Editor')?.submenu
     if (!Array.isArray(appMenu)) throw new Error('app menu has no submenu')
     expect(appMenu.map((entry) => entry.role).filter(Boolean)).toEqual([
       'about',

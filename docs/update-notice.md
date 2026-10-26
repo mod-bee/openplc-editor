@@ -57,17 +57,19 @@ installer (`nsis` in `electron-builder.json`, `assets/installer.nsh`):
 
 ## Where the version comes from
 
-- **Stable builds** read `GET /repos/Autonomy-Logic/openplc-editor/releases/latest`,
+- **Stable builds** read `GET /repos/mod-bee/openplc-editor/releases/latest`,
   which never returns a prerelease or a draft.
 - **rc and beta builds** (a version with `-`) read the 20 most recent releases
   and take the newest, so an rc hears of the next rc as well as of the stable.
+  ModBee builds are numbered `<upstream>-modbee.<n>` (e.g. `4.3.3-modbee.1`), so
+  they always take this path and are offered the newest ModBee release.
 - The installer is picked with the website's rules (`mapAssetToOS` in
   autonomy-website): `-arm64.exe` / `.exe`, `-arm.dmg` / `.dmg`,
   `-arm64.AppImage` / `.AppImage`. A Mac running the Intel build under Rosetta
   (`app.runningUnderARM64Translation`) is offered the Apple silicon `.dmg`, and
   the Intel one only when the release has none; Windows on ARM running the x64
   build stays on x64 until installing ARM64 over it is tested. Only files under
-  `https://github.com/Autonomy-Logic/openplc-editor/releases/download/` are
+  `https://github.com/mod-bee/openplc-editor/releases/download/` are
   ever downloaded.
 - Integrity: GitHub stores a `sha256:` digest for every uploaded asset and the
   API returns it; the download is hashed while it is written and compared.

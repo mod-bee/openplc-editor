@@ -27,7 +27,7 @@ export function getAppInfoDefines() {
   const buildDate = process.env.BUILD_DATE || getCurrentDate()
 
   return {
-    APP_NAME: JSON.stringify('OpenPLC Editor'),
+    APP_NAME: JSON.stringify('ModBee OpenPLC Editor'),
     BUILD_DATE: JSON.stringify(buildDate),
   }
 }

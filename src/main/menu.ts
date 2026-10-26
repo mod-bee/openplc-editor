@@ -296,7 +296,7 @@ export default class MenuBuilder {
     const recent = await this.handleGetRecent()
     const homeDir = process.env.HOME || ''
     // Not `role: 'appMenu'`: its labels use `app.name`, which is the package name, not the product name.
-    const appName = 'OpenPLC Editor'
+    const appName = 'ModBee OpenPLC Editor'
     const defaultDarwinMenu: MenuItemConstructorOptions = {
       label: appName,
       submenu: [
