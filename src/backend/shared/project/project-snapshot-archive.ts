@@ -63,7 +63,9 @@ export interface SnapshotLimits {
 
 export const SNAPSHOT_LIMITS: SnapshotLimits = {
   maxEntries: 20_000,
-  maxEntryBytes: 32 * 1024 * 1024,
+  // A bundled .stlib with its C/C++ resources can be about 30 MB (the MQTT
+  // library with its TLS stack): the same 50 MB per entry as a library ZIP.
+  maxEntryBytes: 50 * 1024 * 1024,
   maxTotalBytes: 100 * 1024 * 1024,
   /** A legitimately compressible project of source text sits far below this. */
   maxCompressionRatio: 1_000,

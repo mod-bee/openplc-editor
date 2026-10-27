@@ -31,12 +31,14 @@ export interface BundleLimits {
 }
 
 /**
- * Smaller than the project-snapshot limits: an archive of ST source and
- * compiled chunks is measured in megabytes, and a zip of them in tens.
+ * An archive of ST source and compiled chunks is measured in megabytes, and a
+ * zip of them in tens. One archive may carry its C/C++ resources too: the MQTT
+ * library with its TLS stack is about 30 MB, so an entry may be up to 50 MB,
+ * as for a board package.
  */
 export const BUNDLE_LIMITS: BundleLimits = {
   maxEntries: 2_000,
-  maxEntryBytes: 32 * 1024 * 1024,
+  maxEntryBytes: 50 * 1024 * 1024,
   maxTotalBytes: 256 * 1024 * 1024,
   /** JSON of source text compresses well, but not this well. */
   maxCompressionRatio: 1_000,
