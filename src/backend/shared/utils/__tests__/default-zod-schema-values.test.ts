@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { deviceConfigurationSchema } from '../../types/PLC/devices/configuration'
 import { getDefaultSchemaValues } from '../default-zod-schema-values'
 
 describe('getDefaultSchemaValues', () => {
@@ -104,5 +105,50 @@ describe('getDefaultSchemaValues', () => {
   it('handles ZodOptional wrapping a ZodObject', () => {
     const schema = z.object({ x: z.number() }).optional()
     expect(getDefaultSchemaValues(schema)).toEqual({ x: 0 })
+  })
+
+  it('leaves an optional field of an object out', () => {
+    const schema = z.object({
+      name: z.string(),
+      count: z.number().int().min(1).optional(),
+      settings: z.object({ on: z.boolean() }).optional(),
+    })
+    expect(getDefaultSchemaValues(schema)).toEqual({ name: '' })
+  })
+
+  it('keeps a field with a default', () => {
+    const schema = z.object({ board: z.string().default('sim'), port: z.string().optional() })
+    expect(getDefaultSchemaValues(schema)).toEqual({ board: 'sim' })
+  })
+
+  it('treats an optional field under a preprocess as optional', () => {
+    const schema = z.object({ a: z.string(), b: z.preprocess((v) => v, z.number().optional()) })
+    expect(getDefaultSchemaValues(schema)).toEqual({ a: '' })
+  })
+
+  it('gives the inner default of a preprocessed schema', () => {
+    expect(getDefaultSchemaValues(z.preprocess((v) => v, z.string()))).toBe('')
+  })
+
+  it("gives a new project's device configuration that its own schema accepts", () => {
+    const defaults = getDefaultSchemaValues(deviceConfigurationSchema)
+    expect(deviceConfigurationSchema.safeParse(defaults).success).toBe(true)
+    expect(defaults).not.toHaveProperty('buildOutput')
+    expect(defaults).not.toHaveProperty('debugDisplay')
+  })
+})
+
+describe('deviceConfigurationSchema buildOutput', () => {
+  it('reads the { keep: false, count: 0 } older editors wrote as off', () => {
+    const result = deviceConfigurationSchema.safeParse({ deviceBoard: 'ModBee Node UIO', buildOutput: { keep: false, count: 0 } })
+    expect(result.success).toBe(true)
+    expect(result.success && result.data.buildOutput).toBeUndefined()
+    expect(result.success && result.data.deviceBoard).toBe('ModBee Node UIO')
+  })
+
+  it('keeps a switched-on setting and still refuses a count below 1', () => {
+    const on = deviceConfigurationSchema.safeParse({ buildOutput: { keep: true, count: 5 } })
+    expect(on.success && on.data.buildOutput).toEqual({ keep: true, count: 5 })
+    expect(deviceConfigurationSchema.safeParse({ buildOutput: { keep: true, count: 0 } }).success).toBe(false)
   })
 })

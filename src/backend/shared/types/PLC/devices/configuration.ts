@@ -67,13 +67,18 @@ const deviceConfigurationSchema = z.object({
   // either way.
   outputsOnStop: z.enum(['off', 'hold']).optional(),
   // Keep each successful build's output in the project (output/<board>/...),
-  // outside the build folder that is regenerated. Absent means off.
-  buildOutput: z
-    .object({
-      keep: z.boolean(),
-      count: z.number().int().min(1).max(100).optional(),
-    })
-    .optional(),
+  // outside the build folder that is regenerated. Absent means off, and so
+  // does `keep: false`: editors up to 4.3.3-modbee.3 wrote `{ keep: false,
+  // count: 0 }` into every new project, a count the check below refuses.
+  buildOutput: z.preprocess(
+    (value) => (typeof value === 'object' && value !== null && 'keep' in value && value.keep === false ? undefined : value),
+    z
+      .object({
+        keep: z.boolean(),
+        count: z.number().int().min(1).max(100).optional(),
+      })
+      .optional(),
+  ),
   // How the debugger shows values on the diagrams. Absent fields take their defaults.
   debugDisplay: z
     .object({

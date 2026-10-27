@@ -6,6 +6,7 @@ import {
   ZodBoolean,
   ZodDefault,
   ZodDiscriminatedUnion,
+  ZodEffects,
   ZodEnum,
   ZodLiteral,
   ZodNullable,
@@ -19,6 +20,10 @@ import {
   ZodUnion,
 } from 'zod'
 
+/** A field an object may leave out: `.optional()`, also under a preprocess or refinement. */
+const isOptionalField = (schema: ZodTypeAny): boolean =>
+  schema instanceof ZodOptional || (schema instanceof ZodEffects && isOptionalField(schema.innerType() as ZodTypeAny))
+
 export const getDefaultSchemaValues = (schema: ZodTypeAny): unknown => {
   if (schema instanceof ZodDefault) {
     const innerType = schema._def.innerType as ZodTypeAny
@@ -29,7 +34,14 @@ export const getDefaultSchemaValues = (schema: ZodTypeAny): unknown => {
   }
   if (schema instanceof ZodObject) {
     const shape = schema.shape
-    return Object.fromEntries(Object.entries(shape).map(([k, v]) => [k, getDefaultSchemaValues(v as ZodTypeAny)]))
+    // An optional field is not set, so it is left out. Filled with a value of
+    // its type it could fail its own checks (a count of at least 1 set to 0)
+    // or say something "not set" does not (0 decimals where absent means 3).
+    return Object.fromEntries(
+      Object.entries(shape)
+        .filter(([, v]) => !isOptionalField(v as ZodTypeAny))
+        .map(([k, v]) => [k, getDefaultSchemaValues(v as ZodTypeAny)]),
+    )
   }
   if (schema instanceof ZodArray) return []
   if (schema instanceof ZodString) return ''
@@ -42,6 +54,7 @@ export const getDefaultSchemaValues = (schema: ZodTypeAny): unknown => {
   if (schema instanceof ZodOptional) return getDefaultSchemaValues(schema._def.innerType as ZodTypeAny)
   if (schema instanceof ZodUnion) return getDefaultSchemaValues(schema._def.options[0] as ZodTypeAny)
   if (schema instanceof ZodDiscriminatedUnion) return getDefaultSchemaValues(schema._def.options[0] as ZodTypeAny)
+  if (schema instanceof ZodEffects) return getDefaultSchemaValues(schema.innerType() as ZodTypeAny)
   if (schema instanceof ZodTuple) return (schema.items as ZodTypeAny[]).map(getDefaultSchemaValues)
   return null
 }
