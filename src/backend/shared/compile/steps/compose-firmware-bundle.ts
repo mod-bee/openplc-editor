@@ -69,6 +69,13 @@ export interface ComposeFirmwareBundleInput {
    *  it opaque so a future re-shaping of `defines.h` content
    *  doesn't ripple through. */
   definesH: string
+  /** Headers of the libraries the resource libraries declare in `depends=`,
+   *  written as `#include`s into `src/OpenPLCUserLib.h`. A resource library's
+   *  sources are precompiled and moved aside before the sketch links, so
+   *  arduino-cli only builds what they need when the sketch's include scan
+   *  reaches it. Not in `defines.h`: `openplc.h` includes that inside the
+   *  HALs' `extern "C"` blocks, where a C++ header does not compile. */
+  libraryHeaders?: readonly string[]
   /** Pre-authored `vpp_config.h` content for arduino-cli targets
    *  whose VPP package declares `vppIo: true` (Arduino Opta, P1AM,
    *  future arduino-toolchain VPPs).  Caller invokes
@@ -215,6 +222,7 @@ export function composeFirmwareBundle(input: ComposeFirmwareBundleInput): Record
     strucppThreaded,
     firmwareSkeleton,
     libraryResources,
+    libraryHeaders,
   } = input
 
   const files: Record<string, BundleFile> = {}
@@ -333,13 +341,15 @@ export function composeFirmwareBundle(input: ComposeFirmwareBundleInput): Record
   // sketch via `--library src`, so nothing else provides that header
   // and the include needs a sibling stub here to satisfy the
   // preprocessor.  Real declarations come via
-  // `arduino_runtime_glue.h`; the stub is intentionally empty.
+  // `arduino_runtime_glue.h`; the stub declares nothing and only
+  // includes the libraries the resource libraries depend on.
   files['src/OpenPLCUserLib.h'] = [
     '// Auto-generated stub for OpenPLCUserLib.',
     "// Resolves Baremetal.ino's `#include <OpenPLCUserLib.h>` in the",
     '// strucpp pipeline.  Real declarations come via',
     '// arduino_runtime_glue.h (already in src/).',
     '#pragma once',
+    ...[...new Set(libraryHeaders ?? [])].sort().map((header) => `#include <${header}>`),
     '',
   ].join('\n')
 

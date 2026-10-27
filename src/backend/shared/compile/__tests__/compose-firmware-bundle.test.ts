@@ -315,6 +315,19 @@ describe('composeFirmwareBundle — OpenPLCUserLib.h stub', () => {
       definesH: '',
     })
     expect(out['src/OpenPLCUserLib.h']).toContain('#pragma once')
+    expect(out['src/OpenPLCUserLib.h']).not.toMatch(/^#include/m)
+  })
+
+  it('includes each library the resource libraries depend on, once and sorted', () => {
+    const out = composeFirmwareBundle({
+      libraryResources: [],
+      firmwareSkeleton: {},
+      strucppFiles: {},
+      cBlocks: { header: '', code: null },
+      definesH: '',
+      libraryHeaders: ['Wire.h', 'Preferences.h', 'Wire.h'],
+    })
+    expect(out['src/OpenPLCUserLib.h']).toContain('#pragma once\n#include <Preferences.h>\n#include <Wire.h>\n')
   })
 })
 

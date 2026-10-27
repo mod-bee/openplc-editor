@@ -1367,6 +1367,8 @@ async function runCompilePipelineInner(
     })
   }
 
+  const libraryHeaders = resourceLibraryDepends(libraryResources)
+
   // Build defines.h using the shared content authoring step.
   const definesH = generateDefinesContent({
     boardEntry,
@@ -1381,7 +1383,6 @@ async function runCompilePipelineInner(
     ...(boardEntry.defaultSerial ? { defaultSerial: boardEntry.defaultSerial } : {}),
     ...(boardEntry.networkInterfaces ? { networkInterfaces: boardEntry.networkInterfaces } : {}),
     ...(strucppResult.retainBlobSize !== null ? { retainBlobSize: strucppResult.retainBlobSize } : {}),
-    resourceLibraryDepends: resourceLibraryDepends(libraryResources),
     // Only for a target we actually size. Runtime v3 and the simulator keep
     // openplc.h's own fallbacks, so their defines.h is unchanged.
     ...(sizesTheImage ? { imageSizes: ioImage.sizes } : {}),
@@ -1662,6 +1663,7 @@ async function runCompilePipelineInner(
       libraryResources,
       cBlocks,
       definesH,
+      libraryHeaders,
       vppConfigH,
       opcuaConfigH,
       s7commConfigH,

@@ -623,3 +623,16 @@ describe('generateDefinesContent — full output snapshot', () => {
     )
   })
 })
+
+describe('generateDefinesContent — macros only', () => {
+  // openplc.h includes defines.h, and the HALs include openplc.h inside extern "C".
+  it('emits no #include, so it compiles inside an extern "C" block', () => {
+    const out = generateDefinesContent({
+      ...EMPTY_INPUTS,
+      boardEntry: { define: 'BOARD_ESP32' },
+      retainBlobSize: 64,
+      outputsOnStop: 'hold',
+    })
+    expect(out).not.toMatch(/^\s*#\s*include\b/m)
+  })
+})

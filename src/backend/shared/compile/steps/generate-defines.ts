@@ -196,15 +196,6 @@ export interface GenerateDefinesInput {
    *  build time or not at all. */
   retainBlobSize?: number
 
-  /** Headers for the libraries a resource library declares in `depends=`.
-   *
-   *  A resource library's sources are precompiled into an archive and moved
-   *  aside before the sketch is linked, so arduino-cli's include scan never
-   *  sees what they need. Naming those libraries here puts an `#include` where
-   *  the scan does reach, which is what makes arduino-cli build them. Without
-   *  it the archive compiles and then fails to link. */
-  resourceLibraryDepends?: readonly string[]
-
   /** The board's `pins.pull` spec. Present → `PINPULL_DIN` is emitted, one code per digital input
    *  in `PINMASK_DIN` order; absent → nothing, and the HAL keeps plain `INPUT`. */
   pinPull?: PinPullSpec
@@ -250,7 +241,6 @@ export function generateDefinesContent(input: GenerateDefinesInput): string {
     defaultSerial,
     networkInterfaces,
     retainBlobSize,
-    resourceLibraryDepends,
     imageSizes,
     pinPull,
     persistentStorage,
@@ -407,17 +397,6 @@ export function generateDefinesContent(input: GenerateDefinesInput): string {
   if (outputsOnStop === 'hold') {
     DEFINES_CONTENT += '\n//Outputs on STOP / error: hold their last values\n'
     DEFINES_CONTENT += '#define OPENPLC_OUTPUTS_ON_STOP 1\n'
-  }
-
-  // 7. Libraries the installed libraries depend on. The sketch includes this
-  //    header, so an include here is one arduino-cli's scan can follow — see
-  //    `resourceLibraryDepends`.
-  const depends = [...new Set(resourceLibraryDepends ?? [])].sort()
-  if (depends.length > 0) {
-    DEFINES_CONTENT += '\n//Libraries the installed libraries need\n'
-    for (const name of depends) {
-      DEFINES_CONTENT += `#include <${name}>\n`
-    }
   }
 
   // 7. Process image.  Last and conditional for the same reason as the retain
