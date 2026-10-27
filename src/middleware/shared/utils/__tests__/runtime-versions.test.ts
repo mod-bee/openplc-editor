@@ -44,23 +44,27 @@ describe('listRuntimeVersions', () => {
   it('sorts numerically, so v4.1.10 comes above v4.1.9', async () => {
     // The whole reason this is not a string sort: lexicographically v4.1.10
     // falls below v4.1.9 and the newest patch release ends up buried.
-    stubFetch(respondWith(tags('v4.1.9', 'v4.1.10', 'v4.2.0')))
+    stubFetch(respondWith(tags('v4.1.9-modbee.1', 'v4.1.10-modbee.1', 'v4.2.0-modbee.1')))
 
     const result = await listRuntimeVersions()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0', 'v4.1.10', 'v4.1.9'])
+    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0-modbee.1', 'v4.1.10-modbee.1', 'v4.1.9-modbee.1'])
   })
 
   it('puts a release above its own pre-releases', async () => {
-    stubFetch(respondWith(tags('v4.2.0-rc.1', 'v4.2.0', 'v4.2.0-rc.2')))
+    stubFetch(respondWith(tags('v4.2.0-modbee.1-rc.1', 'v4.2.0-modbee.1', 'v4.2.0-modbee.1-rc.2')))
 
     const result = await listRuntimeVersions()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0', 'v4.2.0-rc.2', 'v4.2.0-rc.1'])
+    expect(result.versions.map((v) => v.tag)).toEqual([
+      'v4.2.0-modbee.1',
+      'v4.2.0-modbee.1-rc.2',
+      'v4.2.0-modbee.1-rc.1',
+    ])
     expect(result.versions[0].prerelease).toBe(false)
     expect(result.versions[1].prerelease).toBe(true)
   })
@@ -68,26 +72,39 @@ describe('listRuntimeVersions', () => {
   it('keeps only release tags', async () => {
     // A tag that is not a release has no published image behind it, so
     // offering it would produce a failed pull and a confusing message.
-    stubFetch(respondWith(tags('v4.2.0', 'nightly', 'RTOP-283', 'v4', 'v4.2')))
+    stubFetch(respondWith(tags('v4.2.0-modbee.1', 'nightly', 'RTOP-283', 'v4', 'v4.2')))
 
     const result = await listRuntimeVersions()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0'])
+    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0-modbee.1'])
+  })
+
+  it('leaves out upstream releases, which have no ModBee image', async () => {
+    stubFetch(respondWith(tags('v4.3.2', 'v4.3.2-rc.1', 'v4.3.2-modbee.1', 'v4.3.2-modbee.2')))
+
+    const result = await listRuntimeVersions()
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.versions).toEqual([
+      { tag: 'v4.3.2-modbee.2', prerelease: false },
+      { tag: 'v4.3.2-modbee.1', prerelease: false },
+    ])
   })
 
   it('survives a null entry instead of losing every tag', async () => {
     // The bug: the old code cast each entry and read `.name`, so one null
     // element threw, landed in the catch and was reported as "could not reach
     // GitHub" -- discarding all the valid tags with it.
-    stubFetch(respondWith([null, { name: 'v4.2.0' }, 'v9', { nope: 1 }]))
+    stubFetch(respondWith([null, { name: 'v4.2.0-modbee.1' }, 'v9', { nope: 1 }]))
 
     const result = await listRuntimeVersions()
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0'])
+    expect(result.versions.map((v) => v.tag)).toEqual(['v4.2.0-modbee.1'])
   })
 
   it('names the rate limit rather than reporting a generic failure', async () => {
@@ -138,7 +155,7 @@ describe('listRuntimeVersions', () => {
   it('always arms a timeout, even with no caller signal', async () => {
     // The guarantee behind the test above: something has to abort the request
     // if GitHub never answers, and the caller does not always provide it.
-    const fetchMock = respondWith(tags('v4.2.0'))
+    const fetchMock = respondWith(tags('v4.2.0-modbee.1'))
     stubFetch(fetchMock)
 
     await listRuntimeVersions()
@@ -148,7 +165,7 @@ describe('listRuntimeVersions', () => {
   })
 
   it('does not re-fetch a list it already has', async () => {
-    const fetchMock = respondWith(tags('v4.2.0'))
+    const fetchMock = respondWith(tags('v4.2.0-modbee.1'))
     stubFetch(fetchMock)
 
     await listRuntimeVersions()
@@ -158,7 +175,7 @@ describe('listRuntimeVersions', () => {
   })
 
   it('re-fetches after the cache is cleared, which is what Retry does', async () => {
-    const fetchMock = respondWith(tags('v4.2.0'))
+    const fetchMock = respondWith(tags('v4.2.0-modbee.1'))
     stubFetch(fetchMock)
 
     await listRuntimeVersions()

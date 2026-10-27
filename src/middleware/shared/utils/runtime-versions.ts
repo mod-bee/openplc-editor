@@ -14,7 +14,7 @@
  * at it.
  */
 
-const TAGS_URL = 'https://api.github.com/repos/Autonomy-Logic/openplc-runtime/tags?per_page=100'
+const TAGS_URL = 'https://api.github.com/repos/mod-bee/openplc-runtime/tags?per_page=100'
 
 /** How long a fetched list stays fresh. Releases are not minutes apart. */
 const CACHE_TTL_MS = 10 * 60 * 1000
@@ -28,9 +28,9 @@ const CACHE_TTL_MS = 10 * 60 * 1000
 const FETCH_TIMEOUT_MS = 8000
 
 export type RuntimeVersion = {
-  /** The tag exactly as it must be sent to the bootloader, e.g. "v4.2.1". */
+  /** The tag exactly as it must be sent to the bootloader, e.g. "v4.3.2-modbee.1". */
   tag: string
-  /** A tag carrying a pre-release suffix, e.g. "v4.1.0-rc.1". */
+  /** A tag carrying a pre-release suffix, e.g. "v4.3.2-modbee.2-rc.1". */
   prerelease: boolean
 }
 
@@ -39,13 +39,13 @@ export type RuntimeVersionsResult = { ok: true; versions: RuntimeVersion[] } | {
 let cache: { at: number; versions: RuntimeVersion[] } | null = null
 
 /**
- * Only `vX.Y.Z`, optionally with a pre-release suffix.
+ * Only ModBee releases, `vX.Y.Z-modbee.N`, optionally with a pre-release suffix.
  *
- * The repository carries other tags over time, and a tag that is not a release
- * has no published image behind it -- offering one would produce a failed
- * pull with a confusing message.
+ * The repository carries other tags over time -- the fork keeps upstream's
+ * `vX.Y.Z` tags, which have no image in the ModBee registry -- and offering one
+ * would produce a failed pull with a confusing message.
  */
-const RELEASE_TAG = /^v(\d+)\.(\d+)\.(\d+)(?:-(.+))?$/
+const RELEASE_TAG = /^v(\d+)\.(\d+)\.(\d+)-modbee\.(\d+)(?:-(.+))?$/
 
 /** Newest first, comparing numerically so v4.1.10 sorts above v4.1.9. */
 function compareVersions(a: string, b: string): number {
@@ -53,13 +53,13 @@ function compareVersions(a: string, b: string): number {
   const right = RELEASE_TAG.exec(b)
   if (!left || !right) return a < b ? 1 : -1
 
-  for (let i = 1; i <= 3; i += 1) {
+  for (let i = 1; i <= 4; i += 1) {
     const diff = Number(right[i]) - Number(left[i])
     if (diff !== 0) return diff
   }
-  // A release outranks its own pre-releases: v4.2.0 before v4.2.0-rc.1.
-  const leftPre = left[4]
-  const rightPre = right[4]
+  // A release outranks its own pre-releases: v4.3.2-modbee.1 before v4.3.2-modbee.1-rc.1.
+  const leftPre = left[5]
+  const rightPre = right[5]
   if (!leftPre && rightPre) return -1
   if (leftPre && !rightPre) return 1
   if (!leftPre && !rightPre) return 0
@@ -122,7 +122,7 @@ export async function listRuntimeVersions(signal?: AbortSignal): Promise<Runtime
       )
       .filter((name) => RELEASE_TAG.test(name))
       .sort(compareVersions)
-      .map((tag) => ({ tag, prerelease: tag.includes('-') }))
+      .map((tag) => ({ tag, prerelease: RELEASE_TAG.exec(tag)?.[5] !== undefined }))
 
     if (versions.length === 0) {
       return { ok: false, error: 'No runtime releases were found.' }
