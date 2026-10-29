@@ -12,9 +12,10 @@
 import { promises as fs } from 'node:fs'
 import { basename, resolve } from 'node:path'
 
-import { ESIService } from '@root/backend/editor/ethercat/esi-service'
+import type { EsiPort } from '@root/middleware/shared/ports/esi-port'
 
 import { type ParsedArgs, stringFlag } from '../args'
+import { openProjectEsiRepository } from '../esi-repository'
 import { ErrorCode, ExitCode } from '../exit-codes'
 import type { CliResult, Reporter } from '../output'
 
@@ -32,16 +33,11 @@ export async function runEsi(args: ParsedArgs, reporter: Reporter): Promise<CliR
     return reporter.failure({ code: ErrorCode.InvalidArgument, message: 'esi needs --project <dir>.' }, ExitCode.Usage)
   }
 
-  const esi = new ESIService()
-  return action === 'import' ? importFile(args, projectPath, esi, reporter) : list(projectPath, esi, reporter)
+  const esi = openProjectEsiRepository(projectPath).port
+  return action === 'import' ? importFile(args, esi, reporter) : list(esi, reporter)
 }
 
-async function importFile(
-  args: ParsedArgs,
-  projectPath: string,
-  esi: ESIService,
-  reporter: Reporter,
-): Promise<CliResult> {
+async function importFile(args: ParsedArgs, esi: EsiPort, reporter: Reporter): Promise<CliResult> {
   const filePath = args.positionals[1] ?? stringFlag(args, 'file')
   if (!filePath) {
     return reporter.failure(
@@ -64,7 +60,7 @@ async function importFile(
   }
 
   const filename = basename(filePath)
-  const result = await esi.parseAndSaveFile(projectPath, filename, content)
+  const result = await esi.parseAndSaveFile(filename, content)
   if (!result.success) {
     return reporter.failure(
       { code: ErrorCode.InvalidArgument, message: `"${filename}" is not a usable ESI file: ${result.error ?? ''}` },
@@ -95,16 +91,20 @@ async function importFile(
   return reporter.success(payload, () => renderItem(filename, payload.repositoryItemId, payload.devices))
 }
 
-async function list(projectPath: string, esi: ESIService, reporter: Reporter): Promise<CliResult> {
-  const index = await esi.loadRepositoryIndex(projectPath)
-  // The index carries device summaries only when they were cached at import;
-  // `deviceCount` is always there, so an uncached file still reports its size.
-  const items = (index?.items ?? []).map((item) => ({
+async function list(esi: EsiPort, reporter: Reporter): Promise<CliResult> {
+  const loaded = await esi.loadRepositoryLight()
+  if (!loaded.success) {
+    return reporter.failure(
+      { code: ErrorCode.InvalidArgument, message: `Could not read the ESI repository: ${loaded.error ?? ''}` },
+      ExitCode.CompileFailed,
+    )
+  }
+  const items = loaded.items.map((item) => ({
     filename: item.filename,
     repositoryItemId: item.id,
-    vendor: { id: item.vendorId, name: item.vendorName },
-    deviceCount: item.deviceCount,
-    devices: (item.devices ?? []).map((device, deviceIndex) => ({
+    vendor: item.vendor,
+    deviceCount: item.devices.length,
+    devices: item.devices.map((device, deviceIndex) => ({
       deviceIndex,
       name: device.name,
       productCode: device.type.productCode,

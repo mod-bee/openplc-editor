@@ -12,7 +12,6 @@
  * screens use. Nothing here writes `project.data.servers` directly.
  */
 
-import { ESIService } from '@root/backend/editor/ethercat/esi-service'
 import { normalizeEthercatSlave } from '@root/backend/shared/protocol/normalize-ethercat-slave'
 import type { NormalizedRemoteDevice } from '@root/backend/shared/protocol/normalize-remote-device-spec'
 import { normalizeRemoteDeviceSpec } from '@root/backend/shared/protocol/normalize-remote-device-spec'
@@ -22,6 +21,7 @@ import { seedTransports } from '@root/frontend/store/slices/project/slice'
 import type { ConfiguredEtherCATDevice } from '@root/middleware/shared/ports/esi-types'
 import type { PLCRemoteDevice, PLCServer } from '@root/middleware/shared/ports/types'
 
+import { openProjectEsiRepository } from '../esi-repository'
 import type { PlannedChange } from './plan'
 import type { ApplySpec, SpecRemoteDevice, SpecServer } from './schema'
 
@@ -122,7 +122,8 @@ function restoreSecrets(server: PLCServer, spec: SpecServer, preserved: Preserve
   }
 }
 
-export async function applyRemoteDevices(store: OpenPLCStore, 
+export async function applyRemoteDevices(
+  store: OpenPLCStore,
   spec: ApplySpec,
   projectPath: string,
   changes: PlannedChange[],
@@ -234,7 +235,8 @@ export async function applyRemoteDevices(store: OpenPLCStore,
  * mints the uuid, so requiring it would mean importing, reading the id back and
  * pasting it into the spec before anything could be authored.
  */
-async function buildEthercatSlaves(store: OpenPLCStore, 
+async function buildEthercatSlaves(
+  store: OpenPLCStore,
   specs: readonly SpecRemoteDevice[],
   projectPath: string,
   errors: string[],
@@ -243,9 +245,15 @@ async function buildEthercatSlaves(store: OpenPLCStore,
   const withSlaves = specs.filter((device) => (device.ethercat?.slaves ?? []).length > 0)
   if (withSlaves.length === 0) return byDevice
 
-  const esi = new ESIService()
-  const index = await esi.loadRepositoryIndex(projectPath)
-  if (!index) {
+  const { rows } = openProjectEsiRepository(projectPath)
+  let items: { id: string; filename: string }[]
+  try {
+    items = await rows.list()
+  } catch (error) {
+    errors.push(`Could not read the ESI repository: ${error instanceof Error ? error.message : String(error)}`)
+    return byDevice
+  }
+  if (items.length === 0) {
     errors.push('This project has no ESI repository — run `openplc-cli esi import` before declaring EtherCAT slaves.')
     return byDevice
   }
@@ -255,9 +263,7 @@ async function buildEthercatSlaves(store: OpenPLCStore,
   // replacing would make every re-apply rename `Axis1` to `Axis1_01` and push
   // its channels to fresh addresses — the spec would never round-trip.
   const replaced = new Set(specs.map((device) => device.name))
-  const untouched = store
-    .getState()
-    .project.data.remoteDevices?.filter((device) => !replaced.has(device.name))
+  const untouched = store.getState().project.data.remoteDevices?.filter((device) => !replaced.has(device.name))
   const usedAddresses = claimedAddresses(untouched)
   const takenNames = claimedSlaveNames(untouched)
 
@@ -265,23 +271,24 @@ async function buildEthercatSlaves(store: OpenPLCStore,
     const slaves: ConfiguredEtherCATDevice[] = []
     for (const [position, spec] of (device.ethercat?.slaves ?? []).entries()) {
       const wanted = spec.esiDeviceRef.repositoryItemId
-      const item = index.items.find((entry) => entry.id === wanted || entry.filename === wanted)
+      const item = items.find((entry) => entry.id === wanted || entry.filename === wanted)
       if (!item) {
         errors.push(
           `EtherCAT slave on "${device.name}": no ESI file "${wanted}" in this project. ` +
-            `Known files: ${index.items.map((entry) => entry.filename).join(', ') || '(none)'}.`,
+            `Known files: ${items.map((entry) => entry.filename).join(', ') || '(none)'}.`,
         )
         continue
       }
 
       let xml = xmlCache.get(item.id)
       if (xml === undefined) {
-        const loaded = await esi.loadXmlFile(projectPath, item.id)
-        if (!loaded.success || !loaded.content) {
-          errors.push(`EtherCAT slave on "${device.name}": could not read ${item.filename} — ${loaded.error ?? ''}`)
+        try {
+          xml = await rows.readXml(item.id)
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          errors.push(`EtherCAT slave on "${device.name}": could not read ${item.filename} — ${reason}`)
           continue
         }
-        xml = loaded.content
         xmlCache.set(item.id, xml)
       }
 

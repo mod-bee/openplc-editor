@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 
 import { useOpenPLCStore } from '../../../../../store'
-import { type SearchFilter, searchProject } from '../../../../../utils/project-search'
+import type { SearchElementFilter } from '../../../../../utils/PLC/project-search'
+import { searchProject } from '../../../../../utils/PLC/project-search'
 import { InputWithRef } from '../../../../_atoms/input'
 import { useToast } from '../../../[app]/toast/use-toast'
 
@@ -89,8 +90,6 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
   const { toast } = useToast()
   const {
     project: { data, meta },
-    ladderFlows,
-    fbdFlows,
     searchActions: { setSearchQuery, setSearchResults, setSensitiveCase, setRegularExpression },
   } = useOpenPLCStore()
 
@@ -156,10 +155,10 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
   }
 
   const handleSearch = () => {
-    // What is typed now: Enter searches without leaving the field first.
-    const query = typedSearchQuery
-    setSearchQuery(query)
-    if (!query.trim()) {
+    // The typed text, not the store's: Enter searches without leaving the field first.
+    const searchQuery = typedSearchQuery
+    setSearchQuery(searchQuery)
+    if (!searchQuery.trim()) {
       toast({
         title: 'No search query',
         description: 'Please enter a search query to search.',
@@ -168,7 +167,7 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
       return
     }
 
-    const filterMap = {
+    const filterMap: Record<string, SearchElementFilter> = {
       'data type': 'data-type',
       function: 'function',
       'function block': 'function-block',
@@ -176,29 +175,18 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
       configuration: 'configuration',
     }
 
-    const activeFilters = Object.keys(checkedOptions)
+    const elementFilters = Object.keys(checkedOptions)
       .filter((key) => checkedOptions[key])
-      .map((key) => filterMap[key as keyof typeof filterMap])
+      .map((key) => filterMap[key])
+      .filter((filter): filter is SearchElementFilter => filter !== undefined)
 
-    let found: ReturnType<typeof searchProject>
-    try {
-      found = searchProject(
-        {
-          pous: data.pous,
-          ladderFlows,
-          fbdFlows,
-          globalVariables: data.configurations.resource.globalVariables,
-          globalVariableLists: data.globalVariableLists,
-          dataTypes: data.dataTypes.filter(Boolean),
-          tasks: data.configurations.resource.tasks,
-          instances: data.configurations.resource.instances,
-        },
-        query,
-        { caseSensitive: sensitiveCaseOption, regex: regularExpressionOption },
-        activeFilters as SearchFilter[],
-      )
-    } catch (e) {
-      if (!(e instanceof SyntaxError)) throw e
+    const result = searchProject(data, searchQuery, {
+      caseSensitive: sensitiveCaseOption,
+      regularExpression: regularExpressionOption,
+      elementFilters,
+    })
+
+    if (!result.ok) {
       toast({
         title: 'Invalid Regular Expression',
         description: 'The regular expression provided is invalid.',
@@ -207,7 +195,7 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
       return
     }
 
-    if (found.count === 0) {
+    if (result.matches.length === 0) {
       toast({
         title: 'No results found',
         description: 'No matches were found for your search.',
@@ -215,15 +203,18 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
       })
       return
     }
+
     setSearchResults({
       searchID: uuidv4(),
-      searchQuery: query,
+      searchQuery,
       projectName: meta.name,
-      functions: found.functions,
-      searchCounts: found.count,
+      matches: result.matches,
+      searchCounts: result.matches.length,
     })
     onClose()
   }
+
+  const noElementSelected = selectedScope === 'only elements' && !Object.values(checkedOptions).some(Boolean)
 
   const handleSearchQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(event.target.value)
@@ -247,7 +238,7 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
               setTypedSearchQuery(event.target.value)
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
+              if (event.key === 'Enter' && !noElementSelected) {
                 event.preventDefault()
                 handleSearch()
               }
@@ -323,6 +314,7 @@ export default function SearchInProject({ onClose }: SearchInProjectModalProps) 
         <button
           className='h-full w-full items-center rounded-lg bg-brand text-center font-medium text-white disabled:cursor-not-allowed disabled:opacity-50'
           onClick={handleSearch}
+          disabled={noElementSelected}
         >
           Find
         </button>

@@ -111,13 +111,17 @@ test('find, go to, find references', async () => {
     await input.press('Enter')
     await page.waitForTimeout(1000)
     await shot('1-find-results.png')
-    // A hit's place, `rung 1 · contact` (not the editor's own "Create new rung").
-    const hit = page.getByText(/^rung \d+ · /).locator('visible=true')
+    // An occurrence row under the POU's group.
+    const hit = page
+      .locator('li[aria-expanded]')
+      .filter({ hasText: POU })
+      .locator('li[aria-selected]')
+      .filter({ hasText: QUERY })
     expect(await hit.count()).toBeGreaterThan(0)
 
-    // 2. Go to the first Ladder hit: its rung in view, the element selected.
+    // 2. Go to the first Ladder hit: the element selected.
     await hit.first().click()
-    await page.waitForTimeout(1500)
+    await expect(page.locator('.react-flow__node.selected')).toContainText(QUERY, { timeout: 15000 })
     await shot('2-goto-hit.png')
 
     // 3. Right-click a contact offline: Find references / Go to declaration.

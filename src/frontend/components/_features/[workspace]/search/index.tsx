@@ -1,69 +1,119 @@
+import { useState } from 'react'
+
 import { CloseIcon } from '../../../../assets/icons/interface/Close'
-import { useRevealInProject } from '../../../../hooks/use-reveal-in-project'
 import { useOpenPLCStore } from '../../../../store'
-import type { Project } from '../../../../store/slices/search'
-import { escapeRegExp, extractSearchQuery } from '../../../../store/slices/search/utils'
+import type { ProjectSearchEntry, ProjectSearchMatch } from '../../../../store/slices/search'
+import { extractSearchQuery, highlightOccurrence } from '../../../../store/slices/search/utils'
 import type { TabsProps } from '../../../../store/slices/tabs'
 import { CreateEditorObjectFromTab } from '../../../../store/slices/tabs/utils'
 import { Accordion } from '../../../_atoms/accordion'
 import {
   ProjectSearchTreeBranch,
-  ProjectSearchTreeLeaf,
   ProjectSearchTreeRoot,
   ProjectSearchTreeVariableBranch,
   ProjectSearchTreeVariableLeaf,
 } from './display/tree-view'
 
-interface _SearchResult {
-  searchID: string
-  searchQuery: string
-  projectName: string
-  functions: {
-    pous: Record<
-      'program' | 'function' | 'function-block',
-      Array<{
-        name: string
-        language: 'ld' | 'sfc' | 'fbd' | 'il' | 'st' | 'python' | 'cpp'
-        pouType: 'program' | 'function' | 'function-block' | 'interface'
-        body: string
-        variable: string | null
-      }>
-    >
-    dataTypes: {
-      name: string
-      type: 'array' | 'structure' | 'enumerated'
-    }[]
-    resource: {
-      globalVariable: string
-      task: string
-      instance: string
-    }
-  }
-  searchCounts?: number
+type BranchTarget = 'data-type' | 'function' | 'function-block' | 'program' | 'resource' | 'device'
+type LeafLang = 'il' | 'st' | 'python' | 'cpp' | 'fbd' | 'sfc' | 'ld' | 'arr' | 'enum' | 'str' | 'res'
+
+type MatchGroup = {
+  key: string
+  branch: BranchTarget
+  label: string
+  leafLang: LeafLang
+  matches: ProjectSearchMatch[]
 }
 
 interface SearchProps {
-  items: Project[]
+  items: ProjectSearchEntry[]
 }
 
-const escapeHtml = (text: string) =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const BRANCH_ORDER: BranchTarget[] = ['program', 'function', 'function-block', 'data-type', 'resource', 'device']
 
-/** A hit's text as HTML, the query marked: project text (code, comments) is shown as text, never as markup. */
-const highlight = (text: string, query: string): string => {
-  const safe = escapeHtml(text)
-  if (!query) return safe
-  const regex = new RegExp(`(${escapeRegExp(escapeHtml(query))})`, 'gi')
-  return safe.replace(regex, (m) => `<span class='bg-brand-light dark:bg-brand-medium-dark border-0 rounded-sm'>${m}</span>`)
+const dataTypeLeafLang = (derivation: 'array' | 'enumerated' | 'structure'): LeafLang => {
+  switch (derivation) {
+    case 'array':
+      return 'arr'
+    case 'enumerated':
+      return 'enum'
+    case 'structure':
+      return 'str'
+  }
+}
+
+const groupOf = (match: ProjectSearchMatch): MatchGroup => {
+  const container = match.container
+  switch (container.kind) {
+    case 'pou':
+      return {
+        key: `pou:${container.pouType}:${container.name}`,
+        branch: container.pouType,
+        label: container.name,
+        leafLang: container.language,
+        matches: [],
+      }
+    case 'data-type':
+      return {
+        key: `data-type:${container.name}`,
+        branch: 'data-type',
+        label: container.name,
+        leafLang: dataTypeLeafLang(container.derivation),
+        matches: [],
+      }
+    case 'global-variable-list':
+      return {
+        key: `gvl:${container.name}`,
+        branch: 'resource',
+        label: container.name,
+        leafLang: 'res',
+        matches: [],
+      }
+    case 'resource': {
+      const label =
+        container.section === 'global-variable'
+          ? 'Global Variables'
+          : container.section === 'task'
+            ? 'Tasks'
+            : 'Instances'
+      return { key: `resource:${container.section}`, branch: 'resource', label, leafLang: 'res', matches: [] }
+    }
+    case 'server':
+      return { key: `server:${container.name}`, branch: 'device', label: container.name, leafLang: 'res', matches: [] }
+    case 'remote-device':
+      return { key: `device:${container.name}`, branch: 'device', label: container.name, leafLang: 'res', matches: [] }
+  }
+}
+
+const groupMatches = (matches: ProjectSearchMatch[]): MatchGroup[] => {
+  const groups = new Map<string, MatchGroup>()
+  for (const match of matches) {
+    const group = groupOf(match)
+    const existing = groups.get(group.key)
+    if (existing) {
+      existing.matches.push(match)
+      continue
+    }
+    group.matches.push(match)
+    groups.set(group.key, group)
+  }
+  return [...groups.values()]
+}
+
+const rowLabel = (match: ProjectSearchMatch): string => {
+  const highlighted = highlightOccurrence(match)
+  if (match.field === 'body' && match.line !== undefined) return `Line ${match.line}: ${highlighted}`
+  return highlighted
 }
 
 const Search = ({ items }: SearchProps) => {
-  const reveal = useRevealInProject()
   const {
+    project: { data },
     searchActions: { removeSearchResult, setSearchQuery },
     tabsActions: { updateTabs },
-    editorActions: { setEditor, addModel, getEditorFromEditors },
+    editorActions: { setEditor, addModel, getEditorFromEditors, setEditorCursor, setEditorGraphicalFocus },
   } = useOpenPLCStore()
+  const [selectedMatchID, setSelectedMatchID] = useState<string | null>(null)
 
   const handleCreateTab = ({ elementType, name, path }: TabsProps) => {
     const tabToBeCreated = { name, path, elementType }
@@ -85,16 +135,79 @@ const Search = ({ items }: SearchProps) => {
     setSearchQuery('')
   }
 
-  const mapDataTypeToLeafLang = (type: 'array' | 'structure' | 'enumerated'): 'arr' | 'str' | 'enum' => {
-    switch (type) {
-      case 'array':
-        return 'arr'
-      case 'structure':
-        return 'str'
-      case 'enumerated':
-        return 'enum'
-      default:
-        return 'arr'
+  const openPouMatch = (
+    match: ProjectSearchMatch,
+    container: Extract<ProjectSearchMatch['container'], { kind: 'pou' }>,
+  ) => {
+    handleCreateTab({
+      name: container.name,
+      path: `/data/pous/${container.pouType}/${container.name}`,
+      elementType: { type: container.pouType, language: container.language },
+    })
+
+    if (match.line !== undefined) {
+      setEditorCursor(container.name, {
+        lineNumber: match.line,
+        column: match.column ?? 1,
+        offset: 0,
+        target: 'body',
+      })
+      return
+    }
+    if (match.nodeId !== undefined) {
+      setEditorGraphicalFocus(container.name, { nodeId: match.nodeId, rungId: match.rungId })
+    }
+  }
+
+  const openMatch = (match: ProjectSearchMatch, searchID: string) => {
+    setSelectedMatchID(`${searchID}:${match.id}`)
+    const container = match.container
+
+    switch (container.kind) {
+      case 'pou':
+        openPouMatch(match, container)
+        return
+      case 'data-type':
+        handleCreateTab({
+          name: container.name,
+          path: `/data/data-types/${container.derivation}/${container.name}`,
+          elementType: { type: 'data-type', derivation: container.derivation },
+        })
+        return
+      case 'global-variable-list':
+        handleCreateTab({
+          name: container.name,
+          path: `/data/global-variables/${container.name}`,
+          elementType: { type: 'global-variable-list' },
+        })
+        return
+      case 'resource':
+        handleCreateTab({
+          name: 'Resource',
+          path: '/data/configuration/resource',
+          elementType: { type: 'resource' },
+        })
+        return
+      case 'server': {
+        const server = (data.servers ?? []).find((candidate) => candidate.name === container.name)
+        if (!server) return
+        handleCreateTab({
+          name: server.name,
+          path: `/servers/${server.name}`,
+          elementType: { type: 'server', protocol: server.protocol },
+        })
+        return
+      }
+      case 'remote-device': {
+        const device = (data.remoteDevices ?? []).find((candidate) => candidate.name === container.name)
+        if (!device) return
+        handleCreateTab({
+          name: device.name,
+          path: `/devices/remote/${device.name}.json`,
+          elementType: { type: 'remote-device', protocol: device.protocol },
+        })
+        return
+      }
     }
   }
 
@@ -104,145 +217,58 @@ const Search = ({ items }: SearchProps) => {
         <div className='header relative flex flex-col overflow-auto pr-1'>
           {items.length > 0 && (
             <Accordion
-              items={items.map((item) => ({
-                searchID: item.searchID,
-                title: (
-                  <div className='flex w-full items-center justify-between'>
-                    <p className='text-sm font-medium text-neutral-950 dark:text-white'>
-                      {item.searchQuery}
-                      <span className='text-cp-sm font-normal text-neutral-950 dark:text-white'>
-                        {' '}
-                        - {item.searchCounts} matches
-                      </span>
-                    </p>
-                    <CloseIcon
-                      className='ml-2 w-4 cursor-pointer stroke-brand hover:stroke-red-500 dark:stroke-white'
-                      onClick={() => handleRemoveSearchResult(item.searchID)}
-                    />
-                  </div>
-                ),
-                content: (
-                  <ProjectSearchTreeRoot label={item.projectName}>
-                    {Object.keys(item.functions.pous).map((pouType) => (
-                      <ProjectSearchTreeBranch
-                        key={pouType}
-                        branchTarget={pouType as 'function' | 'program' | 'function-block'}
-                      >
-                        {(item.functions.pous[pouType as 'function' | 'program' | 'function-block'] ?? []).map((pou) =>
-                          pou.hits.length > 0 ? (
-                            <ProjectSearchTreeVariableBranch
-                              key={pou.name}
-                              label={highlight(pou.name, item.searchQuery)}
-                              leafLang={pou.language}
-                              onClick={() => reveal({ kind: 'pou', pou: pou.name })}
-                            >
-                              {pou.hits.map((hit, hitIndex) => (
-                                <ProjectSearchTreeVariableLeaf
-                                  key={hitIndex}
-                                  label={highlight(hit.text, item.searchQuery)}
-                                  detail={hit.where}
-                                  hasVariable={hit.target.kind === 'pou' && hit.target.variable !== undefined}
-                                  hasComment={hit.target.kind === 'pou' && hit.target.variable === undefined}
-                                  onClick={(e) => {
-                                    // The POU row around it opens the POU only; this goes to the hit.
-                                    e.stopPropagation()
-                                    reveal(hit.target)
-                                  }}
-                                />
-                              ))}
-                            </ProjectSearchTreeVariableBranch>
-                          ) : (
-                            <ProjectSearchTreeLeaf
-                              key={pou.name}
-                              label={highlight(pou.name, item.searchQuery)}
-                              leafLang={pou.language}
-                              onClick={() => reveal({ kind: 'pou', pou: pou.name })}
-                            />
-                          ),
-                        )}
-                      </ProjectSearchTreeBranch>
-                    ))}
+              items={items.map((item) => {
+                const groups = groupMatches(item.matches)
+                return {
+                  searchID: item.searchID,
+                  title: (
+                    <div className='flex w-full items-center justify-between'>
+                      <p className='text-sm font-medium text-neutral-950 dark:text-white'>
+                        {item.searchQuery}
+                        <span className='text-cp-sm font-normal text-neutral-950 dark:text-white'>
+                          {' '}
+                          - {item.searchCounts} matches
+                        </span>
+                      </p>
+                      <CloseIcon
+                        className='ml-2 w-4 cursor-pointer stroke-brand hover:stroke-red-500 dark:stroke-white'
+                        onClick={() => handleRemoveSearchResult(item.searchID)}
+                      />
+                    </div>
+                  ),
+                  content: (
+                    <ProjectSearchTreeRoot label={item.projectName}>
+                      {BRANCH_ORDER.map((branch) => {
+                        const branchGroups = groups.filter((group) => group.branch === branch)
+                        if (branchGroups.length === 0) return null
 
-                    {item.functions.dataTypes.length > 0 && (
-                      <ProjectSearchTreeBranch branchTarget='data-type'>
-                        {item.functions.dataTypes.map((dataType, dataTypeIndex) => (
-                          <ProjectSearchTreeLeaf
-                            key={dataTypeIndex}
-                            label={extractSearchQuery(dataType.name, item.searchQuery)}
-                            leafLang={mapDataTypeToLeafLang(dataType.type)}
-                            onClick={() => {
-                              handleCreateTab({
-                                name: dataType.name,
-                                path: `/data/data-types/${dataType.type}/${dataType.name}`,
-                                elementType: { type: 'data-type', derivation: dataType.type },
-                              })
-                              setSearchQuery(item.searchQuery)
-                            }}
-                          />
-                        ))}
-                      </ProjectSearchTreeBranch>
-                    )}
-
-                    {(item.functions.globals.length > 0 ||
-                      item.functions.resource.task ||
-                      item.functions.resource.instance) && (
-                      <ProjectSearchTreeBranch branchTarget='resource'>
-                        {item.functions.globals.length > 0 && (
-                          <ProjectSearchTreeVariableBranch label='Global Variables' leafLang='res'>
-                            {item.functions.globals.map((hit, hitIndex) => (
-                              <ProjectSearchTreeVariableLeaf
-                                key={hitIndex}
-                                label={highlight(hit.text, item.searchQuery)}
-                                detail={hit.where}
-                                hasVariable
-                                onClick={() => reveal(hit.target)}
-                              />
+                        return (
+                          <ProjectSearchTreeBranch key={branch} branchTarget={branch}>
+                            {branchGroups.map((group) => (
+                              <ProjectSearchTreeVariableBranch
+                                key={group.key}
+                                label={extractSearchQuery(group.label, item.searchQuery)}
+                                leafLang={group.leafLang}
+                              >
+                                {group.matches.map((match) => (
+                                  <ProjectSearchTreeVariableLeaf
+                                    key={`${group.key}:${match.id}`}
+                                    label={rowLabel(match)}
+                                    hasVariable={match.field !== 'body'}
+                                    hasComment={match.field === 'body'}
+                                    selected={selectedMatchID === `${item.searchID}:${match.id}`}
+                                    onClick={() => openMatch(match, item.searchID)}
+                                  />
+                                ))}
+                              </ProjectSearchTreeVariableBranch>
                             ))}
-                          </ProjectSearchTreeVariableBranch>
-                        )}
-                        {item.functions.resource.task && (
-                          <ProjectSearchTreeVariableBranch label='Tasks' leafLang='res'>
-                            {item.functions.resource.task.split(', ').map((task, taskIndex) => (
-                              <ProjectSearchTreeVariableLeaf
-                                key={taskIndex}
-                                label={extractSearchQuery(task, item.searchQuery)}
-                                hasVariable
-                                onClick={() => {
-                                  handleCreateTab({
-                                    name: 'Resource',
-                                    path: `/data/configuration/resource`,
-                                    elementType: { type: 'resource' },
-                                  })
-                                  setSearchQuery(item.searchQuery)
-                                }}
-                              />
-                            ))}
-                          </ProjectSearchTreeVariableBranch>
-                        )}
-                        {item.functions.resource.instance && (
-                          <ProjectSearchTreeVariableBranch label='Instances' leafLang='res'>
-                            {item.functions.resource.instance.split(', ').map((instance, instanceIndex) => (
-                              <ProjectSearchTreeVariableLeaf
-                                key={instanceIndex}
-                                label={extractSearchQuery(instance, item.searchQuery)}
-                                hasVariable
-                                onClick={() => {
-                                  handleCreateTab({
-                                    name: 'Resource',
-                                    path: `/data/configuration/resource`,
-                                    elementType: { type: 'resource' },
-                                  })
-                                  setSearchQuery(item.searchQuery)
-                                }}
-                              />
-                            ))}
-                          </ProjectSearchTreeVariableBranch>
-                        )}
-                      </ProjectSearchTreeBranch>
-                    )}
-                  </ProjectSearchTreeRoot>
-                ),
-              }))}
+                          </ProjectSearchTreeBranch>
+                        )
+                      })}
+                    </ProjectSearchTreeRoot>
+                  ),
+                }
+              })}
             />
           )}
         </div>
