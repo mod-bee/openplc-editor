@@ -735,6 +735,7 @@ export function createEditorCompilerPlatformPort(
           args.boardTarget,
           context.normalizedProjectPath,
           context.sourceTargetFolderPath,
+          args.screenConfigInputs,
           // The handler's callback signature accepts `Buffer | string`
           // for the chunk and `'info' | 'error' | undefined` for the
           // log level; PlatformLog wants `string` + `'info' | 'warning'

@@ -230,7 +230,10 @@ import { getErrorMessage } from '@root/frontend/utils/get-error-message'
 import { app as electronApp, MessageChannelMain } from 'electron'
 import JSZip from 'jszip'
 
-import type { ThirdPartyLibraryRequest } from '../../../middleware/shared/ports/compiler-platform-port'
+import type {
+  ThirdPartyLibraryRequest,
+  VppScreenConfigInputs,
+} from '../../../middleware/shared/ports/compiler-platform-port'
 import type {
   BuildOutputSetting,
   OutputsOnStop,
@@ -2011,6 +2014,7 @@ class CompilerModule {
     boardTarget: string,
     normalizedProjectPath: string,
     sourceTargetFolderPath: string,
+    screenConfigInputs: VppScreenConfigInputs,
     handleOutputData: HandleOutputDataCallback,
   ): Promise<void> {
     // Second gate, deliberately re-run here rather than trusted from
@@ -2278,6 +2282,8 @@ class CompilerModule {
           installed: readInstalledPin(match.pkg.packageId),
         },
         sha256Hex: (bytes) => createHash('sha256').update(bytes).digest('hex'),
+        packageId: match.pkg.packageId,
+        screenConfigInputs,
       })
 
       for (const warning of built.warnings) handleOutputData(warning, 'info')
@@ -2732,7 +2738,7 @@ class CompilerModule {
               logLevel: 'warning',
               message:
                 `Could not read license-store backend at ${licenseStoreFile}: ${getErrorMessage(lsErr)}. ` +
-                'This board will report that it cannot store a licence.',
+                'This board will report that it cannot store a license.',
             })
           }
         }
@@ -2746,7 +2752,7 @@ class CompilerModule {
             message:
               `Board "${boardTarget}" belongs to a licensed VPP but its manifest declares no ` +
               '`hal.licenseStore`. Every licensed VPP needs one, so this is a packaging fault: the ' +
-              'firmware will link the weak default and report that its licence storage is missing.',
+              'firmware will link the weak default and report that its license storage is missing.',
           })
         }
 

@@ -334,6 +334,18 @@ export type RuntimeV4Bundle = Record<string, BundleFile | Uint8Array>
 export interface PackageVppPluginArgs {
   /** Selected board name, looked up against installed VPP packages. */
   boardTarget: string
+  /** Compile outputs the device's `hal.screenConfigs` are generated from; passed to the shared builder untouched. */
+  screenConfigInputs: VppScreenConfigInputs
+}
+
+/** What the compile pipeline knows about the program, for the configs a VPP device declares for its screens. */
+export interface VppScreenConfigInputs {
+  /** `project.data.vppExtensions`, keyed by package id, then by storage id. */
+  vppExtensions: Record<string, Record<string, unknown>>
+  /** STruC++ `debug-map.json` of this compile; empty when none was produced. */
+  debugMapContent: string
+  /** Program instances of the resource, to turn `<POU>.<var>` into a debug path. */
+  instances: ReadonlyArray<{ name: string; program: string }>
 }
 
 export interface PackageVppPluginResult {
