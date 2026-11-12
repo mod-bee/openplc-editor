@@ -21,7 +21,11 @@ describe('nodeGap — the room a block keeps for its elements', () => {
       type: 'block',
       position: { x: 0, y: 0 },
       data: {
-        variant: { name: 'UT_MOTOR', type: 'function-block', variables: [{ name: 'Feedback', class: 'input', type: { definition: 'base-type', value: 'BOOL' } }] },
+        variant: {
+          name: 'UT_MOTOR',
+          type: 'function-block',
+          variables: [{ name: 'Feedback', class: 'input', type: { definition: 'base-type', value: 'BOOL' } }],
+        },
         inputHandles: [{ id: 'EN' }, { id: 'Feedback' }],
         outputHandles: [{ id: 'ENO' }],
         connectedVariables: [{ type: 'input', handleId: 'Feedback', variable: { name: inputName } }],

@@ -150,7 +150,8 @@ describe('isLegalIdentifier', () => {
   })
 
   it('still refuses the IEC keywords TIME, FOR, BY and ON', () => {
-    for (const word of ['time', 'for', 'by', 'on']) expect(isLegalIdentifier(word)).toEqual([false, 'is a reserved word'])
+    for (const word of ['time', 'for', 'by', 'on'])
+      expect(isLegalIdentifier(word)).toEqual([false, 'is a reserved word'])
   })
 
   it('refuses END_SET and END_GET, which the compiler lexes as keywords', () => {

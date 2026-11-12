@@ -34,20 +34,20 @@ let canEdit = true
 let isEphemeralProject = false
 
 const store = {
-    getState: () => ({
-      deviceActions: { setAvailableOptions: record('setAvailableOptions') },
-      libraryActions: {
-        setSystemLibraries,
-        setBundledLibraryNames,
-      },
-      sharedWorkspaceActions: { handleOpenProjectResponse: record('handleOpenProjectResponse') },
-      project: { meta: { name: 'demo' }, data: {} },
-      projectActions: { getCompileReadyProjectData: () => ({}) },
-      workspace: { canEdit, isEphemeralProject },
-      deviceDefinitions: {
-        configuration: { deviceBoard: 'Uno', vendorScreenData: undefined, communicationPort: undefined },
-      },
-    }),
+  getState: () => ({
+    deviceActions: { setAvailableOptions: record('setAvailableOptions') },
+    libraryActions: {
+      setSystemLibraries,
+      setBundledLibraryNames,
+    },
+    sharedWorkspaceActions: { handleOpenProjectResponse: record('handleOpenProjectResponse') },
+    project: { meta: { name: 'demo' }, data: {} },
+    projectActions: { getCompileReadyProjectData: () => ({}) },
+    workspace: { canEdit, isEphemeralProject },
+    deviceDefinitions: {
+      configuration: { deviceBoard: 'Uno', vendorScreenData: undefined, communicationPort: undefined },
+    },
+  }),
 } as unknown as OpenPLCStore
 
 jest.mock('@root/backend/editor/hardware', () => ({

@@ -16,8 +16,14 @@ beforeEach(() => {
 const render = (ui: ReactElement) => rtlRender(ui, { wrapper: createStoreWrapper(store) })
 
 const boards = new Map<string, BoardInfo>([
-  ['ESP32-S3', { compiler: 'arduino-cli', core: 'esp32:esp32', platform: 'esp32:esp32:esp32s3', preview: '', specs: {} }],
-  ['ESP32-C3', { compiler: 'arduino-cli', core: 'esp32:esp32', platform: 'esp32:esp32:esp32c3', preview: '', specs: {} }],
+  [
+    'ESP32-S3',
+    { compiler: 'arduino-cli', core: 'esp32:esp32', platform: 'esp32:esp32:esp32s3', preview: '', specs: {} },
+  ],
+  [
+    'ESP32-C3',
+    { compiler: 'arduino-cli', core: 'esp32:esp32', platform: 'esp32:esp32:esp32c3', preview: '', specs: {} },
+  ],
 ])
 
 const tasks: PLCTask[] = [

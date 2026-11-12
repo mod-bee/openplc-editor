@@ -46,7 +46,8 @@ const ACCESS_CLASS: Record<XrefUse['access'], string> = {
 function revealTargetOf(use: XrefUse, target?: XrefTarget): RevealTarget {
   if (use.pou === undefined) return { kind: 'globals', variable: use.expression, list: use.list }
   if (use.access === 'declaration') return { kind: 'pou', pou: use.pou, variable: use.expression }
-  const member = use.access === 'call' && target ? /^\.([A-Za-z_][A-Za-z0-9_]*)/.exec(target.path.slice(use.path.length)) : null
+  const member =
+    use.access === 'call' && target ? /^\.([A-Za-z_][A-Za-z0-9_]*)/.exec(target.path.slice(use.path.length)) : null
   const pinAt = member
     ? { blockId: use.nodeId, pin: member[1] }
     : use.blockId && use.pin

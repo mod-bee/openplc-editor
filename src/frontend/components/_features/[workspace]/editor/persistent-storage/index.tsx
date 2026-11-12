@@ -119,9 +119,9 @@ const PersistentStorageEditor = () => {
             </p>
           )}
           <p id='retain-flush-help' className='text-xs text-neutral-500 dark:text-neutral-400'>
-            A change is saved straight away. While values keep changing, they are saved at most once in
-            this period, which keeps wear on flash and EEPROM low: a value that changes inside the period
-            is saved when it ends. Retain values that change rarely, such as setpoints.
+            A change is saved straight away. While values keep changing, they are saved at most once in this period,
+            which keeps wear on flash and EEPROM low: a value that changes inside the period is saved when it ends.
+            Retain values that change rarely, such as setpoints.
           </p>
         </div>
       </div>

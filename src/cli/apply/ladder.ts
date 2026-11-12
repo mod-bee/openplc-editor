@@ -228,7 +228,9 @@ function toOutput(store: OpenPLCStore, pouName: string, output: SpecLadderOutput
       const match = declared.find((entry) => entry.name.toUpperCase() === pin.toUpperCase())
       if (!match) {
         const legal = declared.map((entry) => entry.name).join(', ')
-        errors.push(`POU "${pouName}": block "${variant.name}" has no ${side} pin "${pin}". Its ${side}s are: ${legal}.`)
+        errors.push(
+          `POU "${pouName}": block "${variant.name}" has no ${side} pin "${pin}". Its ${side}s are: ${legal}.`,
+        )
         return null
       }
       if (canonical.has(match.name)) {

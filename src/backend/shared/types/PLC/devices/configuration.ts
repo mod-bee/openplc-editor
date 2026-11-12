@@ -71,7 +71,8 @@ const deviceConfigurationSchema = z.object({
   // does `keep: false`: editors up to 4.3.3-modbee.3 wrote `{ keep: false,
   // count: 0 }` into every new project, a count the check below refuses.
   buildOutput: z.preprocess(
-    (value) => (typeof value === 'object' && value !== null && 'keep' in value && value.keep === false ? undefined : value),
+    (value) =>
+      typeof value === 'object' && value !== null && 'keep' in value && value.keep === false ? undefined : value,
     z
       .object({
         keep: z.boolean(),

@@ -225,7 +225,9 @@ describe('Board device list', () => {
       expect(await screen.findByText(/1\.2\.4 is installed/)).toBeTruthy()
       fireEvent.click(screen.getByText('Use 1.2.4'))
 
-      expect(store.getState().deviceDefinitions.configuration.vppPackagePinsByBoard?.[VPP_BOARD_NAME]).toEqual(installed)
+      expect(store.getState().deviceDefinitions.configuration.vppPackagePinsByBoard?.[VPP_BOARD_NAME]).toEqual(
+        installed,
+      )
       expect(screen.queryByTestId('vpp-pin-drift')).toBeNull()
     })
 

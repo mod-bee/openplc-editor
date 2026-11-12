@@ -205,7 +205,6 @@ function describeVariable(variable: PLCVariable): Record<string, unknown> {
   return out
 }
 
-
 /** The catalogue an agent needs to place a block without guessing its pins. */
 function describeLibrary(library: SystemLibrary): Record<string, unknown> {
   return {

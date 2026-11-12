@@ -53,10 +53,7 @@ describe('taskCoreCount', () => {
 })
 
 describe('taskCoreProblem', () => {
-  const tasks = [
-    { name: 'MAIN' },
-    { name: 'NET', core: 0 },
-  ]
+  const tasks = [{ name: 'MAIN' }, { name: 'NET', core: 0 }]
 
   it('accepts Auto everywhere', () => {
     const auto = [{ name: 'MAIN' }]
@@ -85,8 +82,6 @@ describe('taskCoreProblem', () => {
   })
 
   it('refuses a second core on a single-core board', () => {
-    expect(taskCoreProblem([{ name: 'NET', core: 1 }], { rtos: esp32, cpuCores: 1 }, true)).toMatch(
-      /one core/,
-    )
+    expect(taskCoreProblem([{ name: 'NET', core: 1 }], { rtos: esp32, cpuCores: 1 }, true)).toMatch(/one core/)
   })
 })

@@ -149,7 +149,7 @@ describe('elementNameCollision beyond the project elements', () => {
     expect(gate('Scale', 'remote-device')).toBeNull()
   })
 
-  it("lets a library project use the names of its own installed build", () => {
+  it('lets a library project use the names of its own installed build', () => {
     // Editing a library whose earlier build is installed (to test it): its own
     // blocks are not someone else's names. Another library's still are.
     const owner = store

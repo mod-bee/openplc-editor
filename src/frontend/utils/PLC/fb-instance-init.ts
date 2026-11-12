@@ -128,7 +128,9 @@ export function resolveFbInitMembers(
     const wanted: string = current.toUpperCase()
     seen.add(wanted)
 
-    const own: PLCPou | undefined = pous.find((pou) => pou.pouType === 'function-block' && pou.name.toUpperCase() === wanted)
+    const own: PLCPou | undefined = pous.find(
+      (pou) => pou.pouType === 'function-block' && pou.name.toUpperCase() === wanted,
+    )
     if (own) {
       found = true
       for (const variable of own.interface?.variables ?? []) {

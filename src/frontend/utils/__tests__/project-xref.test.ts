@@ -14,7 +14,13 @@ import {
 } from '../project-xref'
 
 const v = (name: string, cls: PLCVariable['class'] = 'local'): PLCVariable =>
-  ({ name, class: cls, type: { definition: 'base-type', value: 'BOOL' }, location: '', documentation: '' }) as PLCVariable
+  ({
+    name,
+    class: cls,
+    type: { definition: 'base-type', value: 'BOOL' },
+    location: '',
+    documentation: '',
+  }) as PLCVariable
 
 const pou = (name: string, language: string, variables: PLCVariable[], value: unknown = ''): PLCPou =>
   ({ name, pouType: 'program', interface: { variables }, body: { language, value } }) as unknown as PLCPou
@@ -31,7 +37,7 @@ const project: XrefProject = {
       [v('levelLimit', 'external'), v('n')],
       [
         '(* levelLimit.Trip in a comment is not a use *)',
-        "levelLimit(In := sensor.value, Reset := FALSE);",
+        'levelLimit(In := sensor.value, Reset := FALSE);',
         "msg := 'levelLimit.Trip';",
         'IF levelLimit.Trip THEN n := n + 1; END_IF;',
         'tmr(IN := levelLimit.LoLo, Q => dryRunOut);',
@@ -70,7 +76,9 @@ const project: XrefProject = {
     },
     {
       name: 'ALARMS',
-      rungs: [{ id: 'a0', nodes: [node('c2', 'contact', { variable: { name: 'LEVELLIMIT.Trip' }, variant: 'negated' })] }],
+      rungs: [
+        { id: 'a0', nodes: [node('c2', 'contact', { variable: { name: 'LEVELLIMIT.Trip' }, variant: 'negated' })] },
+      ],
     },
   ],
   fbdFlows: [],
@@ -86,20 +94,19 @@ describe('project cross references', () => {
     const target = resolveXrefTarget(project, 'ALARMS', 'levelLimit.Trip')!
     expect(target).toMatchObject({ owner: GLOBAL_OWNER, root: 'levelLimit' })
     expect(describe_(findXrefUses(uses, target).filter((u) => u.access !== 'declaration'))).toEqual(
-      [
-        'ALARMS:1 LEVELLIMIT.Trip read',
-        'LEVEL:2 levelLimit call',
-        'LEVEL:4 levelLimit.Trip read',
-      ].sort(),
+      ['ALARMS:1 LEVELLIMIT.Trip read', 'LEVEL:2 levelLimit call', 'LEVEL:4 levelLimit.Trip read'].sort(),
     )
   })
 
   it('lists every use of a whole variable, members included, with declarations', () => {
     const target = resolveXrefTarget(project, 'PUMP', 'levelLimit')!
     const found = findXrefUses(uses, target)
-    expect(found.filter((u) => u.access === 'declaration').map((u) => u.detail).sort()).toEqual(
-      ['VAR_EXTERNAL', 'VAR_EXTERNAL', 'VAR_EXTERNAL', 'VAR_GLOBAL'].sort(),
-    )
+    expect(
+      found
+        .filter((u) => u.access === 'declaration')
+        .map((u) => u.detail)
+        .sort(),
+    ).toEqual(['VAR_EXTERNAL', 'VAR_EXTERNAL', 'VAR_EXTERNAL', 'VAR_GLOBAL'].sort())
     expect(describe_(found.filter((u) => u.access !== 'declaration'))).toEqual(
       [
         'ALARMS:1 LEVELLIMIT.Trip read',
@@ -179,7 +186,7 @@ describe('ST name chains', () => {
   })
 
   it('skips comments, strings and typed literals', () => {
-    const chains = scanStChains("// a\n(* b *) /* c */ s := 'd' + \"e\"; t := T#1m30s; u := 16#FF; w := MODE#AUTO;")
+    const chains = scanStChains('// a\n(* b *) /* c */ s := \'d\' + "e"; t := T#1m30s; u := 16#FF; w := MODE#AUTO;')
     expect(chains.map((c) => c.expression)).toEqual(['s', 't', 'u', 'w'])
   })
 })

@@ -23,12 +23,18 @@ export function xrefProjectOf(state: RootState): XrefProject {
  * Where a name written in `pou` is declared: the global's row (configuration or global variable list) or
  * the declaring POU's variable table row. Undefined when the name is no variable.
  */
-export function declarationTargetOf(state: RootState, pou: string | undefined, expression: string): RevealTarget | undefined {
+export function declarationTargetOf(
+  state: RootState,
+  pou: string | undefined,
+  expression: string,
+): RevealTarget | undefined {
   const project = xrefProjectOf(state)
   const target = resolveXrefTarget(project, pou, expression)
   if (!target) return undefined
   const declarations = findXrefUses(buildProjectXref(project), { ...target, path: target.root.toUpperCase() }).filter(
-    (use) => use.access === 'declaration' && (target.owner === GLOBAL_OWNER ? use.pou === undefined : use.pou === target.owner),
+    (use) =>
+      use.access === 'declaration' &&
+      (target.owner === GLOBAL_OWNER ? use.pou === undefined : use.pou === target.owner),
   )
   const declaration = declarations[0]
   if (!declaration) return undefined
@@ -58,7 +64,8 @@ type XrefMenuItemsProps = {
   first?: boolean
 }
 
-const itemClass = 'flex w-full cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
+const itemClass =
+  'flex w-full cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-900'
 
 /**
  * "Find references" and "Go to declaration" in an element's menu, offline and online: the Cross references

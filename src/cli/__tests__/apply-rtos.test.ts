@@ -19,8 +19,7 @@ const store = createTestStore()
 const apply = (device: ApplySpec['device']) =>
   applySpec(store, { specVersion: 1, device }, { prune: false, projectPath: '/does/not/matter' })
 
-const rtosSettings = () =>
-  readRtosSettings(store.getState().deviceDefinitions.configuration.vendorScreenData)
+const rtosSettings = () => readRtosSettings(store.getState().deviceDefinitions.configuration.vendorScreenData)
 
 describe('device.rtos', () => {
   it('turns RTOS mode off and on, and says so', async () => {

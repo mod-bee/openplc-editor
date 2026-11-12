@@ -124,74 +124,74 @@ function GenericTable<T>({
 
   return (
     <>
-    <Table context={tableContext} className='mr-1 w-full'>
-      <TableHeader ref={tableHeaderRef}>
-        {table.getHeaderGroups().map((headerGroup) => (
-          <TableRow className='select-none' key={headerGroup.id}>
-            {headerGroup.headers.map((header) => (
-              <TableHead
-                resizable={header.column.columnDef.enableResizing}
-                isResizing={header.column.getIsResizing()}
-                resizeHandler={header.getResizeHandler()}
-                style={{
-                  width: header.getSize(),
-                  maxWidth: header.column.columnDef.maxSize,
-                  minWidth: header.column.columnDef.minSize,
-                }}
-                key={header.id}
-              >
-                {flexRender(header.column.columnDef.header, header.getContext())}
-              </TableHead>
-            ))}
-          </TableRow>
-        ))}
-      </TableHeader>
-      <TableBody ref={tableBodyRef}>
-        {table.getRowModel().rows.map((row) => (
-          <TableRow
-            id={row.id}
-            key={row.id}
-            className='h-8 cursor-pointer'
-            onClick={(e) => handleRowClick(e.currentTarget)}
-            onContextMenu={(e) => {
-              if (!rowXref) return
-              // A field keeps its own menu (copy, paste).
-              if ((e.target as HTMLElement).closest('input, textarea, select')) return
-              const name = rowXref.nameOf(row.original)
-              if (!name?.trim()) return
-              e.preventDefault()
-              setXrefMenu({ x: e.clientX, y: e.clientY, name })
-            }}
-            selected={selectedRow === parseInt(row.id)}
-            ref={selectedRow === parseInt(row.id) ? tableBodyRowRef : null}
-          >
-            {row.getVisibleCells().map((cell) => (
-              <TableCell
-                style={{
-                  width: cell.column.getSize(),
-                  maxWidth: cell.column.columnDef.maxSize,
-                  minWidth: cell.column.columnDef.minSize,
-                }}
-                key={cell.id}
-              >
-                {flexRender(cell.column.columnDef.cell, {
-                  ...cell.getContext(),
-                  editable: selectedRow === parseInt(row.id),
-                  selected: selectedRow === parseInt(row.id),
-                  scope: 'local',
-                })}
-              </TableCell>
-            ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-    <XrefContextMenu
-      position={xrefMenu}
-      onClose={() => setXrefMenu(null)}
-      pou={rowXref?.pou}
-      expression={xrefMenu?.name}
-    />
+      <Table context={tableContext} className='mr-1 w-full'>
+        <TableHeader ref={tableHeaderRef}>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow className='select-none' key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead
+                  resizable={header.column.columnDef.enableResizing}
+                  isResizing={header.column.getIsResizing()}
+                  resizeHandler={header.getResizeHandler()}
+                  style={{
+                    width: header.getSize(),
+                    maxWidth: header.column.columnDef.maxSize,
+                    minWidth: header.column.columnDef.minSize,
+                  }}
+                  key={header.id}
+                >
+                  {flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody ref={tableBodyRef}>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow
+              id={row.id}
+              key={row.id}
+              className='h-8 cursor-pointer'
+              onClick={(e) => handleRowClick(e.currentTarget)}
+              onContextMenu={(e) => {
+                if (!rowXref) return
+                // A field keeps its own menu (copy, paste).
+                if ((e.target as HTMLElement).closest('input, textarea, select')) return
+                const name = rowXref.nameOf(row.original)
+                if (!name?.trim()) return
+                e.preventDefault()
+                setXrefMenu({ x: e.clientX, y: e.clientY, name })
+              }}
+              selected={selectedRow === parseInt(row.id)}
+              ref={selectedRow === parseInt(row.id) ? tableBodyRowRef : null}
+            >
+              {row.getVisibleCells().map((cell) => (
+                <TableCell
+                  style={{
+                    width: cell.column.getSize(),
+                    maxWidth: cell.column.columnDef.maxSize,
+                    minWidth: cell.column.columnDef.minSize,
+                  }}
+                  key={cell.id}
+                >
+                  {flexRender(cell.column.columnDef.cell, {
+                    ...cell.getContext(),
+                    editable: selectedRow === parseInt(row.id),
+                    selected: selectedRow === parseInt(row.id),
+                    scope: 'local',
+                  })}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <XrefContextMenu
+        position={xrefMenu}
+        onClose={() => setXrefMenu(null)}
+        pou={rowXref?.pou}
+        expression={xrefMenu?.name}
+      />
     </>
   )
 }

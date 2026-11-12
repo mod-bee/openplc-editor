@@ -66,7 +66,11 @@ export function useRevealInProject(): (target: RevealTarget) => void {
           (v) => v.name.toUpperCase() === target.variable!.toUpperCase(),
         )
         if (row >= 0) {
-          editorActions.updateModelVariablesForName(pou.name, { display: 'table', classFilter: 'All', selectedRow: row })
+          editorActions.updateModelVariablesForName(pou.name, {
+            display: 'table',
+            classFilter: 'All',
+            selectedRow: row,
+          })
         }
         return
       }

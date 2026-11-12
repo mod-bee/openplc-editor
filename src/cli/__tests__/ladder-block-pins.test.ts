@@ -124,8 +124,10 @@ describe('applyLadderBody — a pin named in another case', () => {
     const nodes = flow?.rungs[0].nodes ?? []
     const named = (pin: string) =>
       (
-        nodes.find((node) => node.type === 'variable' && (node.data as { block?: { handleId?: string } }).block?.handleId === pin)
-          ?.data as { variable?: { name?: string } } | undefined
+        nodes.find(
+          (node) =>
+            node.type === 'variable' && (node.data as { block?: { handleId?: string } }).block?.handleId === pin,
+        )?.data as { variable?: { name?: string } } | undefined
       )?.variable?.name
     expect(named('PT')).toBe('Preset')
     expect(named('ET')).toBe('Elapsed')
@@ -147,4 +149,3 @@ describe('applyLadderBody — a pin named in another case', () => {
     expect(errors.join(' ')).toContain('input pin "PT" is named twice')
   })
 })
-

@@ -31,8 +31,7 @@ function seed(pinned = '0.1.0', available = ['0.2.0', '0.1.0']) {
   store.getState().modalActions.openModal('library-updates')
 }
 
-const pinnedVersion = () =>
-  store.getState().project.data.libraries?.find((l) => l.name === 'libtest-basic')?.version
+const pinnedVersion = () => store.getState().project.data.libraries?.find((l) => l.name === 'libtest-basic')?.version
 
 describe('LibraryUpdatesModal', () => {
   it('lists the outdated library with the version in use', () => {

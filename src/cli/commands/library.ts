@@ -73,7 +73,8 @@ export function splitLibraryRef(ref: string): { name: string; version?: string }
   return { name: ref.slice(0, at), version: ref.slice(at + 1) }
 }
 
-async function runLibraryBuild(store: OpenPLCStore, 
+async function runLibraryBuild(
+  store: OpenPLCStore,
   args: ParsedArgs,
   reporter: Reporter,
   projectPath: string | undefined,
@@ -151,7 +152,7 @@ function prepareLibraryData(
 
   // A library's own POU may hold a function block instance, so preprocessing
   // needs the same pin sources a project build gets.
-  const archives = new LibraryManagerModule().loadAll() as StlibArchiveDTO[]
+  const archives = new LibraryManagerModule().loadAll()
   const fbSources = archives.map((archive) => ({
     functionBlocks: archive.manifest.functionBlocks,
   }))

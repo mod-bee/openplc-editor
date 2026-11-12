@@ -42,7 +42,8 @@ interface PinnedProject {
  * Load the project and hand back its current refs. `loadProject` hydrates the
  * library pool first, which is what makes the restamp below meaningful.
  */
-async function openForPinning(store: OpenPLCStore, 
+async function openForPinning(
+  store: OpenPLCStore,
   reporter: Reporter,
   projectPath: string,
 ): Promise<{ ok: true; project: PinnedProject } | { ok: false; result: CliResult }> {
@@ -94,7 +95,10 @@ async function writeRefs(
  * become. Flows are cloned because the restamp mutates in place and the store
  * freezes its state.
  */
-function describePlacedBlockDrift(store: OpenPLCStore, refs: ProjectLibraryRef[]): { changes: RestampChange[]; poolEmpty: boolean } {
+function describePlacedBlockDrift(
+  store: OpenPLCStore,
+  refs: ProjectLibraryRef[],
+): { changes: RestampChange[]; poolEmpty: boolean } {
   store.getState().libraryActions.setProjectLibraries(refs)
   const state = store.getState()
   const systemLibraries: SystemLibrary[] = state.libraries.system
@@ -124,7 +128,8 @@ function reportDrift(reporter: Reporter, drift: { changes: RestampChange[]; pool
   }
 }
 
-export async function runLibraryPin(store: OpenPLCStore, 
+export async function runLibraryPin(
+  store: OpenPLCStore,
   reporter: Reporter,
   projectPath: string | undefined,
   ref: string | undefined,
@@ -204,7 +209,8 @@ export async function runLibraryPin(store: OpenPLCStore,
   )
 }
 
-export async function runLibraryUnpin(store: OpenPLCStore, 
+export async function runLibraryUnpin(
+  store: OpenPLCStore,
   reporter: Reporter,
   projectPath: string | undefined,
   name: string | undefined,

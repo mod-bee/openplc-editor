@@ -13,8 +13,8 @@
  * shares a namespace with, and against nothing else.
  */
 
-import { isLibraryProject } from '../../../../middleware/shared/ports/types'
 import type { LibraryPouType } from '../../../../middleware/shared/ports/library-types'
+import { isLibraryProject } from '../../../../middleware/shared/ports/types'
 import { globalVariableListTypeName } from '../../../utils/PLC/global-variable-list-serializer'
 import type { LibrarySlice } from '../library'
 import type { ProjectSlice } from '../project'

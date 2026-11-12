@@ -329,9 +329,6 @@ const VariableElement = (block: VariableProps) => {
     setForceValueModalOpen(true)
   }
 
-
-
-
   // Right-click, offline and online: the element's menu (Find references; online Force and Watch too).
   const handleContextMenu = (e: React.MouseEvent) => {
     if (!data.variable.name?.trim()) return

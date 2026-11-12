@@ -387,13 +387,7 @@ function traverseNestedNode<T>(
       if (baseType.definition === 'base-type') {
         const debugVar = findDebugVariable(debugVariables, elementFullPath)
         children.push(
-          visitor.visitLeaf(
-            elementLabel,
-            elementFullPath,
-            elementCompositeKey,
-            elementTypeName,
-            debugVar?.index,
-          ),
+          visitor.visitLeaf(elementLabel, elementFullPath, elementCompositeKey, elementTypeName, debugVar?.index),
         )
       } else if (baseType.definition === 'user-data-type') {
         // Array of complex elements — could be FB instances or structs.

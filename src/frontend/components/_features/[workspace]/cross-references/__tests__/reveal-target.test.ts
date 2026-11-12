@@ -19,11 +19,20 @@ const use = (over: Partial<XrefUse>): XrefUse => ({
   nodeId: 'blk',
   ...over,
 })
-const target = (path: string): XrefTarget => ({ owner: 'GLOBAL', root: 'levelLimit', expression: path, path: path.toUpperCase() })
+const target = (path: string): XrefTarget => ({
+  owner: 'GLOBAL',
+  root: 'levelLimit',
+  expression: path,
+  path: path.toUpperCase(),
+})
 
 describe('revealTargetOf', () => {
   it("marks the asked-for member's pin at a block call", () => {
-    expect(revealTargetOf(use({}), target('levelLimit.LoLo'))).toMatchObject({ nodeId: 'blk', blockId: 'blk', pin: 'LOLO' })
+    expect(revealTargetOf(use({}), target('levelLimit.LoLo'))).toMatchObject({
+      nodeId: 'blk',
+      blockId: 'blk',
+      pin: 'LOLO',
+    })
   })
 
   it('marks the block alone when the whole variable was asked for', () => {
@@ -34,7 +43,14 @@ describe('revealTargetOf', () => {
 
   it('marks the pin a variable element sits on', () => {
     const t = revealTargetOf(
-      use({ access: 'read', element: 'variable', nodeId: 'v1', blockId: 'motor1', pin: 'Reset', expression: 'resetAll' }),
+      use({
+        access: 'read',
+        element: 'variable',
+        nodeId: 'v1',
+        blockId: 'motor1',
+        pin: 'Reset',
+        expression: 'resetAll',
+      }),
       target('resetAll'),
     )
     expect(t).toMatchObject({ nodeId: 'v1', blockId: 'motor1', pin: 'Reset' })

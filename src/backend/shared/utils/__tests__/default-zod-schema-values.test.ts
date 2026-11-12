@@ -140,7 +140,10 @@ describe('getDefaultSchemaValues', () => {
 
 describe('deviceConfigurationSchema buildOutput', () => {
   it('reads the { keep: false, count: 0 } older editors wrote as off', () => {
-    const result = deviceConfigurationSchema.safeParse({ deviceBoard: 'ModBee Node UIO', buildOutput: { keep: false, count: 0 } })
+    const result = deviceConfigurationSchema.safeParse({
+      deviceBoard: 'ModBee Node UIO',
+      buildOutput: { keep: false, count: 0 },
+    })
     expect(result.success).toBe(true)
     expect(result.success && result.data.buildOutput).toBeUndefined()
     expect(result.success && result.data.deviceBoard).toBe('ModBee Node UIO')

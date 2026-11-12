@@ -221,7 +221,10 @@ export const matchPouHeader = (content: string, pouType: string): PouHeaderMatch
   // `STRING[48]` form): dropped, the header text ended before it and the
   // function came back returning a plain STRING.
   const match = content.match(
-    new RegExp(`^\\s*(${keyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+(?:\\s*(?:\\(\\s*\\w+\\s*\\)|\\[\\s*\\w+\\s*\\]))?))?`, 'i'),
+    new RegExp(
+      `^\\s*(${keyword})\\s+(\\w+)(?:\\s*:\\s*(\\w+(?:\\s*(?:\\(\\s*\\w+\\s*\\)|\\[\\s*\\w+\\s*\\]))?))?`,
+      'i',
+    ),
   )
   if (!match) return undefined
   return { text: match[0], name: match[2], ...(match[3] ? { returnType: match[3] } : {}) }

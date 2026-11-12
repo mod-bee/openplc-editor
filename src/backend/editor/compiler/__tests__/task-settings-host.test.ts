@@ -91,7 +91,13 @@ int main(int, char **argv) {
 
   const deadline = (release: number, limit: number, stopAt: number, stopOnStuck: boolean) =>
     Number(
-      execFileSync(bin, ['deadline', String(release), String(limit), String(stopAt), stopOnStuck ? '1' : '0']).toString(),
+      execFileSync(bin, [
+        'deadline',
+        String(release),
+        String(limit),
+        String(stopAt),
+        stopOnStuck ? '1' : '0',
+      ]).toString(),
     )
 
   it('lets a stop wait for a task to its own stuck limit, as before', () => {

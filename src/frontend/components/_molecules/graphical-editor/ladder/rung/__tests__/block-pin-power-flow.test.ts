@@ -13,10 +13,25 @@ type Edges = RungLadderState['edges']
 const rail = (id: string, variant: 'left' | 'right') =>
   ({ id, type: 'powerRail', position: { x: 0, y: 0 }, data: { variant } }) as unknown as Nodes[number]
 const contact = (id: string, name: string) =>
-  ({ id, type: 'contact', position: { x: 0, y: 0 }, data: { variant: 'open', variable: { name } } }) as unknown as Nodes[number]
-const motor = { id: 'B', type: 'block', position: { x: 0, y: 0 }, data: { variant: { name: 'UT_MOTOR', type: 'function-block' }, variable: { name: 'motor' } } } as unknown as Nodes[number]
+  ({
+    id,
+    type: 'contact',
+    position: { x: 0, y: 0 },
+    data: { variant: 'open', variable: { name } },
+  }) as unknown as Nodes[number]
+const motor = {
+  id: 'B',
+  type: 'block',
+  position: { x: 0, y: 0 },
+  data: { variant: { name: 'UT_MOTOR', type: 'function-block' }, variable: { name: 'motor' } },
+} as unknown as Nodes[number]
 const box = (id: string, name: string, handleId: string) =>
-  ({ id, type: 'variable', position: { x: 0, y: 0 }, data: { variant: 'input', variable: { name }, block: { id: 'B', handleId } } }) as unknown as Nodes[number]
+  ({
+    id,
+    type: 'variable',
+    position: { x: 0, y: 0 },
+    data: { variant: 'input', variable: { name }, block: { id: 'B', handleId } },
+  }) as unknown as Nodes[number]
 const edge = (id: string, source: string, target: string, sourceHandle: string, targetHandle: string) =>
   ({ id, source, target, sourceHandle, targetHandle }) as unknown as Edges[number]
 

@@ -48,7 +48,16 @@ int main(int, char **argv) {
 `,
     )
     bin = path.join(dir, 'rules')
-    execFileSync('g++', ['-std=c++14', '-Wall', '-Wextra', '-Werror', `-I${BAREMETAL}`, path.join(dir, 'main.cpp'), '-o', bin])
+    execFileSync('g++', [
+      '-std=c++14',
+      '-Wall',
+      '-Wextra',
+      '-Werror',
+      `-I${BAREMETAL}`,
+      path.join(dir, 'main.cpp'),
+      '-o',
+      bin,
+    ])
   })
 
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))
@@ -59,8 +68,17 @@ int main(int, char **argv) {
   const replaces = (pending: number, wanted: number, delay: number) =>
     execFileSync(bin, ['replaces', String(pending), String(wanted), String(delay)]).toString() === '1'
   const action = (pending: number, done: number, wasStuck: boolean, stillStuck: boolean) =>
-    Number(execFileSync(bin, ['action', String(pending), String(done), wasStuck ? '1' : '0', stillStuck ? '1' : '0']).toString())
-  const clears = (now: number, since: number) => execFileSync(bin, ['clears', String(now), String(since)]).toString() === '1'
+    Number(
+      execFileSync(bin, [
+        'action',
+        String(pending),
+        String(done),
+        wasStuck ? '1' : '0',
+        stillStuck ? '1' : '0',
+      ]).toString(),
+    )
+  const clears = (now: number, since: number) =>
+    execFileSync(bin, ['clears', String(now), String(since)]).toString() === '1'
 
   it('does nothing for a task without the setting (delay 0): it stays stopped, as always', () => {
     expect(replaces(NONE, RESUME, 0)).toBe(false)

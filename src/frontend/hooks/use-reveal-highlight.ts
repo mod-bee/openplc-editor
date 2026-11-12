@@ -33,7 +33,9 @@ export function useRevealedPin(blockId: string | undefined): { pin: string | und
       [blockId],
     ),
   )
-  const [seq, pin] = target ? [Number(target.slice(0, target.indexOf(':'))), target.slice(target.indexOf(':') + 1)] : [0, undefined]
+  const [seq, pin] = target
+    ? [Number(target.slice(0, target.indexOf(':'))), target.slice(target.indexOf(':') + 1)]
+    : [0, undefined]
   return { pin, pulsing: usePulse(seq) }
 }
 

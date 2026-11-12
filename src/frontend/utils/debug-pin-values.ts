@@ -61,4 +61,3 @@ export function isSecretValue(compositeKey: string, type: string | undefined): b
 }
 
 export const HIDDEN_VALUE = '••••'
-

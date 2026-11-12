@@ -46,8 +46,7 @@ export function useDebugVariableValue(compositeKey: string): string | undefined 
 export function useIsVariableForced(compositeKey: string): boolean {
   return useOpenPLCStore(
     useCallback(
-      (s) =>
-        forcedStateOf(s.workspace.debugForcedVariables, s.workspace.debugVariableIndexes, compositeKey).isForced,
+      (s) => forcedStateOf(s.workspace.debugForcedVariables, s.workspace.debugVariableIndexes, compositeKey).isForced,
       [compositeKey],
     ),
   )

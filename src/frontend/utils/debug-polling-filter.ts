@@ -34,7 +34,9 @@ import { edgeTriggerInstanceName, edgeTriggerTypeForVariant } from './PLC/edge-t
  * Defined locally to avoid coupling the utils layer to the store layer.
  */
 export interface DebugPollingState {
-  project: { data: Pick<PLCProjectData, 'pous'> & Partial<Pick<PLCProjectData, 'configurations' | 'globalVariableLists'>> }
+  project: {
+    data: Pick<PLCProjectData, 'pous'> & Partial<Pick<PLCProjectData, 'configurations' | 'globalVariableLists'>>
+  }
   workspace: {
     debugVariableIndexes: Map<string, number>
     debugForcedVariables: Map<string, unknown>

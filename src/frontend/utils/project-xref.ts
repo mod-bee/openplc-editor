@@ -383,9 +383,10 @@ export function buildProjectXref(project: XrefProject): XrefUse[] {
             const pin = data.block?.variableType
             const block = data.block?.id ? blocks.get(data.block.id) : undefined
             const blockName = ((block?.data ?? {}) as NodeData).variable?.name
-            const blockType = typeof (block?.data as NodeData | undefined)?.variant === 'object'
-              ? ((block?.data as NodeData).variant as { name?: string }).name
-              : undefined
+            const blockType =
+              typeof (block?.data as NodeData | undefined)?.variant === 'object'
+                ? ((block?.data as NodeData).variant as { name?: string }).name
+                : undefined
             const of = blockName?.trim() ? blockName : (blockType ?? 'block')
             addExpression(pou, name, {
               ...at,
@@ -393,7 +394,11 @@ export function buildProjectXref(project: XrefProject): XrefUse[] {
               ...(data.block?.id && pin?.name ? { blockId: data.block.id, pin: pin.name } : {}),
               element: 'variable',
               access: pin?.class === 'inOut' ? 'inout' : variant === 'output' ? 'write' : 'read',
-              detail: `${pin?.class === 'inOut' ? 'in-out' : variant === 'output' ? 'output' : 'input'} ${pin?.name ?? ''} of ${of}`.replace(/\s+/g, ' '),
+              detail:
+                `${pin?.class === 'inOut' ? 'in-out' : variant === 'output' ? 'output' : 'input'} ${pin?.name ?? ''} of ${of}`.replace(
+                  /\s+/g,
+                  ' ',
+                ),
             })
           } else if (node.type === 'block') {
             const type = typeof data.variant === 'object' ? data.variant.name : undefined
@@ -421,9 +426,9 @@ export function buildProjectXref(project: XrefProject): XrefUse[] {
         const pinAt =
           wire && node.type !== 'block'
             ? wire.source === node.id
-            ? { blockId: wire.target, pin: wire.targetHandle ?? undefined }
-            : { blockId: wire.source, pin: wire.sourceHandle ?? undefined }
-          : {}
+              ? { blockId: wire.target, pin: wire.targetHandle ?? undefined }
+              : { blockId: wire.source, pin: wire.sourceHandle ?? undefined }
+            : {}
         const at = { pou: pou.name, language: 'fbd' as const, nodeId: node.id, ...pinAt }
         if (node.type === 'input-variable') {
           addExpression(pou, name, { ...at, element: 'variable', access: 'read', detail: 'input variable' })

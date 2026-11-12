@@ -88,7 +88,11 @@ describe('a data type whose name is not a legal identifier', () => {
 
   it('refuses a standard function name for the data type itself', async () => {
     const result = await apply([
-      { derivation: 'structure', name: 'Limit', variables: [{ name: 'a', type: { definition: 'base-type', value: 'INT' } }] },
+      {
+        derivation: 'structure',
+        name: 'Limit',
+        variables: [{ name: 'a', type: { definition: 'base-type', value: 'INT' } }],
+      },
     ])
 
     expect(result.errors.join(' ')).toContain('"Limit" is the name of a standard function')
@@ -175,12 +179,17 @@ describe('a data type with named values (IEC 61131-3 Ed.3 6.4.4.3)', () => {
     expect(dataTypesIn().find((type) => type.name === 'UT_STATUS')).toEqual(stored)
   })
 
-  it('round-trips a structure member\'s initial value and an array member\'s bounds', async () => {
+  it("round-trips a structure member's initial value and an array member's bounds", async () => {
     const spec = {
       derivation: 'structure',
       name: 'UT_AO_DATA',
       variables: [
-        { name: 'cmdMode', type: { definition: 'base-type', value: 'INT' }, initialValue: '-1', documentation: 'Hand/Auto' },
+        {
+          name: 'cmdMode',
+          type: { definition: 'base-type', value: 'INT' },
+          initialValue: '-1',
+          documentation: 'Hand/Auto',
+        },
         { name: 'trend', type: { definition: 'array', value: 'INT', dimensions: ['0..2'] } },
         { name: 'plain', type: { definition: 'base-type', value: 'BOOL' } },
       ],

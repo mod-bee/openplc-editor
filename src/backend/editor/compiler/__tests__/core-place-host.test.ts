@@ -40,7 +40,16 @@ int main(int, char **argv) {
 `,
     )
     bin = path.join(dir, 'place')
-    execFileSync('g++', ['-std=c++14', '-Wall', '-Wextra', '-Werror', `-I${BAREMETAL}`, path.join(dir, 'main.cpp'), '-o', bin])
+    execFileSync('g++', [
+      '-std=c++14',
+      '-Wall',
+      '-Wextra',
+      '-Werror',
+      `-I${BAREMETAL}`,
+      path.join(dir, 'main.cpp'),
+      '-o',
+      bin,
+    ])
   })
 
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }))

@@ -67,7 +67,6 @@ describe('the body round-trips without gaining or losing a blank line', () => {
   })
 })
 
-
 describe("a FUNCTION's return type keeps its declared length", () => {
   const save = (pou: PLCPou) => serializeTextualPouToString(pou as never)
   const fn = (returnType: string) =>
