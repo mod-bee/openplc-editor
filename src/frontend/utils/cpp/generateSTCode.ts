@@ -6,6 +6,7 @@ import {
   multiDimensionalContainerType,
 } from '../PLC/array-codegen-helpers'
 import { cBlockExternalVariables, cBlockInterfaceVariables } from './block-interface'
+import { type CppMethod, cppMethodArgsStructName, cppMethodFunctionName, splitCppMethods } from './cpp-methods'
 
 type STCodeGenerationParams = {
   pouName: string
@@ -13,6 +14,8 @@ type STCodeGenerationParams = {
   /** Names of the function blocks in scope, upper-cased. A pin typed by one is
    *  an alias for the caller's instance and the field already holds a pointer. */
   functionBlockNames?: ReadonlySet<string>
+  /** The block's C/C++ body; its METHOD declarations become IEC methods. */
+  body?: string
 }
 
 /**
@@ -128,6 +131,55 @@ const wrapInGlobalLocks = (externals: PLCVariable[], call: string): string => {
   return `${open}${call}\n${close}`.trimEnd()
 }
 
+/**
+ * A method parameter's address for the args struct. A parameter is a C++
+ * function parameter (a reference for VAR_IN_OUT / VAR_OUTPUT), never a
+ * mangled member, so its own name is taken.
+ */
+const generateArgumentAssignment = (variable: PLCVariable): string => {
+  const name = variable.name.toUpperCase()
+  if (isArrayVariable(variable) && !multiDimensionalContainerType(variable) && !isVariableLengthArray(variable)) {
+    const startIndex = getArrayStartIndex(variable)
+    return `args.${name} = &${name}[${startIndex}] - ${startIndex};\n`
+  }
+  return `args.${name} = &${name};\n`
+}
+
+/**
+ * One METHOD of a C/C++ block: its declaration as written, and a body that
+ * fills the block's struct and the method's args struct, runs setup() once
+ * if the block has not run yet, and calls the method's C++ function under the
+ * same global locks as loop(). The result is written by its C++ name.
+ */
+const generateMethodCode = (
+  pouName: string,
+  method: CppMethod,
+  variableAssignments: string,
+  externals: PLCVariable[],
+): string => {
+  const structName = `${pouName.toUpperCase()}_VARS`
+  const argsName = cppMethodArgsStructName(pouName, method.name)
+  const call = `${cppMethodFunctionName(pouName, method.name)}(&vars, &args);`
+  const invoke = method.returnType === undefined ? call : `${method.name.toUpperCase()}_result = ${call}`
+  const argumentAssignments = method.variables.map(generateArgumentAssignment).join('')
+  return `${method.declaration.trimEnd()}
+{external
+${structName} vars;
+${variableAssignments}${argsName} args;
+${argumentAssignments}}
+if hasBeenInitialized = False then
+{external
+${wrapInGlobalLocks(externals, `${pouName.toLowerCase()}_setup(&vars);`)}
+}
+hasBeenInitialized := True;
+end_if;
+{external
+${wrapInGlobalLocks(externals, invoke)}
+}
+END_METHOD
+`
+}
+
 const generateSTCode = (params: STCodeGenerationParams): string => {
   const { pouName, allVariables, functionBlockNames } = params
 
@@ -151,7 +203,12 @@ const generateSTCode = (params: STCodeGenerationParams): string => {
   // needed — every pin (numeric, bit-string, STRING, WSTRING) is a
   // `strucpp::IEC_*` wrapper on both sides of the call, so taking its
   // address is type-compatible with the struct field.
-  return `{external
+  const methods = params.body === undefined ? [] : splitCppMethods(params.body).methods
+  const methodCode = methods
+    .map((method) => generateMethodCode(pouName, method, variableAssignments, externals))
+    .join('')
+
+  return `${methodCode}{external
 ${structName} vars;
 ${variableAssignments}}
 if hasBeenInitialized = False then

@@ -1,5 +1,12 @@
 import { cBlockExternalVariables, cBlockInterfaceVariables } from '../../../../frontend/utils/cpp/block-interface'
 import {
+  cppMethodArgsStructName,
+  cppMethodFunctionName,
+  cppMethodParameterBinding,
+  findMethodDefinitions,
+  splitCppMethods,
+} from '../../../../frontend/utils/cpp/cpp-methods'
+import {
   isArrayVariable,
   isDescriptorPinType,
   multiDimensionalContainerType,
@@ -237,6 +244,40 @@ const generateUserTypeAliases = (cppPous: CppPouData[], userTypeNames: Iterable<
   return code + '\n'
 }
 
+/**
+ * Turn each method's `<type> Name() {` into its entry point,
+ * `extern "C" <ret> <pou>__<name>(<POU>_VARS *vars, <POU>_<NAME>_ARGS *args) {`,
+ * and bind each parameter to its name on the same line. The return type is
+ * the header's (`decltype` of the declared function), so it is stated once.
+ * Line breaks in the replaced text are kept, so line numbers do not move.
+ */
+const rewriteMethodDefinitions = (pouName: string, code: string): string => {
+  const { methods, code: cppCode } = splitCppMethods(code)
+  const structName = `${pouName.toUpperCase()}_VARS`
+  const edits: Array<{ start: number; end: number; text: string }> = []
+  for (const method of methods) {
+    const definitions = findMethodDefinitions(cppCode, method.name)
+    if (definitions.length !== 1) continue
+    const { start, end } = definitions[0]
+    const fn = cppMethodFunctionName(pouName, method.name)
+    const args = cppMethodArgsStructName(pouName, method.name)
+    const bindings = method.variables.map((variable) => ` ${cppMethodParameterBinding(variable)}`).join('')
+    const lineBreaks = '\n'.repeat((cppCode.slice(start, end).match(/\n/g) ?? []).length)
+    edits.push({
+      start,
+      end,
+      text:
+        `extern "C" decltype(${fn}(nullptr, nullptr)) ${fn}(${structName} *vars, ${args} *args) {` +
+        ` (void)vars; (void)args;${bindings}${lineBreaks}`,
+    })
+  }
+  let rewritten = cppCode
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    rewritten = rewritten.slice(0, edit.start) + edit.text + rewritten.slice(edit.end)
+  }
+  return rewritten
+}
+
 const processUserCode = (pou: CppPouData): string => {
   const structName = `${pou.name.toUpperCase()}_VARS`
   const setupFunctionName = `${pou.name.toLowerCase()}_setup`
@@ -255,7 +296,7 @@ const processUserCode = (pou: CppPouData): string => {
 
   processedCode += '\n'
 
-  let modifiedUserCode = pou.code
+  let modifiedUserCode = rewriteMethodDefinitions(pou.name, pou.code)
 
   modifiedUserCode = modifiedUserCode.replace(
     /void\s+setup\s*\(\s*\)/g,

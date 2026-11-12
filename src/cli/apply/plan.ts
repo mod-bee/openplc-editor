@@ -19,6 +19,7 @@
 
 import type { OpenPLCStore } from '@root/frontend/store'
 import { elementNameCollision } from '@root/frontend/store/slices/shared/name-collision'
+import { cppMethodErrors } from '@root/frontend/utils/cpp/cpp-methods'
 import { isLegalElementName, isLegalEnumValue, isLegalIdentifier } from '@root/frontend/utils/keywords'
 import { normalizeEnumBaseType, validateEnumeratedDataType } from '@root/frontend/utils/PLC/enum-named-values'
 import { checkFbInitList, resolveFbInitMembers } from '@root/frontend/utils/PLC/fb-instance-init'
@@ -535,6 +536,20 @@ function applyBody(store: OpenPLCStore, wanted: SpecPou, changes: PlannedChange[
     if (structural) {
       errors.push(`POU "${wanted.name}": ${structural}`)
       return
+    }
+    if (wanted.language === 'cpp') {
+      // Its METHOD declarations, checked against the variables just applied.
+      const pou = store.getState().project.data.pous.find((entry) => entry.name === wanted.name)
+      const methodErrors = cppMethodErrors({
+        name: wanted.name,
+        pouType: wanted.kind,
+        variables: pou?.interface?.variables ?? [],
+        body: wanted.body.text,
+      })
+      if (methodErrors.length > 0) {
+        errors.push(...methodErrors)
+        return
+      }
     }
     store.getState().projectActions.updatePou({
       name: wanted.name,

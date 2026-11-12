@@ -1,11 +1,26 @@
 import { cBlockExternalVariables, cBlockInterfaceVariables } from '../../../../frontend/utils/cpp/block-interface'
-import { generateStructMember } from '../../../../frontend/utils/PLC/array-codegen-helpers'
+import {
+  cppMethodArgsStructName,
+  cppMethodFunctionName,
+  splitCppMethods,
+} from '../../../../frontend/utils/cpp/cpp-methods'
+import { generateStructMember, mapBaseTypeToIEC } from '../../../../frontend/utils/PLC/array-codegen-helpers'
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
 
 type CppPouData = {
   name: string
   variables: PLCVariable[]
+  /** The block's C/C++ body, for its METHOD declarations. */
+  code?: string
 }
+
+/**
+ * The C++ type a C/C++ block's method returns: the strucpp type of its
+ * declared result, as a pin of that type is spelled, or `void`. One place,
+ * because the header declares it and `c_blocks_code.cpp` defines it.
+ */
+const cppMethodReturnType = (returnType: string | undefined, typeNames: ReadonlySet<string>): string =>
+  returnType === undefined ? 'void' : `strucpp::${mapBaseTypeToIEC(returnType, typeNames)}`
 
 /**
  * The one place a C block's interface struct is written.
@@ -73,7 +88,21 @@ const generateCBlocksHeader = (cppPous: CppPouData[], userTypeNames: Iterable<st
     // the dynamic loader fails with `undefined symbol:
     // _Z<N><name>P<N><STRUCT>_VARS`.
     headerContent += `extern "C" void ${setupFunctionName}(${structName} *vars);\n`
-    headerContent += `extern "C" void ${loopFunctionName}(${structName} *vars);\n\n`
+    headerContent += `extern "C" void ${loopFunctionName}(${structName} *vars);\n`
+
+    // A method's parameters, each a pointer like a pin, and its entry point.
+    for (const method of pou.code === undefined ? [] : splitCppMethods(pou.code).methods) {
+      const argsName = cppMethodArgsStructName(pou.name, method.name)
+      headerContent += `typedef struct {\n`
+      method.variables.forEach((variable) => {
+        headerContent += generateStructMember(variable, typeNames)
+      })
+      headerContent += `} ${argsName};\n`
+      headerContent +=
+        `extern "C" ${cppMethodReturnType(method.returnType, typeNames)} ` +
+        `${cppMethodFunctionName(pou.name, method.name)}(${structName} *vars, ${argsName} *args);\n`
+    }
+    headerContent += '\n'
   })
 
   headerContent += `#endif // C_BLOCKS_H\n`
@@ -81,4 +110,4 @@ const generateCBlocksHeader = (cppPous: CppPouData[], userTypeNames: Iterable<st
   return headerContent
 }
 
-export { type CppPouData, generateCBlocksHeader }
+export { cppMethodReturnType, type CppPouData, generateCBlocksHeader }

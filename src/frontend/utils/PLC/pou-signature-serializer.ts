@@ -36,6 +36,7 @@
 
 import type { PLCPou, PLCVariable } from '../../../middleware/shared/ports/types'
 import { resolveLocation } from '../../../middleware/shared/utils/iec-address/registry'
+import { splitCppMethods } from '../cpp/cpp-methods'
 import { generateIecVariablesToString } from '../generate-iec-variables-to-string'
 import { resolveLocationsInText } from '../variable-text-edits'
 import { pouDeclarationLine } from './pou-declaration-line'
@@ -91,6 +92,18 @@ function resolveVariablesTextLocations(pou: PLCPou, aliasIndex: ReadonlyMap<stri
 // assigned to an interface it implements.
 function buildDeclarationLine(pou: PLCPou): string {
   return pouDeclarationLine(pou)
+}
+
+/**
+ * The stub body of a non-ST POU: the placeholder, after the METHOD prototypes
+ * a C/C++ block declares, so calls to them resolve.
+ */
+function opaqueBody(pou: PLCPou): string {
+  if (pou.body.language !== 'cpp' || typeof pou.body.value !== 'string') return OPAQUE_BODY_PLACEHOLDER
+  const prototypes = splitCppMethods(pou.body.value).methods.map(
+    (method) => `${method.declaration.trimEnd()}\nEND_METHOD\n`,
+  )
+  return `${prototypes.join('')}${OPAQUE_BODY_PLACEHOLDER}`
 }
 
 /**
@@ -154,7 +167,7 @@ export function serializePouSignatureToSTWithBodyOffset(
   // Falls back to serialising the model for a POU that has no text yet (one
   // created in memory this session and not saved).
   const variables = resolveVariablesTextLocations(pou, aliasIndex)
-  const body = pou.body.language === 'st' ? (pou.body.value as string) : OPAQUE_BODY_PLACEHOLDER
+  const body = pou.body.language === 'st' ? (pou.body.value as string) : opaqueBody(pou)
   const endKeyword = getEndKeyword(pou.pouType)
   const prefix = `${declaration}\n${variables}\n`
   // `prefix` ends with '\n', so its split count = lines-before-body + 1

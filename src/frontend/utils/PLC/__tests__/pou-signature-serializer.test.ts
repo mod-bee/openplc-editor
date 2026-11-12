@@ -95,6 +95,26 @@ describe('serializePouSignatureToST', () => {
         expect(result).not.toContain('LD x')
       },
     )
+
+    it('keeps the METHOD prototypes of a C/C++ block ahead of the placeholder, without its C++', () => {
+      const pou = makePou({
+        name: 'Engine',
+        pouType: 'function-block',
+        interface: FB_VARIABLES,
+        body: {
+          language: 'cpp',
+          value:
+            'METHOD PUBLIC Record : BOOL\n  VAR_INPUT DATA : ANY; END_VAR\nEND_METHOD\n' +
+            'void setup() {}\nvoid loop() {}\nbool Record() { return true; }\n',
+        },
+      })
+      const { text, bodyLineOffset } = serializePouSignatureToSTWithBodyOffset(pou)
+      expect(text).toContain(
+        `METHOD PUBLIC Record : BOOL\n  VAR_INPUT DATA : ANY; END_VAR\nEND_METHOD\n${OPAQUE_BODY_PLACEHOLDER}`,
+      )
+      expect(text).not.toContain('void setup')
+      expect(text.split('\n')[bodyLineOffset]).toBe('METHOD PUBLIC Record : BOOL')
+    })
   })
 
   describe('declaration line', () => {

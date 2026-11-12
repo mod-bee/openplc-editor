@@ -57,6 +57,33 @@ A serial port has a lock of its own, `openplc_serial_lock(&port)` /
 `openplc_serial_unlock(&port)`, held for a whole exchange (a request and its
 reply), so blocks that share an RS485 line or a modem take turns.
 
+### Methods
+
+A C/C++ function block can offer IEC methods (`inst.Record(DATA := x)`). Declare
+each at the head of the body text, before the C++, with no ST body, and define a
+C++ function of the same name with no parameters:
+
+```json
+{
+  "name": "RECORDER",
+  "kind": "function-block",
+  "language": "cpp",
+  "variables": [{ "name": "CALLS", "class": "output", "type": { "definition": "base-type", "value": "DINT" } }],
+  "body": {
+    "text": "METHOD PUBLIC Record : BOOL\n  VAR_INPUT DATA : ANY; END_VAR\nEND_METHOD\n\nvoid setup() {}\nvoid loop() {}\nbool Record() {\n  CALLS = CALLS + 1;\n  return DATA.DISIZE > 0;\n}\n"
+  }
+}
+```
+
+- `METHOD PUBLIC` (a plain `METHOD` is PROTECTED and cannot be called);
+  `VAR_INPUT`, `VAR_IN_OUT` and `VAR_OUTPUT` only; no `ABSTRACT` / `OVERRIDE`.
+- In the C++ function the parameters, pins and VARs are reached by name; an
+  `ANY` parameter is a `strucpp::IEC_ANY` (`PVALUE`, `DISIZE`, `TYPEDESC`, ...).
+- `void` exactly when the method has no result. A parameter may not share a name
+  with a variable of the block. `apply` reports each problem as `"BLOCK.Method"`.
+- A method runs `setup()` first if the block has not run yet. `loop()` still runs
+  only when the instance itself is called.
+
 ## Python
 
 **A Python POU is a Function Block.** The editor offers no other type, so use

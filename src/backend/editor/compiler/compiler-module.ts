@@ -1548,10 +1548,11 @@ class CompilerModule {
       return
     }
 
-    const cppPous = originalCppPous.map((pou) => ({
+    const cppPous: CppPouDataHeader[] = originalCppPous.map((pou) => ({
       name: pou.name,
       variables: pou.variables,
-    })) as CppPouDataHeader[]
+      code: pou.code,
+    }))
 
     const headerContent: string = generateCBlocksHeader(cppPous, typeNames)
     const headerFilePath = join(sourceTargetFolderPath, 'c_blocks.h')

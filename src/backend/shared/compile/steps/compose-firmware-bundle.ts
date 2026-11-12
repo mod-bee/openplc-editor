@@ -156,6 +156,7 @@ export function buildCBlocksFromPous(
   const headers: CppPouDataHeader[] = originalCppPous.map((pou) => ({
     name: pou.name,
     variables: pou.variables,
+    code: pou.code,
   }))
   return {
     header: generateCBlocksHeader(headers, userTypeNames),

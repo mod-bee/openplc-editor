@@ -380,6 +380,9 @@ openplc-cli library unpin <project> <name>
 A version is named with `@`, not a flag: `--version` is global and prints the
 CLI's own version.
 
+A C/C++ block in a library can offer IEC methods (`inst.Record(DATA := x)`); the
+file format, the rules and an example are in [cpp-block-methods.md](cpp-block-methods.md).
+
 ### A ZIP installs every library it holds
 
 `install` takes a `.zip` as well as a single file, and installs every `.stlib`,

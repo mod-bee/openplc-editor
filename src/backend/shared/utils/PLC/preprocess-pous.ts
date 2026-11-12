@@ -1,4 +1,5 @@
 import { addCppLocalVariables } from '../../../../frontend/utils/cpp/addCppLocalVariables'
+import { cppMethodErrors } from '../../../../frontend/utils/cpp/cpp-methods'
 import { generateSTCode as generateCppSTCode } from '../../../../frontend/utils/cpp/generateSTCode'
 import { validateCppCode } from '../../../../frontend/utils/cpp/validateCppCode'
 import type { LibraryFunctionBlockSource } from '../../../../frontend/utils/PLC/function-block-pins'
@@ -277,6 +278,23 @@ function preprocessPous(
       }
     }
 
+    const methodErrors = cppPous.flatMap((pou) =>
+      cppMethodErrors({
+        name: pou.name,
+        pouType: pou.pouType,
+        variables: pou.interface?.variables ?? [],
+        body: typeof pou.body.value === 'string' ? pou.body.value : '',
+      }),
+    )
+    if (methodErrors.length > 0) {
+      for (const error of methodErrors) log('error', error)
+      return {
+        projectData: processedProjectData as ProjectDataWithCpp,
+        validationFailed: true,
+        validationError: methodErrors.join(' '),
+      }
+    }
+
     processedProjectData = addCppLocalVariables(processedProjectData)
 
     const originalCppPousData = cppPous.map((pou) => ({
@@ -311,6 +329,7 @@ function preprocessPous(
             /* istanbul ignore next -- defensive: interface may be undefined */
             pou.interface?.variables ?? [],
           functionBlockNames,
+          body: typeof pou.body.value === 'string' ? pou.body.value : '',
         })
 
         return {
