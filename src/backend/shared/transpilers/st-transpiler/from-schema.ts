@@ -245,6 +245,7 @@ function projectVariable(v: SchemaVariable): TranspileVariable {
     ...(v.flag !== undefined ? { flag: v.flag } : {}),
     ...(v.access !== undefined ? { access: v.access } : {}),
     ...(v.edge !== undefined ? { edge: v.edge } : {}),
+    ...(v.attributes?.length ? { attributes: v.attributes.map((a) => ({ ...a })) } : {}),
   }
 }
 

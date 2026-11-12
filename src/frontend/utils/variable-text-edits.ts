@@ -19,8 +19,9 @@
  * Pure: text in, text out.
  */
 
-import type { PLCVariable } from '../../middleware/shared/ports/types'
+import type { PLCVariable, VariableAttribute } from '../../middleware/shared/ports/types'
 import { generateIecVariablesToString } from './generate-iec-variables-to-string'
+import { renderAttributePragma, sameAttributes } from './PLC/attribute-pragmas'
 import { edgeQualifier, varBlockKey } from './PLC/var-block-qualifiers'
 import type { ParsedBlock, ParsedDeclaration, ParseResult, Span, TypeContext } from './PLC/variable-declarations'
 import {
@@ -163,9 +164,24 @@ function indentOf(text: string, declaration: ParsedDeclaration): string {
  * deleted with the variable and moved when it is reordered.
  */
 const unitSpan = (declaration: ParsedDeclaration): Span => ({
-  start: declaration.leadingCommentSpan?.start ?? declaration.lineSpan.start,
+  start: Math.min(
+    declaration.leadingCommentSpan?.start ?? declaration.lineSpan.start,
+    declaration.attributesSpan?.start ?? declaration.lineSpan.start,
+    declaration.lineSpan.start,
+  ),
   end: declaration.lineSpan.end,
 })
+
+/** Where the comment above a declaration starts when it has none: above its pragma lines. */
+const leadingAnchor = (declaration: ParsedDeclaration): number =>
+  declaration.attributesSpan && !declaration.attributesSpan.inline
+    ? declaration.attributesSpan.start
+    : declaration.lineSpan.start
+
+/** A declaration's pragma lines, or nothing. */
+function renderAttributesFor(attributes: readonly VariableAttribute[], indent: string, newline: string): string {
+  return attributes.map((attribute) => `${indent}${renderAttributePragma(attribute)}${newline}`).join('')
+}
 
 /** Comparable form of a leading comment: line endings and trailing blanks do not count. */
 const normalizeLeadingComment = (text: string | undefined): string =>
@@ -357,11 +373,34 @@ function editsForDeclaration(text: string, declaration: ParsedDeclaration, varia
     const next = normalizeLeadingComment(variable.leadingComment)
     if (normalizeLeadingComment(current.leadingComment) !== next) {
       const span = declaration.leadingCommentSpan ?? {
-        start: declaration.lineSpan.start,
-        end: declaration.lineSpan.start,
+        start: leadingAnchor(declaration),
+        end: leadingAnchor(declaration),
       }
       const rendered = next === '' ? '' : renderLeadingComment(next, indentOf(text, declaration), lineEndingOf(text))
       edits.push({ span, replacement: rendered })
+    }
+  }
+
+  // The attribute pragmas, between the comment above and the declaration;
+  // queued after the comment, so a comment and pragmas added together land in
+  // that order. Absent leaves them alone. Pragmas set apart from the
+  // declaration (no span) are not rewritten, rather than written twice.
+  const nextAttributes = variable.attributes
+  if (nextAttributes !== undefined && !sameAttributes(current.attributes ?? [], nextAttributes)) {
+    const span = declaration.attributesSpan
+    if (span?.inline) {
+      const inline = nextAttributes.map((attribute) => `${renderAttributePragma(attribute)} `).join('')
+      edits.push({ span, replacement: inline })
+    } else if (span || (current.attributes ?? []).length === 0) {
+      const at = span ?? { start: declaration.lineSpan.start, end: declaration.lineSpan.start }
+      const indent = indentOf(text, declaration)
+      // Lines above plus a pragma on the declaration's own line: the span runs
+      // to the name, so the declaration's indentation goes back after them.
+      const reindent = at.end > declaration.lineSpan.start ? indent : ''
+      edits.push({
+        span: at,
+        replacement: `${renderAttributesFor(nextAttributes, indent, lineEndingOf(text))}${reindent}`,
+      })
     }
   }
 
@@ -482,7 +521,7 @@ export function applyVariablesToText(text: string, nextVariables: PLCVariable[],
         const rendered = variables
           .map(
             (variable) =>
-              `${renderLeadingFor(variable, indent, newline)}${renderDeclaration(variable, indent)}${newline}`,
+              `${renderLeadingFor(variable, indent, newline)}${renderAttributesFor(variable.attributes ?? [], indent, newline)}${renderDeclaration(variable, indent)}${newline}`,
           )
           .join('')
         edits.push({ span: { start: at, end: at }, replacement: sharesLine ? `${newline}${rendered}` : rendered })

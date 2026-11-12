@@ -345,6 +345,41 @@ describe('projecting the store shape into the transpiler IR', () => {
     expect(text).toContain('  Mode : (AUTO, HAND);\n')
   })
 
+  it("writes a variable's attribute pragmas on the lines before it, in a POU and the resource", () => {
+    const ir = fromPortShape({
+      dataTypes: [],
+      pous: [
+        pou({
+          name: 'FB_Pump',
+          pouType: 'function-block',
+          interface: {
+            variables: [
+              variable({ name: 'bRun', class: 'input' }),
+              variable({
+                name: 'nWork',
+                class: 'local',
+                type: { definition: 'base-type', value: 'INT' },
+                attributes: [{ name: 'hide' }, { name: 'conditionalshow', value: 'Lib' }],
+              }),
+            ],
+          },
+          body: { language: 'st', value: 'nWork := nWork + 1;' },
+        }),
+      ],
+      configurations: {
+        resource: {
+          tasks: [],
+          instances: [],
+          globalVariables: [variable({ name: 'gHidden', class: 'global', attributes: [{ name: 'hide' }] })],
+        },
+      },
+    })
+    expect(ir.pous[0].interface.variables[0]).not.toHaveProperty('attributes')
+    const st = transpileToSt(ir).programSt
+    expect(st).toContain("    {attribute 'hide'}\n    {attribute 'conditionalshow' := 'Lib'}\n    nWork : INT;")
+    expect(st).toMatch(/\{attribute 'hide'\}\n\s*gHidden/)
+  })
+
   it("writes an enumerated type's attribute pragmas ahead of its declaration", () => {
     const ir = fromPortShape({
       dataTypes: [

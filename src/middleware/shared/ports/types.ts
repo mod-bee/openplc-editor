@@ -71,6 +71,19 @@ export interface PLCVariable {
   access?: VariableAccess
   /** Edge qualifier of a BOOL input; absent = level. See {@link VariableEdge}. */
   edge?: VariableEdge
+  /**
+   * Attribute pragmas written before the declaration (CODESYS), in source
+   * order: `{attribute 'hide'}`, `{attribute 'conditionalshow' := 'x'}`.
+   * Absent when there are none; on an update, absent leaves them alone and
+   * `[]` removes them.
+   */
+  attributes?: VariableAttribute[]
+}
+
+/** One `{attribute 'name'}` / `{attribute 'name' := 'value'}` pragma, spelled as written. */
+export interface VariableAttribute {
+  name: string
+  value?: string
 }
 
 export interface PLCTask {

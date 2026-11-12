@@ -18,6 +18,7 @@ import { computePouName } from '../helpers/text-helpers'
 import { varTypeNames } from '../helpers/type-text'
 import { edgeSuffix, varBlockBucketKey, varBlockQualifier } from '../helpers/var-block'
 import type { TranspilePou, TranspileProject, TranspileVariable, TranspileVariableClass } from '../types'
+import { attributeChunks } from './attributes'
 import { declaredTypeName, getTypeAsText } from './type-text'
 import { computeValue } from './value'
 
@@ -107,6 +108,7 @@ export function generateTextualPou(pou: TranspilePou, project: TranspileProject,
     program.push(['\n', []])
 
     for (const v of entry.vars) {
+      program.push(...attributeChunks(v, '    '))
       program.push(['    ', []])
       program.push([v.name, [tagName, variableType, varNumber, 'name']])
       program.push([' ', []])

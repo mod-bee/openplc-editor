@@ -202,6 +202,10 @@ function describeVariable(variable: PLCVariable): Record<string, unknown> {
   if (variable.initialValue !== undefined && variable.initialValue !== null) out.initialValue = variable.initialValue
   if (variable.documentation) out.documentation = variable.documentation
   if (variable.leadingComment) out.leadingComment = variable.leadingComment
+  // The spec's own form: a bare pragma as its name.
+  if (variable.attributes?.length) {
+    out.attributes = variable.attributes.map((a) => (a.value === undefined ? a.name : { name: a.name, value: a.value }))
+  }
   return out
 }
 

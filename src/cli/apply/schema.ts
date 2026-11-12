@@ -12,6 +12,7 @@
  * vocabulary to keep in sync.
  */
 
+import { attributeProblem } from '@root/frontend/utils/PLC/attribute-pragmas'
 import type { OpcUaFieldConfig } from '@root/middleware/shared/ports/types'
 import { z } from 'zod'
 
@@ -82,6 +83,21 @@ const variableSchema = z
      * fell. Inputs only.
      */
     edge: z.enum(['rising', 'falling']).optional(),
+    /**
+     * Attribute pragmas written before the declaration (CODESYS), in order:
+     * `"hide"` is `{attribute 'hide'}`, `{ "name": "conditionalshow", "value":
+     * "x" }` is `{attribute 'conditionalshow' := 'x'}`. Absent leaves them as
+     * they are; `[]` removes them.
+     */
+    attributes: z
+      .array(z.union([z.string(), z.object({ name: z.string(), value: z.string().optional() }).strict()]))
+      .optional()
+      .superRefine((list, ctx) => {
+        for (const entry of list ?? []) {
+          const problem = attributeProblem(typeof entry === 'string' ? { name: entry } : entry)
+          if (problem !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem })
+        }
+      }),
   })
   .strict()
 

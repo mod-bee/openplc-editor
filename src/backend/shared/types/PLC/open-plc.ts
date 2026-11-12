@@ -179,6 +179,8 @@ const PLCVariableSchema = z.object({
   access: z.enum(['public', 'protected', 'private']).optional(),
   /** `R_EDGE` / `F_EDGE` on a BOOL input (IEC 61131-3 6.6.3.2 item 13). */
   edge: z.enum(['rising', 'falling']).optional(),
+  /** Attribute pragmas before the declaration (CODESYS); see `PLCVariable` in the ports. */
+  attributes: z.array(z.object({ name: z.string(), value: z.string().optional() })).optional(),
 })
 
 type PLCVariable = z.infer<typeof PLCVariableSchema>

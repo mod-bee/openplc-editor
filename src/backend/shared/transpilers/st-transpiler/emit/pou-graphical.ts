@@ -20,6 +20,7 @@ import type { TypeContext } from '../walker/connection-types'
 import { emitFbdBody } from '../walker/fbd'
 import type { SyntheticVar } from '../walker/ld'
 import { emitLdBody } from '../walker/ld'
+import { attributeChunks } from './attributes'
 import { pouModifier, pushOopClauses } from './pou-textual'
 import { declaredTypeName, getTypeAsText } from './type-text'
 import { computeValue } from './value'
@@ -80,6 +81,7 @@ export function generateGraphicalPou(pou: TranspilePou, project: TranspileProjec
     program.push([`  ${entry.keyword}${varBlockQualifier(entry.flag, entry.access)}`, []])
     program.push(['\n', []])
     entry.vars.forEach((v, varNumber) => {
+      program.push(...attributeChunks(v, '    '))
       program.push(['    ', []])
       program.push([v.name, [tagName, variableType, varNumber, 'name']])
       program.push([' ', []])

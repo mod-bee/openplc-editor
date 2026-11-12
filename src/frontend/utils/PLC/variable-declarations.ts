@@ -34,8 +34,9 @@
 import { parse } from 'strucpp'
 
 import { baseTypeSchema } from '../../../middleware/shared/ports/plc-schemas'
-import type { PLCVariable } from '../../../middleware/shared/ports/types'
+import type { PLCVariable, VariableAttribute } from '../../../middleware/shared/ports/types'
 import { DEBUG_STRING_CAP } from '../variable-sizes'
+import { parseAttributePragmas } from './attribute-pragmas'
 import { escapeCommentText, unescapeCommentText } from './comment-text'
 
 /** Half-open character range `[start, end)` into the parsed source. */
@@ -59,6 +60,13 @@ export interface ParsedDeclaration {
    * declaration is deleted and moves when the declaration is reordered.
    */
   leadingCommentSpan?: Span
+  /**
+   * The attribute pragmas written for the declaration: whole lines directly
+   * above it, or (`inline`) the text from the first pragma to the name on its
+   * own line. Absent when it has none, or when they cannot be edited in place
+   * (a blank line or a comment between them and the declaration).
+   */
+  attributesSpan?: Span & { inline?: boolean }
   /** 1-indexed line of the declaration's first character. */
   line: number
   fields: {
@@ -461,6 +469,35 @@ export function renderLeadingComment(text: string, indent: string, newline: stri
   return `${indent}(* ${body.join(newline)} *)${newline}`
 }
 
+/** A line holding nothing but attribute pragmas. */
+const PRAGMA_LINE = /^(?:\{\s*attribute\s+'[^']*'(?:\s*:=\s*'[^']*')?\s*\}\s*)+$/i
+
+/**
+ * The attribute pragmas directly above a declaration (whole lines touching it,
+ * searched no earlier than `from`) and on its own line before the name.
+ */
+export function declarationAttributes(
+  source: string,
+  from: number,
+  lineStart: number,
+  declarationStart: number,
+): { attributes: VariableAttribute[]; lines?: Span; inline?: Span } {
+  let cursor = lineStart
+  while (cursor > from) {
+    const previousStart = source.lastIndexOf('\n', cursor - 2) + 1
+    if (previousStart < from || !PRAGMA_LINE.test(source.slice(previousStart, cursor).trim())) break
+    cursor = previousStart
+  }
+  const lines = cursor < lineStart ? { start: cursor, end: lineStart } : undefined
+  const before = source.slice(lineStart, declarationStart)
+  const first = before.search(/\{\s*attribute\b/i)
+  const inline =
+    first !== -1 && PRAGMA_LINE.test(before.trim()) ? { start: lineStart + first, end: declarationStart } : undefined
+  const text =
+    (lines ? source.slice(lines.start, lines.end) : '') + (inline ? source.slice(inline.start, inline.end) : '')
+  return { attributes: parseAttributePragmas(text), ...(lines ? { lines } : {}), ...(inline ? { inline } : {}) }
+}
+
 // ---------------------------------------------------------------------------
 // Type classification
 // ---------------------------------------------------------------------------
@@ -565,6 +602,8 @@ interface StrucppDeclaration {
   address?: string
   addressSpan?: StrucppSpan
   edge?: string
+  /** Attribute pragmas before it, names folded to lower case. */
+  attributes?: Array<{ name: string; value?: string }>
 }
 
 interface StrucppVarBlock {
@@ -901,7 +940,27 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
       // The comment on the lines above, searched for from where the previous
       // declaration's lines end (or the header's), never into them.
       const previous = declarations[declarations.length - 1]
-      const above = leadingComment(source, previous ? previous.lineSpan.end : headerEnd, lineStart)
+      const searchFrom = previous ? previous.lineSpan.end : headerEnd
+      // Attribute pragmas sit between the leading comment and the declaration.
+      // STruC++ hands each to the declaration after it; the text is read for
+      // their spelling, and only when both agree can they be edited in place.
+      const pragmas = declarationAttributes(source, searchFrom, lineStart, declSpan.start)
+      const parsedAttributes = (declaration.attributes ?? []).map((attribute) => ({
+        name: attribute.name,
+        ...(attribute.value !== undefined ? { value: attribute.value } : {}),
+      }))
+      const anchored = pragmas.attributes.length === parsedAttributes.length
+      const attributes = anchored ? pragmas.attributes : parsedAttributes
+      const attributesSpan = !anchored
+        ? undefined
+        : pragmas.inline
+          ? {
+              start: pragmas.lines?.start ?? pragmas.inline.start,
+              end: pragmas.inline.end,
+              ...(pragmas.lines ? {} : { inline: true }),
+            }
+          : pragmas.lines
+      const above = leadingComment(source, searchFrom, pragmas.lines?.start ?? lineStart)
 
       // One variable per declared name. `a, b : INT;` is two variables that
       // happen to share a line; the model has no way to say otherwise, and the
@@ -923,6 +982,8 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
           ...(declarationEdge(declaration) !== undefined ? { edge: declarationEdge(declaration) } : {}),
           // The first name of `a, b : INT;` owns the comment above the line.
           ...(above && index === 0 ? { leadingComment: above.text } : {}),
+          // A pragma before `a, b : INT;` applies to both names.
+          ...(attributes.length > 0 ? { attributes: attributes.map((attribute) => ({ ...attribute })) } : {}),
         }
 
         declarations.push({
@@ -930,6 +991,7 @@ export function parseVariableDeclarations(source: string, context: TypeContext =
           span: declSpan,
           lineSpan,
           ...(above && index === 0 ? { leadingCommentSpan: above.span } : {}),
+          ...(attributesSpan && index === 0 ? { attributesSpan } : {}),
           line,
           fields: {
             name: nameSpan,

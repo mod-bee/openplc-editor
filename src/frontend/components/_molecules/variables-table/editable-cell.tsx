@@ -14,6 +14,7 @@ import { ProjectResponse } from '../../../store/slices/project'
 import { cn } from '../../../utils/cn'
 import { isLegalIdentifier, sanitizeVariableInput } from '../../../utils/keywords'
 import { buildLocationDropdownOptions } from '../../../utils/location-dropdown-options'
+import { renderAttributePragma } from '../../../utils/PLC/attribute-pragmas'
 import {
   findAllReferencesToVariable,
   propagateVariableRename,
@@ -45,6 +46,8 @@ const EditableNameCell = ({
 }: IEditableCellProps) => {
   const initialValue = getValue<string>()
   const { toast } = useToast()
+  // Attribute pragmas (CODESYS) are edited in the code view; the table shows them.
+  const attributesText = (table.options.data[index]?.attributes ?? []).map(renderAttributePragma).join(' ')
 
   const {
     editor,
@@ -313,6 +316,11 @@ const EditableNameCell = ({
             searchQuery={searchQuery}
             className={cn('h-4 w-full max-w-[400px] overflow-hidden text-ellipsis break-all', {})}
           />
+          {attributesText !== '' && (
+            <span title={attributesText} className='ml-1 shrink-0 text-xs text-neutral-500 dark:text-neutral-400'>
+              {'{…}'}
+            </span>
+          )}
         </div>
       )}
     </>

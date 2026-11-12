@@ -96,6 +96,8 @@ export interface TranspileVariable {
   access?: 'public' | 'protected' | 'private'
   /** `R_EDGE` / `F_EDGE` on a BOOL input (6.6.3.2 item 13). */
   edge?: 'rising' | 'falling'
+  /** Attribute pragmas (CODESYS), written on their own lines before the declaration. */
+  attributes?: Array<{ name: string; value?: string }>
 }
 
 /** Mirrors `VariableFlag` in middleware/shared/ports/types.ts. */

@@ -14,6 +14,7 @@
 import type { ProgramChunk } from '../helpers/program'
 import { computeConfigurationName, computeConfigurationResourceName } from '../helpers/text-helpers'
 import type { TranspileProject, TranspileVariable } from '../types'
+import { attributeChunks } from './attributes'
 import { declaredTypeName, getTypeAsText } from './type-text'
 import { computeValue } from './value'
 
@@ -208,6 +209,7 @@ function emitGlobalVarEntries(
   project: TranspileProject,
 ): void {
   entries.forEach(([variable, idx]) => {
+    out.push(...attributeChunks(variable, _varIndent))
     out.push([_varIndent, []])
     out.push([variable.name, [tagname, variableType, idx, 'name']])
     out.push([' ', []])

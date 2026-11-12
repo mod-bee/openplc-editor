@@ -702,6 +702,9 @@ function toVariable(spec: SpecVariable, fallbackClass: 'local' | 'global'): PLCV
     ...(spec.flag !== undefined ? { flag: spec.flag } : {}),
     ...(spec.access !== undefined ? { access: spec.access } : {}),
     ...(spec.edge !== undefined ? { edge: spec.edge } : {}),
+    ...(spec.attributes !== undefined
+      ? { attributes: spec.attributes.map((entry) => (typeof entry === 'string' ? { name: entry } : { ...entry })) }
+      : {}),
   } as unknown as PLCVariable
 }
 

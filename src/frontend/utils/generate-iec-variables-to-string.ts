@@ -1,4 +1,5 @@
 import type { PLCVariable } from '../../middleware/shared/ports/types'
+import { renderAttributePragma } from './PLC/attribute-pragmas'
 import {
   edgeQualifier,
   ORDERED_ACCESS,
@@ -77,6 +78,9 @@ export const generateIecVariablesToString = (variables: PLCVariable[]): string =
       groupedVariables[groupKey].forEach((v) => {
         if (v.leadingComment?.trim()) {
           textualDeclaration += renderLeadingComment(v.leadingComment, VAR_DECL_INDENT, '\n')
+        }
+        for (const attribute of v.attributes ?? []) {
+          textualDeclaration += `${VAR_DECL_INDENT}${renderAttributePragma(attribute)}\n`
         }
         let line = `${VAR_DECL_INDENT}${v.name} : ${v.type.value}${edgeQualifier(v.edge)}`
 
