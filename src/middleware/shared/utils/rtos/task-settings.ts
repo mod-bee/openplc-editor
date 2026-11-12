@@ -48,15 +48,37 @@ export interface TaskWithSettings {
   name: string
   stopOnStuck?: boolean
   stack?: number
+  restartOnFault?: number
 }
 
-const hasSettings = (task: TaskWithSettings): boolean => task.stopOnStuck === false || task.stack !== undefined
+const hasSettings = (task: TaskWithSettings): boolean =>
+  task.stopOnStuck === false || task.stack !== undefined || task.restartOnFault !== undefined
 
 const settingsText = (task: TaskWithSettings): string =>
   [
     ...(task.stopOnStuck === false ? ['Stop PLC if stuck: No'] : []),
     ...(task.stack !== undefined ? [`Stack: ${task.stack} bytes`] : []),
+    ...(task.restartOnFault !== undefined ? [`On fault: restart after ${restartLabel(task.restartOnFault)}`] : []),
   ].join(', ')
+
+/** A restart delay in words: '30 s', '1 min', '1 min 30 s', '1 h'. */
+export function restartLabel(seconds: number | undefined): string {
+  if (seconds === undefined) return 'Stop'
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`
+  if (seconds >= 60) {
+    const s = seconds % 60
+    return s === 0 ? `${Math.floor(seconds / 60)} min` : `${Math.floor(seconds / 60)} min ${s} s`
+  }
+  return `${seconds} s`
+}
+
+/** The restart delays the task table offers ("On fault"); a delay set
+ *  elsewhere (the CLI) is added, so it shows as it is. */
+export function restartChoices(current: number | undefined): number[] {
+  const choices = [10, 30, 60, 120, 300, 600]
+  if (current !== undefined && !choices.includes(current)) choices.push(current)
+  return choices.sort((a, b) => a - b)
+}
 
 /** Why the build refuses these task settings on this target, or undefined when it can give them. */
 export function taskSettingsProblem(
@@ -69,13 +91,13 @@ export function taskSettingsProblem(
   const named = set.map((task) => `${task.name} (${settingsText(task)})`).join('; ')
   if (target.rtos && !rtosEnabled) {
     return (
-      `"Stop PLC if stuck" and "Stack" need RTOS mode, which is off for this board: ${named}. ` +
-      `Set them back to Yes and Default, or switch RTOS mode on in Board Settings.`
+      `"Stop PLC if stuck", "Stack" and "On fault" need RTOS mode, which is off for this board: ${named}. ` +
+      `Set them back to Yes, Default and Stop, or switch RTOS mode on in Board Settings.`
     )
   }
   const threads = target.taskThreads
   if (!threads) {
-    return `This target runs every task in one loop, so "Stop PLC if stuck" stays Yes and "Stack" Default: ${named}.`
+    return `This target runs every task in one loop, so "Stop PLC if stuck" stays Yes, "Stack" Default and "On fault" Stop: ${named}.`
   }
   const outside = set.filter(
     (task) => task.stack !== undefined && (task.stack < threads.stackMin || task.stack > threads.stackMax),
@@ -87,25 +109,34 @@ export function taskSettingsProblem(
 
 /**
  * The task's settings as the IEC §6.2 pragma after its parameter list, in a
- * fixed order (CORE, STOP_ON_STUCK, STACK). Empty for a task on the defaults,
+ * fixed order (CORE, STOP_ON_STUCK, STACK, RESTART_ON_FAULT). Empty for a task on the defaults,
  * so its TASK line is the one it always was.
  */
 export function taskPragmaEntries(task: {
   core?: number
   stopOnStuck?: boolean
   stack?: number
-}): Array<{ key: 'core' | 'stopOnStuck' | 'stack'; label: string; value: string }> {
+  restartOnFault?: number
+}): Array<{ key: 'core' | 'stopOnStuck' | 'stack' | 'restartOnFault'; label: string; value: string }> {
   return [
     ...(task.core !== undefined ? [{ key: 'core' as const, label: 'CORE := ', value: `${task.core}` }] : []),
     ...(task.stopOnStuck === false
       ? [{ key: 'stopOnStuck' as const, label: 'STOP_ON_STUCK := ', value: 'FALSE' }]
       : []),
     ...(task.stack !== undefined ? [{ key: 'stack' as const, label: 'STACK := ', value: `${task.stack}` }] : []),
+    ...(task.restartOnFault !== undefined
+      ? [{ key: 'restartOnFault' as const, label: 'RESTART_ON_FAULT := ', value: `${task.restartOnFault}` }]
+      : []),
   ]
 }
 
 /** `taskPragmaEntries` as text: '' or ` {CORE := 0, STOP_ON_STUCK := FALSE, STACK := 16384}`. */
-export function taskPragmaText(task: { core?: number; stopOnStuck?: boolean; stack?: number }): string {
+export function taskPragmaText(task: {
+  core?: number
+  stopOnStuck?: boolean
+  stack?: number
+  restartOnFault?: number
+}): string {
   const entries = taskPragmaEntries(task)
   return entries.length === 0 ? '' : ` {${entries.map((entry) => `${entry.label}${entry.value}`).join(', ')}}`
 }

@@ -193,6 +193,12 @@ const PLCTaskSchema = z.object({
    *  (it stops, as always). false: the stuck task is reported and the PLC and
    *  the other tasks keep running. Written as `{STOP_ON_STUCK := FALSE}`. */
   stopOnStuck: z.boolean().optional(),
+  /** Seconds after a fault of this task (a runtime error ended it, it is stuck,
+   *  it stopped the PLC) before the runtime recovers it - the task resumes, or
+   *  the PLC restarts in RUN - at most 3 times a day; absent = it stays stopped
+   *  until someone starts it (as always). Written as `{RESTART_ON_FAULT := n}`.
+   *  For a site nobody can reach. */
+  restartOnFault: z.number().int().min(1).max(86400).optional(),
   /** The task's stack in bytes; absent = the target's default. Written as
    *  `{STACK := n}`. The build checks it against the target's range. */
   stack: z.number().int().min(1024).max(67108864).optional(),

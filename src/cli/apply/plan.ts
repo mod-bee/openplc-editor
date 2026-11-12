@@ -894,7 +894,13 @@ function applyTasks(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange
       // The spec describes the task in full: no core is Auto, no stopOnStuck
       // or stack the default, not "keep".
       state.projectActions.updateTask({
-        data: { ...wanted, core: wanted.core, stopOnStuck: wanted.stopOnStuck, stack: wanted.stack },
+        data: {
+          ...wanted,
+          core: wanted.core,
+          stopOnStuck: wanted.stopOnStuck,
+          stack: wanted.stack,
+          restartOnFault: wanted.restartOnFault,
+        },
         rowId: existing,
       })
       changes.push({ kind: 'task', action: 'update', name: wanted.name })

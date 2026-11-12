@@ -726,13 +726,17 @@ async function runCompilePipelineInner(
   // before the long part of the build. On the default it falls back to the
   // single loop further down, with a warning.
   const rtosSettings = readRtosSettings(vendorScreenData)
-  // A task given a core, a stack or "Stop PLC if stuck: No" needs RTOS mode as
+  // A task given a core, a stack, "Stop PLC if stuck: No" or "On fault" needs RTOS mode as
   // much as a switch set by hand: the single loop cannot give it, so nothing
   // falls back to the loop either.
   const rtosRequired =
     rtosSettings.chosen ||
     processedData.configuration.resource.tasks.some(
-      (task) => task.core !== undefined || task.stack !== undefined || task.stopOnStuck === false,
+      (task) =>
+        task.core !== undefined ||
+        task.stack !== undefined ||
+        task.stopOnStuck === false ||
+        task.restartOnFault !== undefined,
     )
   if (targetCapabilities.rtos && rtosSettings.enabled && rtosRequired) {
     const problem = rtosScheduleProblem(processedData.configuration.resource.tasks, targetCapabilities.rtos)

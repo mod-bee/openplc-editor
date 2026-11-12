@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { PLCTask } from '../../../../middleware/shared/ports/types'
 import {
   findIntervalsOffTick,
+  restartChoices,
+  restartLabel,
   taskCoreCount,
   taskCoreProblem,
   taskSettingsProblem,
@@ -294,7 +296,7 @@ const settingContentClass = 'box h-fit w-[200px] overflow-hidden rounded-lg bg-w
 const settingItemClass =
   'flex w-full cursor-pointer items-center justify-center py-1 outline-none hover:bg-neutral-100 dark:hover:bg-neutral-900'
 const NO_THREADS_TIP =
-  'This board runs every task in one loop (RTOS mode off): a stuck task stops the PLC, and every task has the default stack.'
+  'This board runs every task in one loop (RTOS mode off): a stuck task stops the PLC, every task has the default stack, and a fault stops it until started.'
 
 /**
  * Whether the task stuck in one scan stops the PLC: Yes (the default, as
@@ -394,9 +396,65 @@ const SelectableStackCell = ({ row: { index, original }, table }: ISelectableCel
   )
 }
 
+/**
+ * What the runtime does after a fault of this task (a runtime error ended it,
+ * it is stuck, it stopped the PLC): Stop (the default, as always: it stays
+ * stopped until someone starts it) or Restart after a delay - the task
+ * resumes, or the PLC restarts in RUN - at most 3 times a day, then it stays
+ * stopped. For a site nobody can reach. Offered where each task is a thread of
+ * its own (RTOS mode, a Linux runtime).
+ */
+const SelectableRestartOnFaultCell = ({ row: { index, original }, table }: ISelectableCellProps) => {
+  const capabilities = useTargetCapabilities()
+  const rtosOn = useRtosMode() !== undefined
+  const threads = taskThreadsFor(capabilities, rtosOn)
+  const delay = original.restartOnFault
+  const problem = delay !== undefined ? taskSettingsProblem([original], capabilities, rtosOn) : undefined
+
+  const onValueChange = (value: string) => {
+    table.options.meta?.updateData(index, 'restartOnFault', value === 'stop' ? undefined : Number(value))
+  }
+
+  return (
+    <div className='flex h-full w-full items-center justify-center gap-1'>
+      <Select
+        value={delay === undefined ? 'stop' : String(delay)}
+        onValueChange={onValueChange}
+        disabled={!threads && delay === undefined}
+      >
+        <SelectTrigger
+          aria-label={`On a fault of ${original.name}`}
+          title={
+            !threads
+              ? NO_THREADS_TIP
+              : 'Restart: after a fault of this task the task resumes, or the PLC restarts in RUN, that long after - at most 3 times a day. Stop: it stays stopped until started.'
+          }
+          placeholder={delay === undefined ? 'Stop' : `Restart ${restartLabel(delay)}`}
+          className={settingTriggerClass}
+        />
+        <SelectContent position='popper' side='bottom' sideOffset={-20} className={settingContentClass}>
+          {[undefined, ...restartChoices(delay)].map((option) => (
+            <SelectItem
+              key={option ?? 'stop'}
+              value={option === undefined ? 'stop' : String(option)}
+              className={settingItemClass}
+            >
+              <span className='text-center font-caption text-xs font-normal text-neutral-700 dark:text-neutral-500'>
+                {option === undefined ? 'Stop' : `Restart after ${restartLabel(option)}`}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {problem && <LocationWarningGlyph label='Setting this board cannot give the task' tooltip={problem} />}
+    </div>
+  )
+}
+
 export {
   SelectableCoreCell,
   SelectableIntervalCell,
+  SelectableRestartOnFaultCell,
   SelectableStackCell,
   SelectableStopOnStuckCell,
   SelectableTriggerCell,

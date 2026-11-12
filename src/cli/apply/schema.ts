@@ -319,6 +319,11 @@ const taskSchema = z
      *  false = it is reported and the PLC and the other tasks keep running.
      *  Firmware in RTOS mode and Linux runtimes only. */
     stopOnStuck: z.boolean().optional(),
+    /** Seconds after a fault of the task (a runtime error, a stuck scan, the
+     *  PLC stopped by it) before the runtime recovers it - at most 3 times a
+     *  day. Omitted = it stays stopped until started (the default). Firmware
+     *  in RTOS mode and Linux runtimes only. */
+    restartOnFault: z.number().int().min(1).max(86400).optional(),
     /** The task's stack in bytes. Omitted = the target's default. The build
      *  refuses a size outside the board's range (firmware in RTOS mode
      *  2048/4096-65536, Linux runtime 65536-67108864). */

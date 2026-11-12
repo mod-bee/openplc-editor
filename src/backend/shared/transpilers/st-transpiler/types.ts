@@ -160,6 +160,7 @@ export interface TranspileTask {
   core?: number
   /** false: a stuck scan does not stop the PLC (`{STOP_ON_STUCK := FALSE}`); absent = true. */
   stopOnStuck?: boolean
+  restartOnFault?: number
   /** Stack in bytes (`{STACK := n}`); absent = the target's default. */
   stack?: number
 }

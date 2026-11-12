@@ -65,4 +65,38 @@ static inline int64_t plc_task_stop_deadline(int64_t release, int64_t scan_limit
     return (stop_on_stuck || stop_at + keep_running <= own) ? own : stop_at + keep_running;
 }
 
+// Recovery after a fault ({RESTART_ON_FAULT := n}; arduino_runtime_glue.cpp).
+// A task a runtime error ended is resumed; a PLC stopped by a stuck task, a task
+// still stuck, or a safe-mode boot restarts the board into RUN. At most
+// PLC_RECOVER_LIMIT recoveries until PLC_RECOVER_CLEAR_US of running without one.
+#define PLC_RECOVER_NONE    0
+#define PLC_RECOVER_RESUME  1
+#define PLC_RECOVER_RESTART 2
+#define PLC_RECOVER_LIMIT   3u
+#define PLC_RECOVER_CLEAR_US (24LL * 3600LL * 1000000LL)
+
+// Whether a new fault's recovery takes the place of the one pending: a restart
+// overrides a resume, never the other way, and a task without the setting
+// (delay 0) changes nothing.
+static inline bool plc_recover_replaces(uint8_t pending, uint8_t wanted, uint32_t delay_s)
+{
+    return delay_s != 0 && wanted != PLC_RECOVER_NONE && wanted > pending;
+}
+
+// What a recovery that has come due does: NONE when the count is used up, or
+// when it was for a task stuck in one scan that has finished it since.
+static inline uint8_t plc_recover_action(uint8_t pending, uint32_t done, bool was_stuck, bool still_stuck)
+{
+    if (pending == PLC_RECOVER_NONE || done >= PLC_RECOVER_LIMIT) return PLC_RECOVER_NONE;
+    if (was_stuck && !still_stuck) return PLC_RECOVER_NONE;
+    return pending;
+}
+
+// Whether the count starts again: a whole PLC_RECOVER_CLEAR_US since the last
+// recovery (or the start).
+static inline bool plc_recover_clears(int64_t now_us, int64_t since_us)
+{
+    return now_us - since_us >= PLC_RECOVER_CLEAR_US;
+}
+
 #endif

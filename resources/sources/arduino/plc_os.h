@@ -226,7 +226,7 @@ void plc_os_restart(void);
 
 // Words that survive a software restart (not a power cut), for the safe-mode
 // marker; NULL on a board that has none, which then stays in ERROR in place.
-#define PLC_OS_NOINIT_WORDS 4
+#define PLC_OS_NOINIT_WORDS 6   // 0-3 the safe-mode marker, 4-5 the fault recoveries (RESTART_ON_FAULT)
 uint32_t *plc_os_noinit_words(void);
 
 #if defined(STRUCPP_THREADED) && defined(STRUCPP_PLATFORM_THREADS)

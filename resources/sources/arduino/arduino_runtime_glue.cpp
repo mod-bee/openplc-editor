@@ -1473,6 +1473,82 @@ void runtime_plc_cycle()
 // The period of an IEC task with INTERVAL 0.
 #define RTOS_DEFAULT_INTERVAL_NS 20000000ULL
 
+// ---- Recovery after a fault ({RESTART_ON_FAULT := n}, ModBee) ---------------
+// A task given RESTART_ON_FAULT is recovered n seconds after a fault instead of
+// staying stopped until someone presses RUN - for a site nobody can reach:
+//   - a runtime error ended it: it runs again (its programs resume, the other
+//     tasks never stopped);
+//   - it stopped the PLC (stuck, Stop PLC if stuck: Yes), or is still stuck in
+//     one scan (Stop PLC if stuck: No): a thread stuck in a call cannot be
+//     freed, so the board restarts and the PLC starts again in RUN;
+//   - the board came up in safe mode (a stalled dispatcher, a stop that could
+//     not finish): it restarts normally, if any task has the setting.
+// At most RECOVER_LIMIT recoveries; the count is kept across the restarts in
+// memory the startup code leaves alone (lost only on a power cut, which starts
+// clean anyway) and starts again after RECOVER_CLEAR_US of running without
+// one. Past the limit the PLC stays as the fault left it, as without the
+// setting, so a fault that comes straight back cannot loop. The retained values
+// are saved before a restart. Without the setting nothing here does anything.
+extern "C" uint32_t strucpp_task_restart_on_fault(uint32_t resource, uint32_t task) __attribute__((weak));
+
+#include "plc_core_place.h"   // the rules: plc_recover_replaces / _action / _clears
+#define RECOVER_MAGIC     0x52435652u   // "RCVR"
+#define RECOVER_TASKS     32u
+#define RECOVER_NONE      PLC_RECOVER_NONE
+#define RECOVER_RESUME    PLC_RECOVER_RESUME
+#define RECOVER_RESTART   PLC_RECOVER_RESTART
+
+static uint32_t s_restart_s[RECOVER_TASKS];   // per task, in task order; 0 = stay stopped
+static uint32_t s_restart_any_s = 0;          // the longest: a fault no single task owns
+static bool     s_restart_shared = false;     // one worker runs every task
+static uint8_t  s_recover_kind   = RECOVER_NONE;
+static uint8_t  s_recover_task   = RUNTIME_FAULT_NO_TASK;
+static bool     s_recover_stuck  = false;     // a stuck task that kept the PLC running
+static int64_t  s_recover_due_us = 0;
+static int64_t  s_recover_clear_us = 0;
+
+static void recover_note_task(uint32_t index, size_t resource, size_t task)
+{
+    const uint32_t s = strucpp_task_restart_on_fault
+                           ? strucpp_task_restart_on_fault((uint32_t)resource, (uint32_t)task) : 0u;
+    if (index < RECOVER_TASKS) s_restart_s[index] = s;
+    if (s > s_restart_any_s) s_restart_any_s = s;
+}
+
+static uint32_t recover_delay_s(uint32_t task)
+{
+    if (s_restart_shared || task >= RECOVER_TASKS) return s_restart_any_s;
+    return s_restart_s[task];
+}
+
+static uint32_t recover_count(void)
+{
+    uint32_t *m = plc_os_noinit_words();
+    return (m && m[4] == RECOVER_MAGIC) ? m[5] : 0u;
+}
+
+static void recover_count_set(uint32_t n)
+{
+    uint32_t *m = plc_os_noinit_words();
+    if (!m) return;
+    m[5] = n;
+    m[4] = RECOVER_MAGIC;
+}
+
+// A fault that can be recovered: the soonest kind of recovery it needs, n
+// seconds from now. A restart overrides a pending resume, never the other way.
+static void recover_schedule(uint8_t kind, uint32_t task, bool stuck)
+{
+    const uint32_t delay_s = recover_delay_s(task);
+    if (!plc_recover_replaces(__atomic_load_n(&s_recover_kind, __ATOMIC_ACQUIRE), kind, delay_s)) return;
+    s_recover_task   = (uint8_t)(task < RUNTIME_FAULT_NO_TASK ? task : RUNTIME_FAULT_NO_TASK);
+    s_recover_stuck  = stuck;
+    s_recover_due_us = plc_os_now_us() + (int64_t)delay_s * 1000000LL;
+    __atomic_store_n(&s_recover_kind, kind, __ATOMIC_RELEASE);
+}
+
+static void recover_resume(uint8_t task);
+
 #define RTOS_NO_OWNER 0xFFu
 
 static plc_os_mutex_t s_image_lock = nullptr;
@@ -1495,6 +1571,13 @@ extern "C" void runtime_rtos_fail(uint8_t code, uint8_t task)
 
 extern "C" void runtime_rtos_fault(void) { runtime_rtos_fail(RUNTIME_FAULT_SETUP, RUNTIME_FAULT_NO_TASK); }
 
+// A task a runtime error ended runs again (RESTART_ON_FAULT): its programs are
+// released from the next tick, the others never stopped.
+static void recover_resume(uint8_t task)
+{
+    if (task < 32) __atomic_and_fetch(&ended_tasks, ~(1u << task), __ATOMIC_ACQ_REL);
+}
+
 // The dispatcher stops the PLC for a fault (v4: a stuck task): the stop latch is
 // set, as a STOP request would, so it stays stopped, and the stop lands in ERROR.
 extern "C" void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms)
@@ -1502,6 +1585,7 @@ extern "C" void runtime_rtos_fault_stop(uint8_t code, uint8_t task, uint32_t ms)
     fault_record(code, task, ms, false);
     s_fault_stop = true;
     __atomic_store_n(&software_stop, true, __ATOMIC_RELEASE);
+    recover_schedule(RECOVER_RESTART, task, false);
 }
 
 // A task stuck in one scan that is set not to stop the PLC (`{STOP_ON_STUCK :=
@@ -1510,6 +1594,7 @@ extern "C" void runtime_rtos_task_stuck_running(uint32_t w, uint32_t ms)
 {
     fault_record(RUNTIME_FAULT_TASK_STUCK_RUNNING, (uint8_t)(w < RUNTIME_FAULT_NO_TASK ? w : RUNTIME_FAULT_NO_TASK - 1),
                  ms, false);
+    recover_schedule(RECOVER_RESTART, w, true);
 }
 
 // A runtime error ended a task (v4: that task ends, the others keep running).
@@ -1517,6 +1602,7 @@ extern "C" void runtime_rtos_task_ended(uint32_t w, uint8_t reason)
 {
     fault_record(RUNTIME_FAULT_TASK_ENDED, (uint8_t)(w < RUNTIME_FAULT_NO_TASK ? w : RUNTIME_FAULT_NO_TASK - 1),
                  reason, false);
+    recover_schedule(RECOVER_RESUME, w, false);
 }
 
 // Safe mode (v4: the restart after a watchdog exit): ERROR, no program runs,
@@ -1525,10 +1611,45 @@ extern "C" void runtime_rtos_safe_mode(uint8_t code, uint8_t task, uint32_t ms)
 {
     fault_record(code, task, ms, true);
     s_safe_mode = true;
-    // Latched as a STOP request would be: only an explicit start leaves safe mode.
+    // Latched as a STOP request would be: only an explicit start leaves safe mode
+    // - or, with a task given RESTART_ON_FAULT, the restart that recovers it.
     __atomic_store_n(&software_stop, true, __ATOMIC_RELEASE);
     __atomic_store_n(&plc_state, (uint8_t)PLC_STATE_ERROR, __ATOMIC_RELEASE);
+    recover_schedule(RECOVER_RESTART, RUNTIME_FAULT_NO_TASK, false);
 }
+
+// Called by the dispatcher on every frame, in every state (ERROR and safe mode
+// included): carries out a recovery that has come due.
+extern "C" void runtime_rtos_recover_poll(int64_t now_us)
+{
+    if (s_recover_clear_us == 0) s_recover_clear_us = now_us;
+    if (plc_recover_clears(now_us, s_recover_clear_us)) {
+        s_recover_clear_us = now_us;            // a day without one: the count starts again
+        if (s_recover_kind == RECOVER_NONE && recover_count() != 0) recover_count_set(0);
+    }
+    const uint8_t kind = __atomic_load_n(&s_recover_kind, __ATOMIC_ACQUIRE);
+    if (kind == RECOVER_NONE || now_us < s_recover_due_us) return;
+    __atomic_store_n(&s_recover_kind, (uint8_t)RECOVER_NONE, __ATOMIC_RELEASE);
+
+    // A task that was stuck and has since finished its scan has recovered by
+    // itself; past the limit the PLC stays as the fault left it.
+    const bool still_stuck = s_recover_task < RUNTIME_FAULT_NO_TASK &&
+                             (runtime_rtos_worker_busy_us(s_recover_task) != 0 || runtime_rtos_fault_stopped());
+    const uint32_t done = recover_count();
+    const uint8_t act = plc_recover_action(kind, done, s_recover_stuck, still_stuck);
+    if (act == RECOVER_NONE) return;
+    recover_count_set(done + 1);
+    s_recover_clear_us = now_us;
+
+    if (act == RECOVER_RESUME) {
+        recover_resume(s_recover_task);
+        return;
+    }
+    (void)runtime_retain_flush_now();           // the retained values first, as RESTART does
+    plc_os_restart();
+}
+
+extern "C" uint32_t runtime_rtos_recoveries(void) { return recover_count(); }
 
 extern "C" bool runtime_rtos_in_safe_mode(void) { return s_safe_mode; }
 
@@ -2156,6 +2277,7 @@ extern "C" void runtime_rtos_prepare_workers(void)
             k.core             = task_core(r, t);
             k.stop_on_stuck    = task_stop_on_stuck(r, t);
             k.stack            = task_stack(r, t);
+            recover_note_task(s_worker_count - 1, r, t);
             k.release_divisor  = (uint32_t)(interval / base_tick_ns);
             if (k.release_divisor == 0) k.release_divisor = 1;
             k.programs         = task.programs;
@@ -2186,6 +2308,12 @@ extern "C" void runtime_rtos_prepare_workers(void)
     // It stops the PLC when stuck unless every task is set not to, and has the
     // largest stack a task asks for, a task on Default counting as the default
     // (the default when none asks).
+    s_restart_shared = true;
+    {
+        uint32_t index = 0;
+        for (size_t r = 0; r < plc_config().get_resource_count(); ++r)
+            for (size_t t = 0; t < resources[r].task_count; ++t) recover_note_task(index++, r, t);
+    }
     int32_t  shared_core  = -2;   // none seen yet
     bool     shared_stops = false;
     uint32_t shared_stack = 0;

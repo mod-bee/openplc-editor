@@ -82,6 +82,9 @@ export interface PLCTask {
   core?: number
   /** A stuck scan stops the PLC; absent = true. See `PLCTaskSchema`. */
   stopOnStuck?: boolean
+  /** Seconds after a fault before the runtime recovers the task; absent = it
+   *  stays stopped. See `PLCTaskSchema`. */
+  restartOnFault?: number
   /** Stack in bytes; absent = the target's default. See `PLCTaskSchema`. */
   stack?: number
 }

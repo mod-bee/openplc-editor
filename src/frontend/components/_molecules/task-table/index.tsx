@@ -8,6 +8,7 @@ import { EditableNameCell, EditablePriorityCell } from './editable-cell'
 import {
   SelectableCoreCell,
   SelectableIntervalCell,
+  SelectableRestartOnFaultCell,
   SelectableStackCell,
   SelectableStopOnStuckCell,
   SelectableTriggerCell,
@@ -66,6 +67,16 @@ const columns = [
     minSize: 100,
     maxSize: 150,
     cell: (props) => SelectableStopOnStuckCell(props),
+  }),
+  // After a fault of the task: Stop (the default) or Restart after a delay, at
+  // most 3 times a day - the same pragma ({RESTART_ON_FAULT := n}).
+  columnHelper.accessor('restartOnFault', {
+    header: 'On fault',
+    enableResizing: false,
+    size: 170,
+    minSize: 120,
+    maxSize: 170,
+    cell: (props) => SelectableRestartOnFaultCell(props),
   }),
   columnHelper.accessor('stack', {
     header: 'Stack',

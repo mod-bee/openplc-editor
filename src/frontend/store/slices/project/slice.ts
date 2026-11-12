@@ -1846,6 +1846,7 @@ const createProjectSlice: StateCreator<ProjectSliceRoot, [], [], ProjectSlice> =
             if (task.core === undefined) delete task.core
             if (task.stopOnStuck !== false) delete task.stopOnStuck
             if (task.stack === undefined) delete task.stack
+            if (task.restartOnFault === undefined) delete task.restartOnFault
             tasks[dto.rowId] = task
           }
         }),

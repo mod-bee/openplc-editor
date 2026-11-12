@@ -15,6 +15,8 @@ export { readRtosSettings, RTOS_DEFAULT_ENABLED, RTOS_SETTINGS_SECTION } from '.
 export { withFqbnOptions } from './support'
 export type { TaskSettingsTarget, TaskWithSettings } from './task-settings'
 export {
+  restartChoices,
+  restartLabel,
   taskPragmaEntries,
   taskPragmaText,
   taskSettingsProblem,

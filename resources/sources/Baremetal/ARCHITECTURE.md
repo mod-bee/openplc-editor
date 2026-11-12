@@ -327,6 +327,18 @@ Watchdog System, and task_policy.h):
   restarts the board in safe mode (`plc_os_restart`, the reason kept in
   `plc_os_noinit_words`): ERROR, no IEC task created, outputs off. RUN from safe
   mode restarts normally. Without such memory the board stays up in ERROR.
+- A task whose **On fault** is Restart (`TASK t(...) {RESTART_ON_FAULT := n};`,
+  `strucpp_task_restart_on_fault()`; ModBee) is recovered n seconds after a fault
+  instead of staying stopped until someone presses RUN - for a site nobody can
+  reach: a task a runtime error ended runs again (the others never stopped); a
+  PLC its stuck scan stopped, or a task still stuck in one scan, restarts the
+  board into RUN (the retained values saved first); a safe-mode boot restarts
+  normally when any task has the setting. At most `PLC_RECOVER_LIMIT` (3)
+  recoveries until `PLC_RECOVER_CLEAR_US` (24 h) of running without one, counted
+  in `plc_os_noinit_words()` 4-5 (kept across the restarts, lost on a power cut);
+  past the limit the PLC stays as the fault left it. The dispatcher checks every
+  frame, in every state (`runtime_rtos_recover_poll`); the rules are
+  `plc_recover_*` in `plc_core_place.h`.
 
 The first fault since STOP -> RUN, and why the PLC is in ERROR, are appended to
 the status reply (FC `0x46`: `[fault][task][safe_mode][count][detail:u32]`, then

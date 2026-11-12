@@ -1,4 +1,6 @@
 import {
+  restartChoices,
+  restartLabel,
   taskPragmaText,
   taskSettingsProblem,
   taskStackChoices,
@@ -86,5 +88,33 @@ describe('task settings: Stop PLC if stuck, Stack', () => {
     expect(taskStackLabel(8192)).toBe('8 KB')
     expect(taskStackLabel(1048576)).toBe('1 MB')
     expect(taskStackLabel(10000)).toBe('10000 bytes')
+  })
+})
+
+describe('On fault (RESTART_ON_FAULT)', () => {
+  it('writes the delay after the other settings, and nothing on Stop', () => {
+    expect(taskPragmaText({})).toBe('')
+    expect(taskPragmaText({ restartOnFault: 30 })).toBe(' {RESTART_ON_FAULT := 30}')
+    expect(taskPragmaText({ core: 1, stopOnStuck: false, stack: 16384, restartOnFault: 60 })).toBe(
+      ' {CORE := 1, STOP_ON_STUCK := FALSE, STACK := 16384, RESTART_ON_FAULT := 60}',
+    )
+  })
+
+  it('says the delay in words', () => {
+    expect(restartLabel(undefined)).toBe('Stop')
+    expect(restartLabel(10)).toBe('10 s')
+    expect(restartLabel(60)).toBe('1 min')
+    expect(restartLabel(90)).toBe('1 min 30 s')
+    expect(restartLabel(3600)).toBe('1 h')
+  })
+
+  it('offers the usual delays, and keeps one set elsewhere', () => {
+    expect(restartChoices(undefined)).toEqual([10, 30, 60, 120, 300, 600])
+    expect(restartChoices(45)).toEqual([10, 30, 45, 60, 120, 300, 600])
+  })
+
+  it('needs a target whose tasks are threads, like the other settings', () => {
+    const task = { name: 'logic', restartOnFault: 30 }
+    expect(taskSettingsProblem([task], { taskThreads: undefined }, true)).toMatch(/"On fault" Stop/)
   })
 })

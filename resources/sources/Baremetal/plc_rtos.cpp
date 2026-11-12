@@ -947,6 +947,10 @@ static void dispatch_forever(void)
     for (;;) {
         plc_os_sleep_until_tick(deadline);
 
+        // A fault recovery that has come due (RESTART_ON_FAULT): every frame, in
+        // every state - ERROR and safe mode are exactly when it is needed.
+        runtime_rtos_recover_poll(plc_os_now_us());
+
         // Outputs of tasks that finished after the dispatcher stopped waiting.
         if (pending) pending = output_finished(pending, stop_pending);
 

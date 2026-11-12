@@ -284,6 +284,7 @@ function projectTask(task: PLCTask): TranspileTask {
     ...(task.triggering === 'Cyclic' ? { interval: task.interval } : { single: task.interval }),
     ...(task.core !== undefined ? { core: task.core } : {}),
     ...(task.stopOnStuck === false ? { stopOnStuck: false } : {}),
+    ...(task.restartOnFault !== undefined ? { restartOnFault: task.restartOnFault } : {}),
     ...(task.stack !== undefined ? { stack: task.stack } : {}),
   }
 }

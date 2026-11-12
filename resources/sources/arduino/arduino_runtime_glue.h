@@ -62,6 +62,11 @@ void runtime_rtos_task_stuck_running(uint32_t worker, uint32_t ms);
 void runtime_rtos_safe_mode(uint8_t code, uint8_t task, uint32_t ms);
 bool runtime_rtos_in_safe_mode(void);
 bool runtime_rtos_fault_stopped(void);   // ERROR from a fault stop: RUN may leave it
+// RESTART_ON_FAULT: the dispatcher calls this every frame, in every state; it
+// carries out a recovery that has come due (a task resumed, or the board
+// restarted into RUN), at most a few a day. The recoveries counted so far.
+void     runtime_rtos_recover_poll(int64_t now_us);
+uint32_t runtime_rtos_recoveries(void);
 
 // One worker per IEC task (or one for all, when not threaded), each with its
 // own scan lock. Called by plc_rtos_start(), after runtime_discover_tasks().
