@@ -8,7 +8,8 @@
  *   STruC++ compiles the program calling it, and the generated `c_blocks.h` /
  *   `c_blocks_code.cpp` compile with g++;
  * - run on the host, the values reach the C++ (an ANY, a STRING literal on an
- *   ANY, a STRING, an IN_OUT) and the result and the VAR_OUTPUT come back;
+ *   ANY, a STRING, an IN_OUT, STRING(n) of any length) and the result and
+ *   the VAR_OUTPUTs come back;
  *   `setup()` runs once, before the first method call;
  * - a method's parameters are not in the debugger table.
  */
@@ -49,9 +50,11 @@ const ENGINE_BODY = `METHOD PUBLIC Record : BOOL
   END_VAR
   VAR_IN_OUT
     COUNTER : DINT;
+    TAG : STRING(16);
   END_VAR
   VAR_OUTPUT
     SIZE : DINT;
+    NOTE : STRING(8);
   END_VAR
 END_METHOD
 
@@ -81,6 +84,8 @@ bool Record() {
     LAST_SETTINGS = reinterpret_cast<const char *>(SETTINGS.PVALUE);
   }
   LAST_NAME = NAME;
+  TAG = "tagged";
+  NOTE = "note-too-long";
   total = total + DATA.DISIZE;
   return ENABLE && DATA.TYPECLASS == strucpp::TYPE_CLASS::TYPE_USERDEF;
 }
@@ -137,12 +142,16 @@ const SPEC = {
         { name: 'ok2', type: BOOL },
         { name: 'label', type: STRING, initialValue: "'pump'" },
         { name: 'got', type: STRING },
+        { name: 'tag', type: { definition: 'base-type', value: 'STRING(16)' } },
+        { name: 'note', type: { definition: 'base-type', value: 'STRING(8)' } },
+        { name: 'wideTag', type: STRING },
+        { name: 'shortNote', type: { definition: 'base-type', value: 'STRING(4)' } },
       ],
       body: {
         text:
-          "ok := e.Record(DATA := pump, SETTINGS := 'y=log', NAME := label, COUNTER := n, SIZE => sz);\n" +
+          "ok := e.Record(DATA := pump, SETTINGS := 'y=log', NAME := label, COUNTER := n, TAG := tag, SIZE => sz, NOTE => note);\n" +
           'e.Reset();\n' +
-          "ok2 := e.Record(DATA := n, SETTINGS := 'x=now', NAME := 'n', COUNTER := n, SIZE => sz2);\n" +
+          "ok2 := e.Record(DATA := n, SETTINGS := 'x=now', NAME := 'n', COUNTER := n, TAG := wideTag, SIZE => sz2, NOTE => shortNote);\n" +
           'got := e.Label();\n' +
           'e();\n',
       },
@@ -293,6 +302,10 @@ describe('METHODs of a C/C++ function block', () => {
       'INST0.OK2',
       'INST0.LABEL',
       'INST0.GOT',
+      'INST0.TAG',
+      'INST0.NOTE',
+      'INST0.WIDETAG',
+      'INST0.SHORTNOTE',
     ])
 
     const cppPous = processed.originalCppPous ?? []
@@ -350,6 +363,11 @@ int main() {
   check_s("settings", p.E.LAST_SETTINGS, "x=now");
   check_s("name", p.E.LAST_NAME, "n");
   check_s("label", p.GOT, "eng");
+  // STRING(n) in-outs and outputs keep their length; another length binds too.
+  check_s("tag", p.TAG, "tagged");
+  check_s("note", p.NOTE, "note-too");
+  check_s("wide tag", p.WIDETAG, "tagged");
+  check_s("short note", p.SHORTNOTE, "note");
   p.run();
   check("setups again", p.E.SETUPS, 1);
   check("counter again", p.N, 4);
@@ -415,7 +433,9 @@ int main() {
       'input:SETTINGS',
       'input:NAME',
       'output:SIZE',
+      'output:NOTE',
       'inOut:COUNTER',
+      'inOut:TAG',
     ])
 
     // The consumer's project has no block of its own; the build grafts the library's.
