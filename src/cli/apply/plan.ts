@@ -499,6 +499,21 @@ function checkPouDeclaration(wanted: SpecPou): string[] {
       errors.push(`${at}: an interface declares no variables (IEC 61131-3 6.6.6.1) — only method prototypes.`)
     }
   }
+  // IEC names ignore case (6.1.2): `REQ` and `req` are one variable, and the
+  // second would quietly replace the first. The same spelling twice is the
+  // spec's upsert and stays allowed.
+  const declared = new Map<string, string>()
+  for (const variable of wanted.variables ?? []) {
+    const first = declared.get(variable.name.toUpperCase())
+    if (first === undefined) {
+      declared.set(variable.name.toUpperCase(), variable.name)
+    } else if (first !== variable.name) {
+      errors.push(
+        `${at}: "${first}" and "${variable.name}" are the same name (IEC 61131-3 names ignore case); ` +
+          'give one of them another name.',
+      )
+    }
+  }
   for (const variable of wanted.variables ?? []) {
     const cls = variable.class ?? 'local'
     if (variable.access !== undefined && (!isBlock || cls !== 'local')) {

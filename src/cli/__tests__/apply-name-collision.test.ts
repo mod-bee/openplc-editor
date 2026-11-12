@@ -101,6 +101,26 @@ describe('a name another element already owns', () => {
     expect(result.errors).toEqual([])
     expect(globalsIn().filter((variable) => variable.name === 'Repeated')).toHaveLength(1)
   })
+
+  it('refuses two variables of one POU whose names differ only in case', async () => {
+    const result = await apply({
+      pous: [
+        {
+          name: 'FB_CASE',
+          kind: 'function-block',
+          language: 'st',
+          variables: [
+            { name: 'REQ', class: 'output', type: BOOL },
+            { name: 'req', class: 'local', type: BOOL },
+          ],
+          body: { text: 'REQ := req;' },
+        },
+      ],
+    } as Partial<ApplySpec>)
+    expect(result.errors.join('\n')).toMatch(
+      /"REQ" and "req" are the same name \(IEC 61131-3 names ignore case\); give one of them another name\./,
+    )
+  })
 })
 
 describe('a variable that is a function-block instance', () => {
