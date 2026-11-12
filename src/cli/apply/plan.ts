@@ -82,15 +82,18 @@ export async function applySpec(
   applyDevice(store, spec, changes, errors)
   applyLibraries(store, spec, changes, errors)
   applyDataTypes(store, spec, changes, errors)
-  applyGlobalVariableLists(store, spec, changes, errors)
-  applyPous(store, spec, changes, errors)
-  applyVariables(store, spec, changes, errors)
+  // From here on, a `derived` type that names a structure or enumeration is
+  // read as the `user-data-type` it is.
+  const typed = withDataTypeVariables(store, spec)
+  applyGlobalVariableLists(store, typed, changes, errors)
+  applyPous(store, typed, changes, errors)
+  applyVariables(store, typed, changes, errors)
   // Bodies LAST, after every POU has its variables. A graphical body placing a
   // `user/<pou>` block resolves that block's pins from the POU's own variable
   // list, so a body applied in the same pass that created the POU sees an
   // interface with no pins at all.
-  applyBodies(store, spec, changes, errors)
-  applyGlobalVariables(store, spec, changes, errors)
+  applyBodies(store, typed, changes, errors)
+  applyGlobalVariables(store, typed, changes, errors)
   applyTasks(store, spec, changes, errors)
   applyInstances(store, spec, changes, errors)
   applyServers(store, spec, changes, errors)
@@ -754,6 +757,50 @@ function applyRtos(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[
   }
   state.deviceActions.setVendorScreenData(RTOS_SETTINGS_SECTION, { enabled: wanted.enabled })
   changes.push({ kind: 'device', action: 'update', name: `rtos = ${wanted.enabled ? 'on' : 'off'}` })
+}
+
+/**
+ * `spec` with every `derived` variable whose type is a structure or an
+ * enumeration (the project's, the spec's or an installed library's) and not a
+ * function block written as `user-data-type`. `derived` means a block
+ * instance, and read as one, a structure's initial value `(a := 1)` was
+ * refused as an initialisation list of a block that does not exist.
+ */
+function withDataTypeVariables(store: OpenPLCStore, spec: ApplySpec): ApplySpec {
+  const state = store.getState()
+  const upper = (name: string) => name.toUpperCase()
+  const blocks = new Set([
+    ...state.project.data.pous.filter((pou) => pou.pouType === 'function-block').map((pou) => upper(pou.name)),
+    ...(spec.pous ?? []).filter((pou) => pou.kind === 'function-block').map((pou) => upper(pou.name)),
+    ...state.libraries.system.flatMap((library) =>
+      library.pous.filter((pou) => pou.type === 'function-block').map((pou) => upper(pou.name)),
+    ),
+  ])
+  const dataTypes = new Set([
+    ...state.project.data.dataTypes.map((dataType) => upper(dataType.name)),
+    ...state.libraries.system.flatMap((library) => (library.dataTypes ?? []).map((dataType) => upper(dataType.name))),
+  ])
+  const fix = (variable: SpecVariable): SpecVariable =>
+    variable.type.definition === 'derived' &&
+    dataTypes.has(upper(variable.type.value)) &&
+    !blocks.has(upper(variable.type.value))
+      ? { ...variable, type: { ...variable.type, definition: 'user-data-type' } }
+      : variable
+  return {
+    ...spec,
+    ...(spec.pous
+      ? { pous: spec.pous.map((pou) => (pou.variables ? { ...pou, variables: pou.variables.map(fix) } : pou)) }
+      : {}),
+    ...(spec.globalVariables ? { globalVariables: spec.globalVariables.map(fix) } : {}),
+    ...(spec.globalVariableLists
+      ? {
+          globalVariableLists: spec.globalVariableLists.map((list) => ({
+            ...list,
+            variables: list.variables.map(fix),
+          })),
+        }
+      : {}),
+  }
 }
 
 /**
