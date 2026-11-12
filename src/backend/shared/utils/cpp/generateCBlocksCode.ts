@@ -11,6 +11,7 @@ import {
   isDescriptorPinType,
   multiDimensionalContainerType,
 } from '../../../../frontend/utils/PLC/array-codegen-helpers'
+import { isBaseTypeName } from '../../../../frontend/utils/iec-types-registry'
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
 
 type CppPouData = {
@@ -216,29 +217,38 @@ const generateUndef = (variable: PLCVariable): string => {
  * directly. A type reachable through a structure member needs to be in scope
  * too: given `o : Outer` where `Outer` has a `State` member, the block writes
  * `o.STATE_ = STATE::BUSY`, and walking only pin types left `STATE` undeclared.
- * Types named by a pin are added as well, which is what covers a function block
- * instance — an FB is a POU, so it is not among the project's data types.
+ * Types named by a pin or by a method's parameters or result are added as well,
+ * which is what covers a function block instance — an FB is a POU, so it is not
+ * among the project's data types — and a library's own types a library block uses.
  */
 const generateUserTypeAliases = (cppPous: CppPouData[], userTypeNames: Iterable<string>): string => {
   const referenced = new Set<string>(Array.from(userTypeNames, (name) => name.toUpperCase()))
+  const addVariable = (variable: PLCVariable): void => {
+    // `derived` is a function block instance, `user-data-type` a structure or
+    // enumeration. A block may name either — casting to an enumeration, or
+    // declaring a local of an FB class — so both belong in scope.
+    // A generic pin looks like a user type by name, but names no project
+    // type: it resolves to the runtime's own `IEC_ANY`, so aliasing it would
+    // emit `using ANY_INT = strucpp::ANY_INT;` for a type that does not
+    // exist.
+    if (
+      (variable.type.definition === 'user-data-type' || variable.type.definition === 'derived') &&
+      !isDescriptorPinType(variable.type.value)
+    ) {
+      referenced.add(variable.type.value.toUpperCase())
+    }
+    if (variable.type.definition === 'array' && variable.type.data?.baseType.definition === 'user-data-type') {
+      referenced.add(variable.type.data.baseType.value.toUpperCase())
+    }
+  }
   for (const pou of cppPous) {
-    for (const variable of pou.variables) {
-      // `derived` is a function block instance, `user-data-type` a structure or
-      // enumeration. A block may name either — casting to an enumeration, or
-      // declaring a local of an FB class — so both belong in scope.
-      // A generic pin looks like a user type by name, but names no project
-      // type: it resolves to the runtime's own `IEC_ANY`, so aliasing it would
-      // emit `using ANY_INT = strucpp::ANY_INT;` for a type that does not
-      // exist.
-      if (
-        (variable.type.definition === 'user-data-type' || variable.type.definition === 'derived') &&
-        !isDescriptorPinType(variable.type.value)
-      ) {
-        referenced.add(variable.type.value.toUpperCase())
-      }
-      if (variable.type.definition === 'array' && variable.type.data?.baseType.definition === 'user-data-type') {
-        referenced.add(variable.type.data.baseType.value.toUpperCase())
-      }
+    pou.variables.forEach(addVariable)
+    // A method's parameters and result are declared for this build too: the
+    // compiled method's signature names them.
+    for (const method of splitCppMethods(pou.code).methods) {
+      method.variables.forEach(addVariable)
+      const result = method.returnType?.replace(/\s*[([].*$/, '')
+      if (result && !isBaseTypeName(result) && !isDescriptorPinType(result)) referenced.add(result.toUpperCase())
     }
   }
   if (referenced.size === 0) return ''

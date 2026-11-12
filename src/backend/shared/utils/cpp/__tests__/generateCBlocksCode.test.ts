@@ -303,6 +303,33 @@ describe('generateCBlocksCode', () => {
       expect(result).toContain('using MOTOR = strucpp::MOTOR;')
     })
 
+    it("aliases the types of a method's parameters and result", () => {
+      // A library block's method may take a library type no pin names; the
+      // compiled method's signature declares it, and the C++ spells it bare.
+      const withMethod = `METHOD PUBLIC Watch : E_Result
+  VAR_INPUT
+    eMode : E_Mode;
+    nCount : INT;
+  END_VAR
+  VAR_OUTPUT
+    stInfo : ST_Info;
+  END_VAR
+END_METHOD
+METHOD PUBLIC Count : INT
+END_METHOD
+void setup() {}
+void loop() {}
+E_RESULT Watch() { return E_RESULT::OK; }
+int Count() { return 0; }
+`
+      const result = generateCBlocksCode([{ name: 'B', code: withMethod, variables: [] }], [])
+
+      expect(result).toContain('using E_RESULT = strucpp::E_RESULT;')
+      expect(result).toContain('using E_MODE = strucpp::E_MODE;')
+      expect(result).toContain('using ST_INFO = strucpp::ST_INFO;')
+      expect(result).not.toContain('using INT =')
+    })
+
     it('emits no alias block when the project has no user types at all', () => {
       const result = generateCBlocksCode([{ name: 'B', code, variables: [makeScalarVar('x', 'input', 'INT')] }], [])
 

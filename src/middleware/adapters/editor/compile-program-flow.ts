@@ -16,6 +16,7 @@
  */
 
 import {
+  archivesForProject,
   findLibrariesMissingNativeSources,
   injectLibraryBlocks,
   libraryStructTypes,
@@ -173,7 +174,8 @@ export async function prepareProjectForCompile(
   // generation downstream.  See `injectLibraryBlocks` for the renaming
   // contract and for why the archive ships source rather than the
   // already-lowered ST.
-  const archives = await transport.loadAllLibraries()
+  // Every installed version is in the pool: one per library from here on.
+  const archives = archivesForProject(args.projectData, await transport.loadAllLibraries())
 
   // A native block with no source cannot be built by any consumer.
   const missingSources = findLibrariesMissingNativeSources(args.projectData, archives)

@@ -48,6 +48,7 @@
  * derive their names from `pou.name`.
  */
 
+import { compareSemver } from '../../../frontend/utils/semver'
 import { parseHybridPouFromString } from '../../../frontend/utils/PLC/pou-text-parser'
 import type { StlibArchiveDTO } from '../../../middleware/shared/ports/library-port'
 import type { PLCPou, PLCProjectData } from '../../../middleware/shared/ports/types'
@@ -60,6 +61,57 @@ type ResolvedNativeBlock = {
   language: 'cpp' | 'python'
   /** The authored file, verbatim — ST header plus native body. */
   source: string
+}
+
+/**
+ * The one archive of each library the project enables: the version it pins, or
+ * the newest installed when that version is not (the library manager's rule,
+ * `resolveVersion`). The pool holds every installed version of a library, and
+ * two versions' blocks or types in one build collide.
+ */
+export function enabledArchives<A extends { manifest?: { name?: string; version?: string } }>(
+  projectData: { libraries?: { name: string; version?: string }[] },
+  archives: readonly A[],
+): A[] {
+  const out: A[] = []
+  for (const ref of projectData.libraries ?? []) {
+    let chosen: A | undefined
+    for (const archive of archives) {
+      if (archive?.manifest?.name !== ref.name) continue
+      const version = archive.manifest.version ?? ''
+      if (ref.version !== undefined && version === ref.version) {
+        chosen = archive
+        break
+      }
+      if (chosen === undefined || compareSemver(version, chosen.manifest?.version ?? '') > 0) chosen = archive
+    }
+    if (chosen !== undefined && !out.includes(chosen)) out.push(chosen)
+  }
+  return out
+}
+
+/**
+ * The archive pool narrowed to one version per library: the project's choice
+ * for each library it enables (`enabledArchives`), the newest of any other.
+ */
+export function archivesForProject<A extends { manifest?: { name?: string; version?: string } }>(
+  projectData: { libraries?: { name: string; version?: string }[] },
+  archives: readonly A[],
+): A[] {
+  const enabled = enabledArchives(projectData, archives)
+  const enabledNames = new Set(enabled.map((archive) => archive.manifest?.name))
+  const newest = new Map<string, A>()
+  for (const archive of archives) {
+    const name = archive?.manifest?.name
+    if (!name || enabledNames.has(name)) continue
+    const kept = newest.get(name)
+    if (kept === undefined || compareSemver(archive.manifest?.version ?? '', kept.manifest?.version ?? '') > 0) {
+      newest.set(name, archive)
+    }
+  }
+  return archives.filter(
+    (archive) => enabled.includes(archive) || newest.get(archive?.manifest?.name ?? '') === archive,
+  )
 }
 
 /**
@@ -80,11 +132,9 @@ function resolveNativeBlocks(
   if (!projectData.libraries || projectData.libraries.length === 0) {
     return { blocks, librariesMissingSource: [] }
   }
-  const enabledNames = new Set(projectData.libraries.map((ref) => ref.name))
-
-  for (const archive of archives) {
+  for (const archive of enabledArchives(projectData, archives)) {
     const libraryName = archive.manifest?.name
-    if (!libraryName || !enabledNames.has(libraryName)) continue
+    if (!libraryName) continue
 
     const sourceByFile = new Map((archive.sources ?? []).map((s) => [s.fileName, s.source]))
 
@@ -174,15 +224,12 @@ export function projectAndLibraryTypeNames(
   // Only the two fields this reads, so it takes the port shape and the schema
   // shape alike — they differ on `configuration`/`configurations`, which is
   // nothing to do with type names.
-  projectData: { dataTypes?: { name: string }[]; libraries?: { name: string }[] },
+  projectData: { dataTypes?: { name: string }[]; libraries?: { name: string; version?: string }[] },
   archives: readonly unknown[],
 ): string[] {
   const names = (projectData.dataTypes ?? []).map((dataType) => dataType.name)
 
-  const enabled = new Set((projectData.libraries ?? []).map((ref) => ref.name))
-  for (const archive of archives as StlibArchiveDTO[]) {
-    const libraryName = archive?.manifest?.name
-    if (!libraryName || !enabled.has(libraryName)) continue
+  for (const archive of enabledArchives(projectData, archives as StlibArchiveDTO[])) {
     for (const type of archive.manifest.types ?? []) {
       names.push(type.name)
     }
@@ -199,14 +246,11 @@ export function projectAndLibraryTypeNames(
  * or the temporary is declared `ANY` and the program does not compile.
  */
 export function libraryStructTypes(
-  projectData: { libraries?: { name: string }[] },
+  projectData: { libraries?: { name: string; version?: string }[] },
   archives: readonly unknown[],
 ): TranspileLibraryType[] {
-  const enabled = new Set((projectData.libraries ?? []).map((ref) => ref.name))
   const out: TranspileLibraryType[] = []
-  for (const archive of archives as StlibArchiveDTO[]) {
-    const libraryName = archive?.manifest?.name
-    if (!libraryName || !enabled.has(libraryName)) continue
+  for (const archive of enabledArchives(projectData, archives as StlibArchiveDTO[])) {
     for (const type of archive.manifest.types ?? []) {
       if (type.kind !== 'struct' || !type.fields) continue
       out.push({

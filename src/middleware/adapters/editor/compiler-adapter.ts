@@ -12,6 +12,7 @@
  */
 
 import {
+  archivesForProject,
   findLibrariesMissingNativeSources,
   injectLibraryBlocks,
   libraryStructTypes,
@@ -217,7 +218,10 @@ export function createEditorCompilerAdapter(deps: EditorCompilerAdapterDeps = {}
     ): Promise<DebugCompileResult> {
       // Same graft as the program build path — a debug compile has to see
       // the identical POU set or the debug map won't match the firmware.
-      const archives = (await window.bridge.loadAllLibraries()) as StlibArchiveDTO[]
+      const archives = archivesForProject(
+        args.projectData,
+        (await window.bridge.loadAllLibraries()) as StlibArchiveDTO[],
+      )
 
       const missingSources = findLibrariesMissingNativeSources(args.projectData, archives)
       if (missingSources.length > 0) {

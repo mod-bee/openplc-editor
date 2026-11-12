@@ -1,6 +1,11 @@
 import type { StlibArchiveDTO } from '../../../../middleware/shared/ports/library-port'
 import type { PLCProjectData } from '../../../../middleware/shared/ports/types'
-import { findLibrariesMissingNativeSources, injectLibraryBlocks } from '../inject-library-blocks'
+import {
+  archivesForProject,
+  findLibrariesMissingNativeSources,
+  injectLibraryBlocks,
+  projectAndLibraryTypeNames,
+} from '../inject-library-blocks'
 
 // -- helpers ------------------------------------------------------------------
 
@@ -47,7 +52,12 @@ function project(overrides: { libraries?: Array<{ name: string; version: string 
 function archive(
   name: string,
   blocks: Array<{ name: string; language: 'cpp' | 'python'; file?: string; source?: string | null }> = [],
-  opts: { stBlocks?: string[]; namespace?: string; types?: Array<{ name: string; kind: string }> } = {},
+  opts: {
+    stBlocks?: string[]
+    namespace?: string
+    types?: Array<{ name: string; kind: string }>
+    version?: string
+  } = {},
 ): StlibArchiveDTO {
   const sources: Array<{ fileName: string; source: string }> = []
   const functionBlocks: unknown[] = (opts.stBlocks ?? []).map((n) => ({
@@ -75,7 +85,7 @@ function archive(
   return {
     manifest: {
       name,
-      version: '1.0.0',
+      version: opts.version ?? '1.0.0',
       functionBlocks,
       ...(opts.namespace ? { namespace: opts.namespace } : {}),
       ...(opts.types ? { types: opts.types } : {}),
@@ -302,5 +312,45 @@ describe('findLibrariesMissingNativeSources', () => {
       archive('disabled', [{ name: 'Bad', language: 'cpp', source: null }]),
     ]
     expect(findLibrariesMissingNativeSources(data, archives)).toEqual([])
+  })
+})
+
+describe('one version of each library', () => {
+  // The pool holds every installed version of a library; a build takes one.
+  const pool = [
+    archive('mqtt', [{ name: 'NEW_CLIENT', language: 'cpp' }], {
+      version: '0.2.0',
+      types: [{ name: 'E_NEW', kind: 'enum' }],
+    }),
+    archive('mqtt', [{ name: 'OLD_CLIENT', language: 'cpp' }], {
+      version: '0.1.2',
+      types: [{ name: 'E_OLD', kind: 'enum' }],
+    }),
+    archive('mqtt', [{ name: 'OLDEST_CLIENT', language: 'cpp' }], { version: '0.1.10' }),
+    archive('gsm', [{ name: 'MODEM', language: 'cpp' }], { version: '0.1.3' }),
+    archive('gsm', [{ name: 'MODEM_OLD', language: 'cpp' }], { version: '0.1.0' }),
+  ]
+
+  it('grafts only the blocks of the version the project pins', () => {
+    const data = project({ pous: ['main'], libraries: [{ name: 'mqtt', version: '0.1.2' }] })
+    expect(injectLibraryBlocks(data, pool).pous.map((p) => p.name)).toEqual(['main', 'OLD_CLIENT'])
+  })
+
+  it('takes the newest installed when the pinned version is not installed', () => {
+    const data = project({ pous: ['main'], libraries: [{ name: 'mqtt', version: '9.9.9' }] })
+    expect(injectLibraryBlocks(data, pool).pous.map((p) => p.name)).toEqual(['main', 'NEW_CLIENT'])
+  })
+
+  it("names only the pinned version's types", () => {
+    const data = { dataTypes: [], libraries: [{ name: 'mqtt', version: '0.2.0' }] }
+    expect(projectAndLibraryTypeNames(data, pool)).toEqual(['E_NEW'])
+  })
+
+  it('narrows the pool: the pinned version of an enabled library, the newest of the rest', () => {
+    const data = { libraries: [{ name: 'mqtt', version: '0.1.10' }] }
+    expect(archivesForProject(data, pool).map((a) => `${a.manifest.name}@${a.manifest.version}`)).toEqual([
+      'mqtt@0.1.10',
+      'gsm@0.1.3',
+    ])
   })
 })
