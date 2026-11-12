@@ -255,3 +255,10 @@ describe('the generated method glue', () => {
     )
   })
 })
+
+describe('c_blocks_code.cpp and platform macros', () => {
+  it('includes c_blocks.h as a generated TU, so ST names stay free of platform macros', () => {
+    const code = generateCBlocksCode([{ name: 'B', variables: BLOCK_VARIABLES, code: CPP }])
+    expect(code).toContain('#define STRUCPP_GENERATED_TU\n#include "c_blocks.h"')
+  })
+})

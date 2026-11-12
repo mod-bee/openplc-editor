@@ -124,6 +124,12 @@ const C_BLOCKS_BASELINE = `#include <cstdint>
 // arduino-cli compiles this TU with the sketch, in the core's own standard —
 // which is also what lets the block resolve its Arduino \`#include\`s. The
 // strucpp runtime is C++14, so no separate pass is needed to reach it.
+//
+// Included as a generated TU is: the platform macros \`generated.hpp\` sets
+// aside for every ST identifier (\`OK\`, \`EXTERNAL\`, \`IDLE\`...) stay set aside
+// here, so a block's C++ can name the project's enumerators and members the
+// way the generated code does.
+#define STRUCPP_GENERATED_TU
 #include "c_blocks.h"
 
 /*********************/
