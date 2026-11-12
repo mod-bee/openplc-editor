@@ -70,7 +70,8 @@ function renderStructureLines(dt: Extract<PLCDataType, { derivation: 'structure'
     const doc = v.documentation ? ` (* ${v.documentation.replace(/\s*\r?\n\s*/g, ' ')} *)` : ''
     return `    ${v.name} : ${renderVariableType(v.type)}${init};${doc}`
   })
-  return [`  ${dt.name} : STRUCT`, ...fieldLines, `  END_STRUCT;`]
+  const base = dt.extends !== undefined && dt.extends.trim() !== '' ? ` EXTENDS ${dt.extends.trim()}` : ''
+  return [`  ${dt.name}${base} : STRUCT`, ...fieldLines, `  END_STRUCT;`]
 }
 
 function renderArrayLines(dt: Extract<PLCDataType, { derivation: 'array' }>): string[] {

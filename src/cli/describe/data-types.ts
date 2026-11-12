@@ -40,6 +40,7 @@ export function describeDataType(dataType: PLCDataType): Record<string, unknown>
     return {
       name: dataType.name,
       derivation: 'structure',
+      ...(dataType.extends ? { extends: dataType.extends } : {}),
       // Every field `apply` takes, so a describe -> apply round trip keeps the
       // member's initial value (`cmdMode : INT := -1`) and an array member's
       // bounds.

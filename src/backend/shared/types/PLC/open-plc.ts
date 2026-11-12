@@ -98,6 +98,8 @@ const PLCStructureVariableSchema = z.object({
 const PLCStructureDatatypeSchema = z.object({
   name: z.string(),
   derivation: z.literal('structure'),
+  /** STRUCT EXTENDS (CODESYS): the base structure; its members are not repeated in `variable`. */
+  extends: z.string().optional(),
   variable: z.array(PLCStructureVariableSchema),
 })
 

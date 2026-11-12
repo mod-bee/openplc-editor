@@ -7,6 +7,7 @@ import { StickArrowIcon } from '../../../../assets/icons/interface/StickArrow'
 import { usePouSnapshot } from '../../../../hooks/use-pou-snapshot'
 import { useOpenPLCStore } from '../../../../store'
 import type { StructureTableType } from '../../../../store/slices/editor/types'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../../../_atoms/select'
 import TableActions from '../../../_atoms/table-actions'
 import { toast } from '../../../_features/[app]/toast/use-toast'
 import { StructureTable } from './table'
@@ -67,6 +68,34 @@ const StructureDataType = ({ dataTypeName }: StructureDataTypeProps) => {
     const current = dataTypes.find((dt) => dt.name === dataTypeName)
     if (!current || current.derivation !== 'structure') return
     updateDatatype(dataTypeName, { ...current, variable: newVariables })
+    handleFileAndWorkspaceSavedState(dataTypeName)
+  }
+
+  const current = dataTypes.find((dt) => dt.derivation === 'structure' && dt.name === dataTypeName)
+  const baseName = current?.derivation === 'structure' ? (current.extends ?? '') : ''
+  /** The structures this one may EXTEND: every other one that does not (through others) extend it. */
+  const extendsThis = (name: string, seen = new Set<string>()): boolean => {
+    if (name.toLowerCase() === dataTypeName.toLowerCase()) return true
+    if (seen.has(name.toLowerCase())) return false
+    seen.add(name.toLowerCase())
+    const dt = dataTypes.find((t) => t.name.toLowerCase() === name.toLowerCase())
+    return dt?.derivation === 'structure' && dt.extends !== undefined ? extendsThis(dt.extends, seen) : false
+  }
+  const baseOptions = dataTypes
+    .filter((dt) => dt.derivation === 'structure' && !extendsThis(dt.name))
+    .map((dt) => dt.name)
+  if (baseName !== '' && !baseOptions.some((n) => n.toLowerCase() === baseName.toLowerCase())) {
+    baseOptions.push(baseName)
+  }
+
+  /** STRUCT EXTENDS (CODESYS "Data Structure: STRUCT"): the base structure, or none. */
+  const handleBaseChange = (value: string) => {
+    if (!current || current.derivation !== 'structure') return
+    const next = value === 'none' ? '' : value
+    if (next === baseName) return
+    captureAndPush(dataTypeName)
+    const { extends: _previous, ...rest } = current
+    updateDatatype(dataTypeName, next === '' ? rest : { ...rest, extends: next })
     handleFileAndWorkspaceSavedState(dataTypeName)
   }
 
@@ -233,7 +262,35 @@ const StructureDataType = ({ dataTypeName }: StructureDataTypeProps) => {
             />
           </div>
         </div>
-        <div aria-label='structure base type container' className='flex w-1/2 flex-col gap-3'></div>
+        <div aria-label='structure base type container' className='flex w-1/2 flex-col gap-3'>
+          <div className='flex items-center gap-3'>
+            <label className='cursor-default select-none font-caption text-xs font-medium text-neutral-1000 dark:text-neutral-100'>
+              Extends:
+            </label>
+            <Select onValueChange={handleBaseChange} value={baseName === '' ? 'none' : baseName}>
+              <SelectTrigger
+                aria-label='Structure base'
+                withIndicator
+                className='flex h-7 w-full max-w-44 items-center justify-between gap-2 rounded-lg border border-neutral-400 bg-white px-3 py-2 font-caption text-xs font-normal text-neutral-950 focus-within:border-brand focus:border-brand focus:outline-none dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-100'
+              >
+                {baseName === '' ? 'None' : baseName}
+              </SelectTrigger>
+              <SelectContent className='box h-fit max-h-[200px] w-[--radix-select-trigger-width] overflow-auto rounded-lg bg-white outline-none dark:bg-neutral-950'>
+                {['none', ...baseOptions].map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                    className='flex w-full cursor-pointer items-center justify-center py-1 outline-none hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                  >
+                    <span className='text-center font-caption text-xs font-normal text-neutral-700 dark:text-neutral-100'>
+                      {option === 'none' ? 'None' : option}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div aria-label='structure initial value container' className='w-1/2'></div>
       </div>
       <div className='flex h-full w-full flex-1 flex-col overflow-hidden'>

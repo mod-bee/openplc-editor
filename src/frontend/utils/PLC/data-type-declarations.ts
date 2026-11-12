@@ -108,7 +108,13 @@ function dimensionText(source: string, starts: number[], dimension: StrucppNode)
   return sliceSpan(source, starts, dimension.sourceSpan).trim()
 }
 
-function buildStructure(source: string, starts: number[], name: string, definition: StrucppNode): ParseDataTypeResult {
+function buildStructure(
+  source: string,
+  starts: number[],
+  name: string,
+  definition: StrucppNode,
+  declarationText: string,
+): ParseDataTypeResult {
   const fields = Array.isArray(definition.fields) ? definition.fields : []
   const variable: PLCStructureVariable[] = []
 
@@ -144,7 +150,9 @@ function buildStructure(source: string, starts: number[], name: string, definiti
     })
   }
 
-  return { dataType: { name, derivation: 'structure', variable } }
+  // STRUCT EXTENDS (CODESYS): the base as the user spelled it — the AST folds case.
+  const base = /^\s*[A-Za-z_][A-Za-z0-9_]*\s+EXTENDS\s+([A-Za-z_][A-Za-z0-9_]*)/i.exec(declarationText)?.[1]
+  return { dataType: { name, derivation: 'structure', ...(base !== undefined ? { extends: base } : {}), variable } }
 }
 
 function buildEnum(
@@ -295,7 +303,7 @@ export function parseDataTypeFromText(content: string, expectedName?: string): P
   let result: ParseDataTypeResult
   switch (definition.kind) {
     case 'StructDefinition':
-      result = buildStructure(content, starts, name, definition)
+      result = buildStructure(content, starts, name, definition, sliceSpan(content, starts, declaration.sourceSpan))
       break
     case 'EnumDefinition':
       result = buildEnum(content, starts, name, definition, declaration.defaultValue, declaration.attributes)

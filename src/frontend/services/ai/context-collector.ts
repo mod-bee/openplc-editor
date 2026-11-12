@@ -193,6 +193,8 @@ type DataTypeLike = {
   dimensions?: { dimension: string }[]
   /** An array's element type, or the base type of a data type with named values. */
   baseType?: { value: string } | string
+  /** The structure a structure EXTENDS. */
+  extends?: string
 }
 
 /** An array's element type name. */
@@ -315,7 +317,8 @@ function getFormatter(language: AICompletionLanguage): ContextFormatter {
       }
       if (dt.derivation === 'structure') {
         const fields = dt.variable?.map((v) => `${v.name} : ${v.type.value}`).join('; ')
-        return `TYPE ${dt.name} : STRUCT ${fields}; END_STRUCT; END_TYPE`
+        const base = dt.extends ? ` EXTENDS ${dt.extends}` : ''
+        return `TYPE ${dt.name}${base} : STRUCT ${fields}; END_STRUCT; END_TYPE`
       }
       if (dt.derivation === 'array') {
         return `TYPE ${dt.name} : ARRAY [${dt.dimensions?.map((d) => d.dimension).join(', ')}] OF ${elementTypeOf(dt)}; END_TYPE`

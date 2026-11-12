@@ -310,6 +310,7 @@ function toDataType(spec: SpecDataType): PLCDataType {
     return {
       name: spec.name,
       derivation: 'structure',
+      ...(spec.extends !== undefined ? { extends: spec.extends } : {}),
       variable: spec.variables.map((member) => ({
         name: member.name,
         // Through the same conversion as a variable: a member declared as an
@@ -351,6 +352,7 @@ function checkDataTypeNames(wanted: SpecDataType): string[] {
   check(wanted.name, 'the name', isLegalElementName)
   if (wanted.derivation === 'structure') {
     for (const member of wanted.variables) check(member.name, 'field', isLegalIdentifier)
+    if (wanted.extends !== undefined) check(wanted.extends, 'base structure', isLegalIdentifier)
   }
   if (wanted.derivation === 'enumerated') {
     for (const value of wanted.values) check(typeof value === 'string' ? value : value.name, 'value', isLegalEnumValue)

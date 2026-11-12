@@ -243,3 +243,40 @@ describe('a data type with named values (IEC 61131-3 Ed.3 6.4.4.3)', () => {
     }
   })
 })
+
+describe('a structure that EXTENDS another (CODESYS STRUCT EXTENDS)', () => {
+  it('is applied with its base and described back', async () => {
+    const result = await apply([
+      {
+        derivation: 'structure',
+        name: 'ST_BaseSet',
+        variables: [{ name: 'nMode', type: { definition: 'base-type', value: 'INT' } }],
+      },
+      {
+        derivation: 'structure',
+        name: 'ST_DerivedSet',
+        extends: 'ST_BaseSet',
+        variables: [{ name: 'rSpeed', type: { definition: 'base-type', value: 'REAL' } }],
+      },
+    ])
+    expect(result.errors).toEqual([])
+    const stored = dataTypesIn().find((type) => type.name === 'ST_DerivedSet')
+    expect(stored).toMatchObject({ derivation: 'structure', extends: 'ST_BaseSet' })
+    const described = stored ? describeDataType(stored) : undefined
+    expect(described).toMatchObject({ name: 'ST_DerivedSet', derivation: 'structure', extends: 'ST_BaseSet' })
+    const parsed = parseApplySpec({ specVersion: 1, dataTypes: [described] })
+    expect(parsed.ok && parsed.spec.dataTypes?.[0]).toMatchObject({ extends: 'ST_BaseSet' })
+  })
+
+  it('refuses a base that is not an identifier', async () => {
+    const result = await apply([
+      {
+        derivation: 'structure',
+        name: 'ST_Bad',
+        extends: 'not a name',
+        variables: [{ name: 'x', type: { definition: 'base-type', value: 'INT' } }],
+      },
+    ])
+    expect(result.errors.join('\n')).toContain('base structure "not a name"')
+  })
+})

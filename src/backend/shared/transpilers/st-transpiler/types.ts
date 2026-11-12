@@ -138,6 +138,8 @@ export type TranspileDataType =
   | {
       name: string
       derivation: 'structure'
+      /** STRUCT EXTENDS (CODESYS): the base structure. */
+      extends?: string
       variable: TranspileVariable[]
       initialValue?: string
     }

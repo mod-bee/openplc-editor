@@ -275,6 +275,8 @@ const dataTypeSchema = z.discriminatedUnion('derivation', [
     .object({
       derivation: z.literal('structure'),
       name: z.string().min(1),
+      /** STRUCT EXTENDS (CODESYS): the base structure, a data type of the project or a library. */
+      extends: z.string().min(1).optional(),
       variables: z
         .array(
           z

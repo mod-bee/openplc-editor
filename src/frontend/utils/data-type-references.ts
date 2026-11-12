@@ -79,6 +79,10 @@ export function findAllReferencesToDataType(
 
   dataTypes.forEach((dataType) => {
     if (dataType.derivation === 'structure') {
+      // A structure that EXTENDS it (CODESYS STRUCT EXTENDS).
+      if (dataType.extends !== undefined && nameMatches(dataType.extends, typeName)) {
+        references.push({ kind: 'data-type-base-type', container: dataType.name })
+      }
       dataType.variable.forEach((field) => {
         if (variableTypeReferencesDataType(field.type, typeName)) {
           references.push({ kind: 'data-type-field', container: dataType.name, variableName: field.name })
@@ -148,7 +152,10 @@ export function renameDataTypeInDataType(dataType: PLCDataType, oldName: string,
       changed = true
       return { ...field, type: nextType }
     })
-    return changed ? { ...dataType, variable: fields } : null
+    // The base of a structure that EXTENDS the renamed one.
+    const base = dataType.extends !== undefined && nameMatches(dataType.extends, oldName) ? newName : dataType.extends
+    if (base !== dataType.extends) changed = true
+    return changed ? { ...dataType, variable: fields, ...(base !== undefined ? { extends: base } : {}) } : null
   }
   if (dataType.derivation === 'array') {
     const nextBaseType = renameDataTypeInVariableType(dataType.baseType, oldName, newName)

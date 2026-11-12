@@ -324,6 +324,7 @@ function projectDataType(dt: SchemaDataType): TranspileDataType {
   return {
     name: dt.name,
     derivation: 'structure',
+    ...(dt.extends !== undefined && dt.extends !== '' ? { extends: dt.extends } : {}),
     variable: dt.variable.map(projectStructureVariable),
   }
 }

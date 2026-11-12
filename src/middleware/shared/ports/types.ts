@@ -114,7 +114,17 @@ export interface PLCGlobalVariableList {
 }
 
 export type PLCDataType =
-  | { name: string; derivation: 'structure'; variable: PLCStructureVariable[] }
+  | {
+      name: string
+      derivation: 'structure'
+      /**
+       * The structure it EXTENDS (CODESYS "Data Structure: STRUCT",
+       * `TYPE D EXTENDS B : STRUCT`); absent for a plain structure. `variable`
+       * lists only its own members: the base's come with the base.
+       */
+      extends?: string
+      variable: PLCStructureVariable[]
+    }
   | {
       name: string
       derivation: 'enumerated'

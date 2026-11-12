@@ -100,3 +100,22 @@ describe('StructureDataType with two structure types open', () => {
     expect(fieldsOf('Pump')).toEqual(['Flow'])
   })
 })
+
+describe('StructureDataType with a base structure (STRUCT EXTENDS)', () => {
+  beforeEach(() => {
+    store = createTestStore()
+    seedBoth()
+    getState().projectActions.updateDatatype('Pump', {
+      name: 'Pump',
+      derivation: 'structure',
+      extends: 'Motor',
+      variable: [field('Flow')],
+    })
+  })
+
+  it('shows the base it extends, and none for a plain structure', () => {
+    const { motor, pump } = renderBoth()
+    expect(pump.getByLabelText('Structure base').textContent).toContain('Motor')
+    expect(motor.getByLabelText('Structure base').textContent).toContain('None')
+  })
+})

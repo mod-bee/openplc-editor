@@ -62,8 +62,14 @@ function generateDataType(state: DataTypeState, datatypeName: string): void {
       : []),
     ['  ', []],
     [dt.name, [tagname, 'name']],
-    [' : ', []],
   ]
+  // STRUCT EXTENDS (CODESYS "Data Structure: STRUCT"): `TYPE D EXTENDS B : STRUCT`,
+  // the base declared first.
+  if (dt.derivation === 'structure' && dt.extends !== undefined) {
+    if (state.byName.has(dt.extends)) generateDataType(state, dt.extends)
+    chunks.push([' EXTENDS ', []], [dt.extends, [tagname, 'extends']])
+  }
+  chunks.push([' : ', []])
 
   if (dt.derivation === 'directly-derived') {
     // Branch on whether the base is elementary or another data type.
