@@ -345,6 +345,31 @@ describe('projecting the store shape into the transpiler IR', () => {
     expect(text).toContain('  Mode : (AUTO, HAND);\n')
   })
 
+  it("writes an enumerated type's attribute pragmas ahead of its declaration", () => {
+    const ir = fromPortShape({
+      dataTypes: [
+        {
+          name: 'Qos',
+          derivation: 'enumerated',
+          attributes: ['qualified_only', 'strict'],
+          values: [{ description: 'AtMostOnce' }, { description: 'AtLeastOnce' }],
+        },
+        { name: 'Mode', derivation: 'enumerated', values: [{ description: 'AUTO' }] },
+      ],
+      pous: [],
+      configurations: EMPTY_RESOURCE,
+    })
+    expect(ir.dataTypes[0]).toMatchObject({ attributes: ['qualified_only', 'strict'] })
+    expect(ir.dataTypes[1]).not.toHaveProperty('attributes')
+    const text = generateDataTypes(ir)
+      .map(([chunk]) => chunk)
+      .join('')
+    expect(text).toContain(
+      "  {attribute 'qualified_only'}\n  {attribute 'strict'}\n  Qos : (AtMostOnce, AtLeastOnce);\n",
+    )
+    expect(text).not.toMatch(/attribute[^\n]*\n {2}Mode/)
+  })
+
   it('projects data types into the scalar shapes the schema side uses', () => {
     const { dataTypes } = fromPortShape(fullProject())
 

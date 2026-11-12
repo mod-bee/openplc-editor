@@ -267,6 +267,7 @@ function projectDataType(dt: PLCDataType): TranspileDataType {
         v.value ? { description: v.description, value: v.value } : { description: v.description },
       ),
       ...(dt.initialValue ? { initialValue: dt.initialValue } : {}),
+      ...(dt.attributes?.length ? { attributes: [...dt.attributes] } : {}),
     }
   }
   return {

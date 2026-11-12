@@ -298,6 +298,7 @@ function toDataType(spec: SpecDataType): PLCDataType {
       derivation: 'enumerated',
       ...(spec.baseType ? { baseType: normalizeEnumBaseType(spec.baseType) ?? spec.baseType } : {}),
       initialValue: spec.initialValue ?? '',
+      ...(spec.attributes?.length ? { attributes: [...spec.attributes] } : {}),
       values: spec.values.map((entry) =>
         typeof entry === 'string'
           ? { description: entry }

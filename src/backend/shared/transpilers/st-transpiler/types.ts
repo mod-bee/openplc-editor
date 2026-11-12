@@ -132,6 +132,8 @@ export type TranspileDataType =
       baseType?: string
       values: { description: string; value?: string }[]
       initialValue?: string
+      /** Attribute pragmas (CODESYS), written before the declaration: `qualified_only`, `strict`. */
+      attributes?: string[]
     }
   | {
       name: string

@@ -249,3 +249,26 @@ describe('parseDataTypeFromText errors', () => {
     expect(errorFor('TYPE\n  MyInt : INT;\nEND_TYPE\n')).toMatch(/alias for another type/)
   })
 })
+
+describe('attribute pragmas on an enumeration (CODESYS qualified_only, strict)', () => {
+  it('reads them before TYPE or before the declaration, and writes them back before the declaration', () => {
+    for (const text of [
+      "{attribute 'qualified_only'}\n{attribute 'strict'}\nTYPE\n  E_Mode : (Stopped, Running) := Stopped;\nEND_TYPE\n",
+      "TYPE\n  {attribute 'qualified_only'}\n  {attribute 'strict'}\n  E_Mode : (Stopped, Running) := Stopped;\nEND_TYPE\n",
+    ]) {
+      const parsed = parseDataTypeFromText(text, 'E_Mode')
+      if (!('dataType' in parsed) || !parsed.dataType) throw new Error('not parsed')
+      expect(parsed.dataType).toMatchObject({ derivation: 'enumerated', attributes: ['qualified_only', 'strict'] })
+      const written = serializeDataTypeToText(parsed.dataType)
+      expect(written).toBe(
+        "TYPE\n  {attribute 'qualified_only'}\n  {attribute 'strict'}\n  E_Mode : (Stopped, Running) := Stopped;\nEND_TYPE\n",
+      )
+      expect(parseDataTypeFromText(written, 'E_Mode')).toEqual(parsed)
+    }
+  })
+
+  it('leaves an enumeration without pragmas as it was', () => {
+    const parsed = parseDataTypeFromText('TYPE\n  E_Mode : (Stopped, Running);\nEND_TYPE\n', 'E_Mode')
+    expect('dataType' in parsed && parsed.dataType && 'attributes' in parsed.dataType).toBe(false)
+  })
+})

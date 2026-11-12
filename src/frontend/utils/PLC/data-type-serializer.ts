@@ -57,7 +57,9 @@ function renderEnumeratedLines(dt: Extract<PLCDataType, { derivation: 'enumerate
     .join(', ')
   const base = dt.baseType !== undefined && dt.baseType.trim() !== '' ? `${dt.baseType.trim()} ` : ''
   const initial = dt.initialValue ? ` := ${dt.initialValue}` : ''
-  return [`  ${dt.name} : ${base}(${values})${initial};`]
+  // Attribute pragmas go right before the declaration they decorate.
+  const pragmas = (dt.attributes ?? []).map((name) => `  {attribute '${name}'}`)
+  return [...pragmas, `  ${dt.name} : ${base}(${values})${initial};`]
 }
 
 function renderStructureLines(dt: Extract<PLCDataType, { derivation: 'structure' }>): string[] {

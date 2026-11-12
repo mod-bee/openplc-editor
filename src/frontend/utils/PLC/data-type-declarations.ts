@@ -153,6 +153,7 @@ function buildEnum(
   name: string,
   definition: StrucppNode,
   defaultValue: unknown,
+  pragmas: unknown,
 ): ParseDataTypeResult {
   const members = Array.isArray(definition.members) ? definition.members : []
   // A member's span covers `NAME := value`; the name is the text before `:=`,
@@ -180,6 +181,12 @@ function buildEnum(
         : ''
   const spelled = values.find((value) => value.description.toUpperCase() === initial.toUpperCase())
 
+  // `{attribute 'qualified_only'}` / `{attribute 'strict'}` before the type (CODESYS).
+  const attributes = (Array.isArray(pragmas) ? pragmas : [])
+    .map((pragma) => (isPlainObject(pragma) && typeof pragma.name === 'string' ? pragma.name.toLowerCase() : ''))
+    .filter((pragma): pragma is 'qualified_only' | 'strict' => pragma === 'qualified_only' || pragma === 'strict')
+    .filter((pragma, index, all) => all.indexOf(pragma) === index)
+
   return {
     dataType: {
       name,
@@ -187,6 +194,7 @@ function buildEnum(
       ...(baseType !== '' ? { baseType } : {}),
       values,
       initialValue: spelled?.description ?? initial,
+      ...(attributes.length > 0 ? { attributes } : {}),
     },
   }
 }
@@ -290,7 +298,7 @@ export function parseDataTypeFromText(content: string, expectedName?: string): P
       result = buildStructure(content, starts, name, definition)
       break
     case 'EnumDefinition':
-      result = buildEnum(content, starts, name, definition, declaration.defaultValue)
+      result = buildEnum(content, starts, name, definition, declaration.defaultValue, declaration.attributes)
       break
     case 'ArrayDefinition':
       result = buildArray(content, starts, name, definition, declaration.defaultValue)

@@ -249,6 +249,11 @@ const dataTypeSchema = z.discriminatedUnion('derivation', [
        * base type, e.g. `USINT`. Omitted for a plain enumeration.
        */
       baseType: z.string().min(1).optional(),
+      /**
+       * Attribute pragmas (CODESYS): `qualified_only` (values always written
+       * `E_Type.Value`), `strict` (no arithmetic, no integer assigned).
+       */
+      attributes: z.array(z.enum(['qualified_only', 'strict'])).optional(),
       /** A name, or `{ name, value }` for a named value with an explicit value. */
       values: z
         .array(

@@ -33,6 +33,7 @@ export function describeDataType(dataType: PLCDataType): Record<string, unknown>
         value.value ? { name: value.description, value: value.value } : value.description,
       ),
       ...(dataType.initialValue ? { initialValue: dataType.initialValue } : {}),
+      ...(dataType.attributes?.length ? { attributes: dataType.attributes } : {}),
     }
   }
   if (dataType.derivation === 'structure') {

@@ -56,6 +56,10 @@ function generateDataType(state: DataTypeState, datatypeName: string): void {
 
   const tagname = ComputeDataTypeName(dt.name)
   const chunks: ProgramChunk[] = [
+    // Attribute pragmas go right before the declaration they decorate.
+    ...(dt.derivation === 'enumerated'
+      ? (dt.attributes ?? []).map((name): ProgramChunk => [`  {attribute '${name}'}\n`, []])
+      : []),
     ['  ', []],
     [dt.name, [tagname, 'name']],
     [' : ', []],

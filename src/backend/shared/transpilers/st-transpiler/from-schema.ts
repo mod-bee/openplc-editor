@@ -317,6 +317,7 @@ function projectDataType(dt: SchemaDataType): TranspileDataType {
         v.value ? { description: v.description, value: v.value } : { description: v.description },
       ),
       ...(dt.initialValue ? { initialValue: dt.initialValue } : {}),
+      ...(dt.attributes?.length ? { attributes: [...dt.attributes] } : {}),
     }
   }
   // structure

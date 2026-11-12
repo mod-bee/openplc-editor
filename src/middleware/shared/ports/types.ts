@@ -127,6 +127,12 @@ export type PLCDataType =
       initialValue?: string
       /** `value` is a member's explicit value (an integer literal), when it has one. */
       values: Array<{ description: string; value?: string }>
+      /**
+       * Attribute pragmas on the type (CODESYS): `qualified_only` (a value is
+       * always written `E_Type.Value`) and `strict` (no arithmetic, no
+       * integer assigned to it). Written `{attribute 'x'}` before the type.
+       */
+      attributes?: Array<'qualified_only' | 'strict'>
     }
   | {
       name: string
