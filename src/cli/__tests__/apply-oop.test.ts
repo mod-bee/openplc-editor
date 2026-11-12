@@ -202,7 +202,8 @@ describe('interfaces, methods and inheritance in a library project', () => {
     // Pins as the library declared them (IEC names are case-insensitive; see stlib-to-system-library).
     expect(pou('OM_VSD')?.variables.find((v) => v.name === 'Start')?.edge).toBe('R_EDGE')
     expect(pou('OP_PUMP')?.executionControl).toBe(true)
-    expect(pou('OM_VSD')?.methods?.map((m) => m.name)).toEqual(['CODE', 'ISRUNNING'])
+    // As declared, like the pins.
+    expect(pou('OM_VSD')?.methods?.map((m) => m.name)).toEqual(['Code', 'IsRunning'])
   })
 })
 

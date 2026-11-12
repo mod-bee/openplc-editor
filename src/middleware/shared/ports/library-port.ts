@@ -66,6 +66,8 @@ export interface StlibPinDTO {
 /** A method prototype as a `.stlib` manifest carries it. */
 export interface StlibMethodDTO {
   name: string
+  /** `name` as declared, when that differs (IEC names are case-insensitive). */
+  declaredName?: string
   returnType?: string
   inputs: StlibPinDTO[]
   outputs: StlibPinDTO[]

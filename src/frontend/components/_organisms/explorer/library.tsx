@@ -6,9 +6,9 @@ import { CloseIcon } from '../../../assets/icons/interface/Close'
 import { MagnifierIcon } from '../../../assets/icons/interface/Magnifier'
 import { useOpenPLCStore } from '../../../store'
 import { CreateLibraryManagerEditor } from '../../../store/slices/tabs/utils'
-import { buildLibraryTree, type LibraryTreeNode } from '../../../utils/library-tree'
+import { buildLibraryTree, type LibraryTreeNode, methodLabel, methodSignature } from '../../../utils/library-tree'
 import { InputWithRef } from '../../_atoms/input'
-import { LibraryFile, LibraryFolder, LibraryRoot } from '../../_molecules/library-tree'
+import { LibraryFile, LibraryFolder, LibraryMethod, LibraryRoot } from '../../_molecules/library-tree'
 
 type ILibraryFileProps = {
   label: string
@@ -281,11 +281,35 @@ function renderSystemTreeNode(
       </LibraryFolder>
     )
   }
-  const pou = node.pou
   return (
+    <SystemLibraryBlock key={`${ctx.keySuffix}-${node.pou.name}`} pou={node.pou} libraryName={libraryName} ctx={ctx} />
+  )
+}
+
+/**
+ * A block of an installed library: draggable, and, when it has methods, an
+ * arrow that shows one row per method below it.
+ */
+function SystemLibraryBlock({
+  pou,
+  libraryName,
+  ctx,
+}: {
+  pou: Extract<LibraryTreeNode, { kind: 'pou' }>['pou']
+  libraryName: string
+  ctx: {
+    type: string
+    language: string
+    selectedFileKey: string | null
+    setSelectedFileKey: (key: string) => void
+  }
+}) {
+  const [showMethods, setShowMethods] = useState(false)
+  const methods = pou.methods ?? []
+  const block = (
     <LibraryFile
-      key={`${ctx.keySuffix}-${pou.name}`}
       label={pou.name}
+      {...(methods.length > 0 ? { expanded: showMethods, onToggleExpanded: () => setShowMethods(!showMethods) } : {})}
       onClick={() => ctx.setSelectedFileKey(pou.name)}
       onSelect={() => ctx.setSelectedFileKey(pou.name)}
       isSelected={ctx.selectedFileKey === pou.name}
@@ -306,6 +330,15 @@ function renderSystemTreeNode(
         }
       }}
     />
+  )
+  if (methods.length === 0 || !showMethods) return block
+  return (
+    <>
+      {block}
+      {methods.map((method) => (
+        <LibraryMethod key={method.name} label={methodLabel(method)} signature={methodSignature(method)} />
+      ))}
+    </>
   )
 }
 

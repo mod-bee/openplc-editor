@@ -142,6 +142,7 @@ describe('stlibToSystemLibrary — declared spelling', () => {
             methods: [
               {
                 name: 'SETSPEED',
+                declaredName: 'SetSpeed',
                 inputs: [{ name: 'NEWSPEED', declaredName: 'newSpeed', type: 'INT' }],
                 outputs: [],
                 inouts: [],
@@ -157,6 +158,7 @@ describe('stlibToSystemLibrary — declared spelling', () => {
     expect(fb.name).toBe('FB_PUMP')
     expect(fb.variables.map((v) => v.name)).toEqual(['myPin', 'RUN', 'NotOff', 'Cmd'])
     expect(fb.methods?.[0].variables.map((v) => v.name)).toEqual(['newSpeed'])
+    expect(fb.methods?.[0].name).toBe('SetSpeed')
   })
 })
 

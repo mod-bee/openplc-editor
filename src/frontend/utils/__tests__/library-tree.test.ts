@@ -9,7 +9,7 @@
 import { describe, expect, it } from '@jest/globals'
 
 import type { SystemLibrary, SystemLibraryPou } from '../../../middleware/shared/ports/library-types'
-import { buildLibraryTree, libraryHasMatch } from '../library-tree'
+import { buildLibraryTree, libraryHasMatch, methodLabel, methodSignature } from '../library-tree'
 
 function makePou(overrides: Partial<SystemLibraryPou> & { name: string }): SystemLibraryPou {
   return {
@@ -166,5 +166,27 @@ describe('libraryHasMatch', () => {
     const lib = makeLibrary({ name: 'L', pous: [] })
 
     expect(libraryHasMatch(lib, () => true)).toBe(false)
+  })
+})
+
+describe('methodLabel / methodSignature', () => {
+  const record = {
+    name: 'Record',
+    returnType: 'BOOL',
+    variables: [
+      { name: 'DATA', class: 'input' as const, type: { definition: 'generic-type' as const, value: 'ANY' } },
+      { name: 'SIZE', class: 'output' as const, type: { definition: 'base-type' as const, value: 'DINT' } },
+      { name: 'COUNTER', class: 'inOut' as const, type: { definition: 'base-type' as const, value: 'DINT' } },
+    ],
+  }
+
+  it('labels a method with its result, or alone when it returns nothing', () => {
+    expect(methodLabel(record)).toBe('Record : BOOL')
+    expect(methodLabel({ name: 'Reset', variables: [] })).toBe('Reset')
+  })
+
+  it('writes the signature as a call is written', () => {
+    expect(methodSignature(record)).toBe('Record(DATA := ANY, SIZE => DINT, COUNTER := DINT) : BOOL')
+    expect(methodSignature({ name: 'Reset', variables: [] })).toBe('Reset()')
   })
 })

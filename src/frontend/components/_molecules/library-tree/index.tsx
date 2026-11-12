@@ -90,15 +90,35 @@ type ILibraryFileProps = ComponentPropsWithoutRef<'li'> & {
   label: string
   isSelected: boolean
   onSelect: () => void
+  /** Set for a block with methods: whether its method rows are shown. */
+  expanded?: boolean
+  onToggleExpanded?: () => void
 }
 
-const LibraryFile = ({ label, isSelected, onSelect, ...res }: ILibraryFileProps) => {
+const LibraryFile = ({ label, isSelected, onSelect, expanded, onToggleExpanded, ...res }: ILibraryFileProps) => {
   return (
     <li
       className={`${isSelected ? 'bg-slate-50 dark:bg-neutral-900' : ''} ml-2 cursor-pointer pl-2 hover:bg-slate-50 dark:hover:bg-neutral-900`}
       {...res}
     >
-      <div className='flex flex-row items-center gap-[6px] py-1 pl-6 '>
+      <div className={cn('flex flex-row items-center gap-[6px] py-1', onToggleExpanded ? 'pl-1' : 'pl-6')}>
+        {onToggleExpanded && (
+          <button
+            type='button'
+            aria-label={expanded ? 'Hide methods' : 'Show methods'}
+            aria-expanded={expanded}
+            className='h-4 w-4'
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleExpanded()
+            }}
+          >
+            <ArrowIcon
+              direction='right'
+              className={`h-4 w-4 stroke-brand-light transition-all ${expanded ? 'rotate-270 stroke-brand' : ''}`}
+            />
+          </button>
+        )}
         <div className='h-5 w-5'>
           <LibraryFileIcon size='sm' />
         </div>
@@ -115,4 +135,24 @@ const LibraryFile = ({ label, isSelected, onSelect, ...res }: ILibraryFileProps)
   )
 }
 
-export { LibraryFile, LibraryFolder, LibraryRoot }
+type ILibraryMethodProps = {
+  label: string
+  /** The method as a call is written, shown on hover. */
+  signature: string
+}
+
+/** A method of the block above it: shown, not dragged. */
+const LibraryMethod = ({ label, signature }: ILibraryMethodProps) => {
+  return (
+    <li className='ml-2 cursor-default pl-2' title={signature}>
+      <div className='flex flex-row items-center gap-[6px] py-0.5 pl-12'>
+        <span className='font-caption text-[10px] font-medium text-brand'>M</span>
+        <p className='ml-1 w-full truncate font-caption text-xs font-normal text-neutral-700 dark:text-neutral-400'>
+          {label}
+        </p>
+      </div>
+    </li>
+  )
+}
+
+export { LibraryFile, LibraryFolder, LibraryMethod, LibraryRoot }

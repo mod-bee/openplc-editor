@@ -17,7 +17,7 @@
  * lookups) receive exactly what they did before hierarchy support.
  */
 
-import type { SystemLibrary, SystemLibraryPou } from '../../middleware/shared/ports/library-types'
+import type { SystemLibrary, SystemLibraryMethod, SystemLibraryPou } from '../../middleware/shared/ports/library-types'
 
 export type LibraryTreeNode =
   | { kind: 'folder'; label: string; children: LibraryTreeNode[] }
@@ -94,4 +94,28 @@ function sortNode(node: LibraryTreeNode): void {
  */
 export function libraryHasMatch(library: SystemLibrary, predicate: (pou: SystemLibraryPou) => boolean): boolean {
   return library.pous.some(predicate)
+}
+
+const PARAMETER_ARROW: Record<SystemLibraryMethod['variables'][number]['class'], string> = {
+  input: ':=',
+  inOut: ':=',
+  output: '=>',
+  local: ':=',
+}
+
+/** A method's row in the tree: `Record : BOOL`, or `Reset` when it returns nothing. */
+export function methodLabel(method: SystemLibraryMethod): string {
+  return method.returnType === undefined ? method.name : `${method.name} : ${method.returnType}`
+}
+
+/**
+ * A method as a call is written, for the row's tooltip:
+ * `Record(DATA := ANY, COUNTER := DINT, SIZE => DINT) : BOOL`.
+ */
+export function methodSignature(method: SystemLibraryMethod): string {
+  const parameters = method.variables
+    .map((variable) => `${variable.name} ${PARAMETER_ARROW[variable.class]} ${variable.type.value}`)
+    .join(', ')
+  const result = method.returnType === undefined ? '' : ` : ${method.returnType}`
+  return `${method.name}(${parameters})${result}`
 }

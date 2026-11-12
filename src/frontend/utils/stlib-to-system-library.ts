@@ -180,7 +180,7 @@ function classFromDirection(d: 'input' | 'output' | 'inout'): SystemLibraryVaria
 /** A method prototype, its parameters as pins. */
 function toMethod(method: StlibMethodDTO): SystemLibraryMethod {
   return {
-    name: method.name,
+    name: method.declaredName ?? method.name,
     ...(method.returnType !== undefined ? { returnType: method.returnType } : {}),
     variables: [
       ...method.inputs.map((p) => ({ name: pinName(p), class: 'input' as const, type: typeRef(p.type) })),
