@@ -176,9 +176,10 @@ export function buildBlockVariant(input: BuildBlockVariantInput): BuildBlockVari
   if (blockLibraryType === 'system') {
     if (!blockLibrary || !pouName)
       return { ok: false, reason: 'malformed-ref', libraryType: 'system', blockRef: input.blockRef }
+    // IEC names ignore case (6.1.2): FB_MqttClient is FB_MQTTCLIENT.
     const libraryPou = input.systemLibraries
       .find((library) => library.name === blockLibrary)
-      ?.pous.find((pou) => pou.name === pouName)
+      ?.pous.find((pou) => pou.name.toUpperCase() === pouName.toUpperCase())
     if (!libraryPou) return { ok: false, reason: 'unknown-pou', libraryType: 'system', blockRef: input.blockRef }
     if (libraryPou.isAbstract === true) {
       return { ok: false, reason: 'abstract', libraryType: 'system', blockRef: input.blockRef }
@@ -206,7 +207,7 @@ export function buildBlockVariant(input: BuildBlockVariantInput): BuildBlockVari
 
   if (blockLibraryType === 'user') {
     if (!blockLibrary) return { ok: false, reason: 'malformed-ref', libraryType: 'user', blockRef: input.blockRef }
-    const library = input.userLibraries.find((entry) => entry.name === blockLibrary)
+    const library = input.userLibraries.find((entry) => entry.name.toUpperCase() === blockLibrary.toUpperCase())
     if (!library) return { ok: false, reason: 'unknown-library', libraryType: 'user', blockRef: input.blockRef }
     const pou = input.pous.find((entry) => entry.name === library.name)
     if (!pou) return { ok: false, reason: 'unknown-pou', libraryType: 'user', blockRef: input.blockRef }

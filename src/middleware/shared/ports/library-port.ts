@@ -85,6 +85,8 @@ export interface StlibArchiveDTO {
     isBuiltin: boolean
     functions: Array<{
       name: string
+      /** `name` as the library declared it, when that differs. */
+      declaredName?: string
       returnType: string
       parameters: Array<StlibPinDTO & { direction: 'input' | 'output' | 'inout' }>
       variadic?: { minArgs: number }
@@ -93,6 +95,8 @@ export interface StlibArchiveDTO {
     }>
     functionBlocks: Array<{
       name: string
+      /** `name` as the library declared it (`FB_MqttClient` for `FB_MQTTCLIENT`), when that differs. */
+      declaredName?: string
       inputs: Array<StlibPinDTO & { edge?: 'R_EDGE' | 'F_EDGE' }>
       outputs: StlibPinDTO[]
       inouts: StlibPinDTO[]
@@ -130,6 +134,8 @@ export interface StlibArchiveDTO {
     }>
     types: Array<{
       name: string
+      /** `name` as the library declared it, when that differs. */
+      declaredName?: string
       kind: 'struct' | 'enum' | 'alias'
       baseType?: string
       documentation?: string

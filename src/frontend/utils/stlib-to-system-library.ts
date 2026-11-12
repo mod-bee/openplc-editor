@@ -152,14 +152,14 @@ function toDataTypes(types: readonly LibraryTypeDTO[]): PLCDataType[] {
   for (const type of types) {
     if (type.kind === 'struct' && type.fields) {
       out.push({
-        name: type.name,
+        name: type.declaredName ?? type.name,
         derivation: 'structure',
         variable: type.fields.map((field) => ({ name: field.declaredName ?? field.name, type: fieldType(field) })),
       })
     } else if (type.kind === 'enum' && type.members) {
       const names = type.declaredMembers ?? type.members
       out.push({
-        name: type.name,
+        name: type.declaredName ?? type.name,
         derivation: 'enumerated',
         ...(type.baseType !== undefined ? { baseType: type.baseType } : {}),
         values: names.map((description, i) => {
@@ -214,7 +214,8 @@ export function stlibToSystemLibrary(
       { name: 'OUT', class: 'output' as const, type: typeRef(fn.returnType) },
     ]
     pous.push({
-      name: fn.name,
+      // As the library declared it: IEC names ignore case, and every lookup does too.
+      name: fn.declaredName ?? fn.name,
       type: 'function',
       language: 'st',
       variables,
@@ -266,7 +267,7 @@ export function stlibToSystemLibrary(
     // wins — rather than by giving native blocks a private namespace.
     const nativeLanguage = fb.implementation
     pous.push({
-      name: fb.name,
+      name: fb.declaredName ?? fb.name,
       type: 'function-block',
       language: nativeLanguage ?? 'st',
       variables,
