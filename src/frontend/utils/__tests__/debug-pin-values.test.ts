@@ -13,6 +13,17 @@ describe('blockPinVariableName', () => {
     expect(blockPinVariableName(fn, 'out', 'output')).toBe('_TMP_ADD7_OUT')
     expect(blockPinVariableName(fn, 'IN1', 'input')).toBeUndefined()
   })
+
+  it("reads a method box's outputs from the call's temporaries, not from its instance", () => {
+    const method = {
+      variant: { name: 'Record', type: 'method' },
+      variable: { name: 'sp' },
+      numericId: '12',
+    }
+    expect(blockPinVariableName(method, 'OUT', 'output')).toBe('_TMP_RECORD12_OUT')
+    expect(blockPinVariableName(method, 'nBadClause', 'output')).toBe('_TMP_RECORD12_NBADCLAUSE')
+    expect(blockPinVariableName(method, 'anyData', 'input')).toBeUndefined()
+  })
 })
 
 describe('formatDebugValue', () => {

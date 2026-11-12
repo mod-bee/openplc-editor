@@ -4,7 +4,11 @@ import { useGraphicalFocus } from '../../../../../../hooks/use-graphical-focus'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../../../store'
 import { scheduleFlowWriteBack } from '../../../../../../store/slices/shared/flow-writeback'
 import { hasLegacyInOutOutputHandle } from '../../../../../../utils/graphical/in-out-pin-rules'
-import { findLibraryPou, libraryVariantDiverges } from '../../../../../../utils/PLC/library-block-divergence'
+import {
+  findLibraryPou,
+  libraryVariantDiverges,
+  methodVariantDiverges,
+} from '../../../../../../utils/PLC/library-block-divergence'
 import { BlockNodeData } from '../../../../../_atoms/graphical-editor/fbd/block'
 import { BlockVariant } from '../../../../../_atoms/graphical-editor/types/block'
 import { FBDBody } from '../../../../../_molecules/graphical-editor/fbd'
@@ -51,6 +55,14 @@ export default function FbdEditor() {
     for (const node of flow.rung.nodes) {
       const variant = (node.data as BlockNodeData<BlockVariant>)?.variant
       if (!variant) continue
+
+      // A method box: its method as its block declares it now.
+      if (variant.type === 'method') {
+        if (methodVariantDiverges(variant, { systemLibraries, userLibraries, pous })) {
+          divergences.push(node.id)
+        }
+        continue
+      }
 
       const libMatch = userLibraries.find((lib) => lib.name === variant.name && lib.type === variant.type)
       const originalPou = libMatch ? pous.find((pou) => pou.name === libMatch.name) : undefined

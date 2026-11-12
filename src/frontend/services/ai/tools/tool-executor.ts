@@ -13,6 +13,7 @@ import {
 import { scheduleFlowWriteBack } from '../../../store/slices/shared/flow-writeback'
 import { computeHunks } from '../../../utils/ai-diff-review'
 import { isLegalIdentifier } from '../../../utils/keywords'
+import { resolveMethodBox } from '../../../utils/PLC/block-variant'
 import { getVariableRestrictionType, validateVariableType } from '../../../utils/PLC/validate-variable-type'
 import { isGraphicalLanguage } from '../context-collector'
 import { extractPouST, invalidateSTCache, type ProjectStTranspiler, transpileProjectToST } from '../graphical-context'
@@ -681,6 +682,16 @@ function resolveBlockVariant(
   libraries: { system: SystemLibrary[]; user: UserLibrary[] },
   pous: PLCPou[],
 ): BlockVariant | undefined {
+  // `<block>.<method>`: a method box, called on the element's instanceName.
+  if (blockType.includes('.')) {
+    const method = resolveMethodBox(blockType, {
+      variables: [],
+      systemLibraries: libraries.system,
+      userLibraries: libraries.user,
+      pous,
+    })
+    return method === undefined ? undefined : ({ ...method.variant, documentation: '' } as BlockVariant)
+  }
   const userLibrary = libraries.user.find((lib) => lib.name.toLowerCase() === blockType.toLowerCase())
   const userPou = userLibrary
     ? pous.find((pou) => pou.name.toLowerCase() === userLibrary.name.toLowerCase())

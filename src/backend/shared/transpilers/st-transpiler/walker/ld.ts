@@ -531,6 +531,7 @@ function getUsedEnoForNode(state: WalkerState, nodeId: string): string | null {
   if (data.blockKind === 'function-block-instance') {
     return `${data.instanceName}.ENO`
   }
+  // A function's, and a method's: the call binds ENO to its temp.
   return `_TMP_${data.typeName}${data.numericId}_ENO`
 }
 
@@ -904,7 +905,7 @@ function visitBlockOutput(state: WalkerState, node: RFNode, edge: RFEdge, order:
     const out = requestedOutput
     return leafNode([[`${data.instanceName}.${out}`, [state.tagName, 'block', locId(node), 'output', out]]])
   }
-  // function path
+  // function and method path
   if (!order) emitFunctionCall(state, node, data)
   const out = requestedOutput
   const tempName = `_TMP_${data.typeName}${data.numericId}_${out}`
@@ -933,10 +934,18 @@ function emitFunctionBlockCall(state: WalkerState, node: RFNode, data: BlockData
   emitBlockConsumers(state, node.id)
 }
 
+/**
+ * A function call, or a method call (`<instance>.<method>(...)`, IEC 61131-3
+ * 6.6.5.4): the result to `_TMP_<name><numericId>_OUT`, each other output
+ * bound with `=>` to its own temp. A method's outputs are not members of the
+ * instance, so they can only be read through the call. A method without a
+ * result is a call statement.
+ */
 function emitFunctionCall(state: WalkerState, node: RFNode, data: BlockData): void {
   if (state.emittedBlocks.has(node.id)) return
   state.emittedBlocks.add(node.id)
 
+  const isMethod = data.blockKind === 'method'
   const info: Location = [state.tagName, 'block', locId(node)]
   const wiredInputs = data.inputs.filter((name) => firstIncomingForHandle(state, node.id, name) !== undefined)
   // Positional only when every pin is wired. An extensible block used to count
@@ -946,7 +955,8 @@ function emitFunctionCall(state: WalkerState, node: RFNode, data: BlockData): vo
   // K = 1. Named, the gap stays a gap — harmless on ADD, an error STruC++
   // reports on MUX, which `check --lint` explains.
   const allInputConnected = wiredInputs.length === data.inputs.length
-  const useNamedArgs = data.outputs.length > 1 || !allInputConnected
+  // A method is always called formally: an omitted input takes its default.
+  const useNamedArgs = isMethod || data.outputs.length > 1 || !allInputConnected
 
   const recurseOrdered = data.executionOrder > 0
   const parts = buildInputArgs(state, node, data, useNamedArgs, recurseOrdered)
@@ -964,7 +974,7 @@ function emitFunctionCall(state: WalkerState, node: RFNode, data: BlockData): vo
       name: tempName,
       type: tempType,
     })
-    const isPrimary = data.outputs.length === 1 || out === '' || out === 'OUT'
+    const isPrimary = isMethod ? out === 'OUT' : data.outputs.length === 1 || out === '' || out === 'OUT'
     if (isPrimary && primaryName === null) {
       primaryName = tempName
       primaryFormal = out
@@ -975,11 +985,17 @@ function emitFunctionCall(state: WalkerState, node: RFNode, data: BlockData): vo
       ])
     }
   }
-  if (primaryName === null) return
+  if (primaryName === null && !isMethod) return
 
   state.program.push([state.currentIndent, []])
-  state.program.push([primaryName, [...info, 'output', 0]])
-  state.program.push([' := ', []])
+  if (primaryName !== null) {
+    state.program.push([primaryName, [...info, 'output', 0]])
+    state.program.push([' := ', []])
+  }
+  if (isMethod) {
+    state.program.push([data.instanceName, [...info, 'instance']])
+    state.program.push(['.', []])
+  }
   state.program.push([data.typeName, [...info, 'type']])
   state.program.push(['(', []])
   for (let i = 0; i < parts.length; i++) {

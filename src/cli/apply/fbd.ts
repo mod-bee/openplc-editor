@@ -9,7 +9,7 @@
 
 import type { OpenPLCStore } from '@root/frontend/store'
 import { buildFbdGraph, type FbdGraphNode } from '@root/frontend/store/slices/fbd/utils/build-graph'
-import { buildBlockVariant } from '@root/frontend/utils/PLC/block-variant'
+import { buildBlockVariant, methodInstanceError } from '@root/frontend/utils/PLC/block-variant'
 
 import { unresolvedHandles } from './handles'
 import type { SpecFbdBody } from './schema'
@@ -138,7 +138,16 @@ export function applyFbdBody(store: OpenPLCStore, pouName: string, body: SpecFbd
       // library's own `variables` array, which the store has frozen. Growing an
       // extensible block writes to it, and a placed block should not alias the
       // library's array in any case.
-      variant = structuredClone(built.variant)
+      const placed = structuredClone(built.variant)
+      variant = placed
+      if (placed.type === 'method') {
+        const declared = state.project.data.pous.find((pou) => pou.name === pouName)?.interface?.variables ?? []
+        const problem = methodInstanceError(spec.instance, placed, declared, state.project.data.pous)
+        if (problem !== undefined) {
+          errors.push(`POU "${pouName}": node "${spec.label}" — ${problem}.`)
+          continue
+        }
+      }
     }
 
     nodes.push({

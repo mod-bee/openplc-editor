@@ -15,7 +15,7 @@ export type ContactVariant = 'default' | 'negated' | 'risingEdge' | 'fallingEdge
 export type CoilVariant = ContactVariant | 'set' | 'reset'
 export type PowerRailSide = 'left' | 'right'
 export type VariableVariant = 'input' | 'output' | 'inout'
-export type BlockKind = 'function' | 'function-block' | 'function-block-instance'
+export type BlockKind = 'function' | 'function-block' | 'function-block-instance' | 'method'
 
 export interface ContactData {
   variant: ContactVariant
@@ -50,6 +50,8 @@ export interface ContinuationData {
 export interface BlockData {
   typeName: string
   blockKind: BlockKind
+  /** `method` only: the function block type declaring the method. */
+  owner?: string
   instanceName: string
   /** Editor-assigned numeric localId — string of digits.  Feeds the
    *  `_TMP_<type><numericId>_<param>` temp-var naming and the
@@ -210,8 +212,13 @@ export function asBlockData(data: Record<string, unknown>): BlockData | null {
   const typeName = asString(variant['name'])
   if (typeName === null) return null
   const rawKind = variant['type']
+  // A method box calls a method of the block's instance (IEC 61131-3 6.6.5.4).
   const blockKind: BlockKind =
-    rawKind === 'function-block' || rawKind === 'function-block-instance' ? 'function-block-instance' : 'function'
+    rawKind === 'method'
+      ? 'method'
+      : rawKind === 'function-block' || rawKind === 'function-block-instance'
+        ? 'function-block-instance'
+        : 'function'
   const inputs: string[] = []
   const outputs: string[] = []
   const variables = variant['variables']
@@ -242,9 +249,11 @@ export function asBlockData(data: Record<string, unknown>): BlockData | null {
       : typeof rawNumericId === 'number' && Number.isFinite(rawNumericId)
         ? String(rawNumericId)
         : ''
+  const owner = blockKind === 'method' ? asString(variant['owner']) : null
   return {
     typeName,
     blockKind,
+    ...(owner !== null ? { owner } : {}),
     instanceName: readVariableName(data['variable']),
     numericId,
     executionOrder: asNumber(data['executionOrder']) ?? 0,

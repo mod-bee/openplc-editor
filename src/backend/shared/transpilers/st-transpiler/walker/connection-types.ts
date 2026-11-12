@@ -165,7 +165,10 @@ export function computeConnectionTypes(body: RFBody, ctx: TypeContext): Map<stri
       case 'block': {
         const data = asBlockData(node.data)
         if (data === null) break
-        const infos = ctx.resolveBlock(data.typeName)
+        // A method's signature is its block's: keyed `<block>.<method>`.
+        const infos = ctx.resolveBlock(
+          data.blockKind === 'method' && data.owner !== undefined ? `${data.owner}.${data.typeName}` : data.typeName,
+        )
         if (infos !== null) {
           computeBlockInputTypes(graph, pt, node, data, infos)
         } else {

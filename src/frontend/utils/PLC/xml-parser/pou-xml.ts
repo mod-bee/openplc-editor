@@ -113,6 +113,7 @@ export function parsePousXml(
     if (body.LD !== undefined) {
       const { body: ldBody, warnings: ldWarnings } = parseLadderXml(name, body.LD, ladderContext, executeStCode)
       warnings.push(...ldWarnings)
+      fillMethodOwners(ldBody.rungs, variables)
       pous.push({
         name,
         pouType: type,
@@ -125,6 +126,7 @@ export function parsePousXml(
     if (body.FBD !== undefined) {
       const { body: fbdBody, warnings: fbdWarnings } = parseFbdXml(name, body.FBD, executeStCode)
       warnings.push(...fbdWarnings)
+      fillMethodOwners([fbdBody.rung], variables)
       pous.push({
         name,
         pouType: type,
@@ -142,4 +144,24 @@ export function parsePousXml(
   }
 
   return { pous, warnings }
+}
+
+/**
+ * A method box imported as `instance.Method` names its block only through its
+ * instance: the block is the instance's declared type.
+ */
+function fillMethodOwners(
+  rungs: ReadonlyArray<{ nodes?: unknown }>,
+  variables: ReadonlyArray<{ name: string; type: { value: string } }>,
+): void {
+  for (const rung of rungs) {
+    for (const node of Array.isArray(rung.nodes) ? rung.nodes : []) {
+      const data = (node as { data?: { variant?: { type?: string; owner?: string }; variable?: { name?: string } } })
+        .data
+      if (data?.variant?.type !== 'method' || data.variant.owner) continue
+      const instance = data.variable?.name?.toUpperCase()
+      const declared = variables.find((variable) => variable.name.toUpperCase() === instance)
+      if (declared) data.variant.owner = declared.type.value
+    }
+  }
 }

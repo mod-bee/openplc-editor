@@ -22,7 +22,9 @@ export const isFunctionBlockVariableInUse = (variableName: string, allRungs: Arr
         const blockNode = node as BlockNode
         const blockVariableName = blockNode.data.variable?.name?.toLowerCase()
 
-        if (blockVariableName === normalizedName && blockNode.data.variant.type === 'function-block') {
+        // A method box calls the instance too (IEC 61131-3 6.6.5.4): it keeps it declared.
+        const kind = blockNode.data.variant.type
+        if (blockVariableName === normalizedName && (kind === 'function-block' || kind === 'method')) {
           return true
         }
       }

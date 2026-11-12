@@ -55,6 +55,8 @@ export type BlockVariant = {
   variables: { id?: string; name: string; class: string; type: { definition: string; value: string } }[]
   documentation: string
   extensible: boolean
+  /** `method` only: the function block type declaring the method. */
+  owner?: string
 }
 export type LadderBlockConnectedVariables = {
   handleId: string

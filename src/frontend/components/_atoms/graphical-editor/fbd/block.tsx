@@ -1,7 +1,7 @@
 import type { SystemLibrary } from '@root/middleware/shared/ports/library-types'
 import { FocusEvent, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { PLCVariable } from '../../../../../middleware/shared/ports/types'
+import type { PLCPou, PLCVariable } from '../../../../../middleware/shared/ports/types'
 import { RefreshIcon } from '../../../../assets/icons/interface/Refresh'
 import { REVEAL_HIGHLIGHT, useRevealedPin, useRevealHighlight } from '../../../../hooks/use-reveal-highlight'
 import { isBlockInstanceInScope } from '../../../../services/graphical-scope'
@@ -15,6 +15,8 @@ import {
 } from '../../../../utils/graphical/in-out-pin-rules'
 import { isLegalIdentifier } from '../../../../utils/keywords'
 import { newUuid } from '../../../../utils/new-uuid'
+import { isInstanceOfBlockType } from '../../../../utils/PLC/array-variable-utils'
+import { resolveMethodBox } from '../../../../utils/PLC/block-variant'
 import { findLibraryPou } from '../../../../utils/PLC/library-block-divergence'
 import { toast } from '../../../_features/[app]/toast/use-toast'
 import { useBoundEditorModel, useBoundPou } from '../../../_features/[workspace]/editor/graphical/active-context'
@@ -148,7 +150,18 @@ export const BlockNodeElement = <T extends object>({
       },
     )
 
-    const libraryBlock = libraries.system.flatMap((block) => block.pous).find((pou) => pou.name === blockNameValue)
+    // `inst.Method`, as CODESYS names a method box: the instance's block's method.
+    const methodBox = blockNameValue.includes('.')
+      ? resolveMethodBox(blockNameValue, {
+          variables: pou?.interface?.variables ?? [],
+          systemLibraries: libraries.system,
+          userLibraries: libraries.user,
+          pous: project.data.pous,
+        })
+      : undefined
+    const libraryBlock = methodBox
+      ? (methodBox.variant as BlockVariant)
+      : libraries.system.flatMap((block) => block.pous).find((pou) => pou.name === blockNameValue)
 
     if (!libraryBlock) {
       setBlockNameValue(validBlockNameValue)
@@ -157,7 +170,7 @@ export const BlockNodeElement = <T extends object>({
     }
 
     // Same reason as the ladder block: the library entry must travel with the project.
-    store.getState().libraryActions.ensureLibrariesForTypes([blockNameValue])
+    store.getState().libraryActions.ensureLibrariesForTypes([methodBox?.variant.owner ?? blockNameValue])
 
     if (!pou || !rung || !node) return
 
@@ -171,10 +184,13 @@ export const BlockNodeElement = <T extends object>({
       return
     }
 
-    let variable = variables.selected
+    // A method box calls an instance declared elsewhere: it neither makes nor retypes one.
+    let variable = methodBox
+      ? variables.all.find((entry) => entry.name.toUpperCase() === (methodBox.instance ?? '').toUpperCase())
+      : variables.selected
     const variableIndex = variable ? variables.all.indexOf(variable) : -1
 
-    if (variable) {
+    if (variable && !methodBox) {
       let res: { ok: boolean; data?: unknown; message?: string; title?: string } = {
         ok: true,
         data: undefined,
@@ -496,7 +512,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
   const hasCreatedRef = useRef(false)
 
   useEffect(() => {
-    if (data.variable && data.variable.name !== '' && blockType === 'function-block') {
+    if (data.variable && data.variable.name !== '' && (blockType === 'function-block' || blockType === 'method')) {
       setBlockVariableValue(data.variable.name)
       hasCreatedRef.current = true
       return
@@ -504,6 +520,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
 
     if (inputVariableRef.current && selected && !hasCreatedRef.current) {
       switch (blockType) {
+        case 'method': {
+          // The instance is chosen, never made: the block it belongs to runs from its own call.
+          inputVariableRef.current.focus()
+          hasCreatedRef.current = true
+          return
+        }
         case 'function-block': {
           if (!data.variable || data.variable.name === '') {
             const { name, number } = checkVariableName(variables.all, (data.variant as BlockVariant).name.toUpperCase())
@@ -524,7 +546,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
    * Update wrongVariable state when the table of variables is updated
    */
   useEffect(() => {
-    if (blockType !== 'function-block') {
+    if (blockType !== 'function-block' && blockType !== 'method') {
       setWrongVariable(false)
       return
     }
@@ -542,7 +564,8 @@ const Block = <T extends object>(block: BlockProps<T>) => {
       // spelling. Ask the LSP, which resolves both, instead of calling it wrong.
       const instanceName = (node.data as BasicNodeData).variable?.name ?? ''
       if (instanceName.includes('.') || instanceName.includes('[')) {
-        const blockTypeName = (node.data as BlockNodeData<BlockVariant>).variant.name
+        const nodeVariant = (node.data as BlockNodeData<BlockVariant>).variant
+        const blockTypeName = nodeVariant.type === 'method' ? (nodeVariant.owner ?? '') : nodeVariant.name
         let cancelled = false
         void isBlockInstanceInScope(pouName, instanceName, blockTypeName).then((inScope) => {
           // `undefined` means the LSP could not answer; leave the block alone.
@@ -552,6 +575,13 @@ const Block = <T extends object>(block: BlockProps<T>) => {
           cancelled = true
         }
       }
+      setWrongVariable(true)
+      return
+    }
+
+    // A method box's instance is of the block declaring the method.
+    const ownVariant = (node.data as BlockNodeData<BlockVariant>).variant
+    if (ownVariant.type === 'method' && !isInstanceOfBlockType(variable, ownVariant.owner ?? '')) {
       setWrongVariable(true)
       return
     }
@@ -602,7 +632,10 @@ const Block = <T extends object>(block: BlockProps<T>) => {
       return
     }
 
-    const blockType = (node.data as BlockNodeData<BlockVariant>).variant.name
+    const nodeVariant = (node.data as BlockNodeData<BlockVariant>).variant
+    const isMethodBox = nodeVariant.type === 'method'
+    // The type the instance must be: the block's own, or for a method box the block declaring it.
+    const blockType = isMethodBox ? (nodeVariant.owner ?? '') : nodeVariant.name
 
     const findMatchingVariable = () =>
       variables.all.find(
@@ -640,7 +673,7 @@ const Block = <T extends object>(block: BlockProps<T>) => {
     } else {
       if (matchingVariable) {
         variableToLink = matchingVariable
-      } else if (createIfNotFound) {
+      } else if (createIfNotFound && !isMethodBox) {
         // An entry that can't be a new variable NAME — a member/array reference,
         // a typed literal (`T#500ms`), a reserved word — is bound to the block
         // verbatim as a constant/reference instead of erroring.
@@ -706,7 +739,25 @@ const Block = <T extends object>(block: BlockProps<T>) => {
     // interface comes from the library instead. The rebuild below REPLACES the
     // node rather than editing it, which is what a block growing a pin needs:
     // the canvas keeps the handles it registered against the old one.
-    const libPou = projectPou ?? libraryPouAsProjectPou(variant, libraries.system, pous)
+    // A method box: its block's method as it is declared now.
+    const methodNow =
+      variant.type === 'method'
+        ? resolveMethodBox(`${variant.owner ?? ''}.${variant.name}`, {
+            variables: [],
+            systemLibraries: libraries.system,
+            userLibraries: libraries.user,
+            pous,
+          })?.variant
+        : undefined
+    if (variant.type === 'method' && !methodNow) return
+    const libPou = methodNow
+      ? ({
+          name: methodNow.name,
+          pouType: 'method',
+          documentation: '',
+          interface: { variables: methodNow.variables },
+        } as unknown as PLCPou)
+      : (projectPou ?? libraryPouAsProjectPou(variant, libraries.system, pous))
     if (!libPou) return
 
     const blockVariant = node.data.variant as BlockVariant
@@ -771,7 +822,12 @@ const Block = <T extends object>(block: BlockProps<T>) => {
         x: node.position.x,
         y: node.position.y,
       },
-      variant: { name: libPou.name, type: blockVariant.type, variables: newNodeVariables },
+      variant: {
+        name: libPou.name,
+        type: blockVariant.type,
+        variables: newNodeVariables,
+        ...(blockVariant.type === 'method' ? { owner: blockVariant.owner, executionControl: true } : {}),
+      },
       executionControl: (node.data as BlockNodeData<BlockVariant>).executionControl,
     })
     updatedNewNode.data = {

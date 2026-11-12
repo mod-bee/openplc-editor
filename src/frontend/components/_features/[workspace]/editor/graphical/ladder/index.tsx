@@ -29,7 +29,11 @@ import { RungLadderState } from '../../../../../../store/slices/ladder'
 import { scheduleFlowWriteBack } from '../../../../../../store/slices/shared/flow-writeback'
 import { cn } from '../../../../../../utils/cn'
 import { hasLegacyInOutOutputHandle } from '../../../../../../utils/graphical/in-out-pin-rules'
-import { findLibraryPou, libraryVariantDiverges } from '../../../../../../utils/PLC/library-block-divergence'
+import {
+  findLibraryPou,
+  libraryVariantDiverges,
+  methodVariantDiverges,
+} from '../../../../../../utils/PLC/library-block-divergence'
 import { BlockNode, BlockNodeData } from '../../../../../_atoms/graphical-editor/ladder/block'
 import { CoilNode } from '../../../../../_atoms/graphical-editor/ladder/coil'
 import { ContactNode } from '../../../../../_atoms/graphical-editor/ladder/contact'
@@ -87,6 +91,14 @@ export default function LadderEditor() {
       for (const node of rung.nodes) {
         const variant = (node.data as BlockNodeData<BlockVariant>)?.variant
         if (!variant) continue
+
+        // A method box: its method as its block declares it now.
+        if (variant.type === 'method') {
+          if (methodVariantDiverges(variant, { systemLibraries, userLibraries, pous })) {
+            divergences.push(`${rung.id}:${node.id}`)
+          }
+          continue
+        }
 
         const libMatch = userLibraries.find((lib) => lib.name === variant.name && lib.type === variant.type)
         const originalPou = libMatch ? pous.find((pou) => pou.name === libMatch.name) : undefined

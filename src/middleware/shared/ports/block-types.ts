@@ -34,7 +34,9 @@ const blockVariantVariableSchema = BaseLibraryVariableSchema.extend({
 // never `.parse()`d — so this has no runtime effect on already-saved projects.
 const blockVariantSchema = BaseLibraryPouSchema.omit({ body: true, language: true }).extend({
   variables: z.array(blockVariantVariableSchema),
-  type: z.enum(['function', 'function-block', 'generic']),
+  /** `method`: a call of a method of an instance (IEC 61131-3 6.6.5.4), `owner` its block. */
+  type: z.enum(['function', 'function-block', 'generic', 'method']),
+  owner: z.string().optional(),
 })
 
 type BlockVariant = z.infer<typeof blockVariantSchema>

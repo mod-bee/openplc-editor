@@ -18,7 +18,10 @@
  */
 
 import type { BlockVariant } from '@root/middleware/shared/ports/block-types'
-import type { SystemLibrary } from '@root/middleware/shared/ports/library-types'
+import type { SystemLibrary, UserLibrary } from '@root/middleware/shared/ports/library-types'
+import type { PLCPou } from '@root/middleware/shared/ports/types'
+
+import { resolveMethodBox } from './block-variant'
 
 /** EN/ENO are implicit control pins; a library POU never declares them. */
 const IMPLICIT_PINS = new Set(['EN', 'ENO', 'OUT'])
@@ -79,6 +82,30 @@ export function libraryVariantDiverges(variant: BlockVariant, libraryPou: System
     (variant.variables ?? []).filter((variable) => isWired(variable) && !IMPLICIT_PINS.has(variable.name)).map(pinKey),
   )
 
+  if (wanted.size !== drawn.size) return true
+  for (const pin of wanted) if (!drawn.has(pin)) return true
+  return false
+}
+
+/**
+ * Whether a method box no longer matches its method as declared now: a
+ * parameter added, removed or retyped, or the result changed. Also true when
+ * the block no longer has the method, so the box shows it needs attention.
+ */
+export function methodVariantDiverges(
+  variant: BlockVariant,
+  input: { systemLibraries: readonly SystemLibrary[]; userLibraries: readonly UserLibrary[]; pous: readonly PLCPou[] },
+): boolean {
+  const now = resolveMethodBox(`${variant.owner ?? ''}.${variant.name}`, { ...input, variables: [] })
+  if (now === undefined) return true
+  const keys = (variables: readonly { name: string; class?: string; type: { value: string } }[]) =>
+    new Set(
+      variables
+        .filter((variable) => !['EN', 'ENO'].includes(variable.name))
+        .map((variable) => `${pinKey(variable)}|${variable.type.value.toUpperCase()}`),
+    )
+  const wanted = keys(now.variant.variables)
+  const drawn = keys(variant.variables ?? [])
   if (wanted.size !== drawn.size) return true
   for (const pin of wanted) if (!drawn.has(pin)) return true
   return false

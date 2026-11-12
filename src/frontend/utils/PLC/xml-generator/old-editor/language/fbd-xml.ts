@@ -119,7 +119,11 @@ const blockToXml = (node: BlockNode<BlockVariant>, rung: FBDRungState): BlockFbd
 
   const blockXML: BlockFbdXML = {
     '@localId': node.data.numericId,
-    '@typeName': node.data.variant.name,
+    // A method box is the call `instance.Method`, as CODESYS names the box.
+    '@typeName':
+      node.data.variant.type === 'method'
+        ? `${node.data.variable.name}.${node.data.variant.name}`
+        : node.data.variant.name,
     '@instanceName': node.data.variant.type === 'function-block' ? node.data.variable.name : undefined,
     '@executionOrderId': node.data.executionOrder,
     '@height': node.height as number,

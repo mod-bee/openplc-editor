@@ -262,6 +262,9 @@ function restampNodes(
     // `node.data` is `z.any()` in the flow schema, so a hand-edited or
     // half-migrated project can reach here without a usable variant.
     if (!variant || !name || !Array.isArray(variant.variables)) continue
+    // A method box is named by its method, not a POU: one called `Publish` is
+    // no block of that name. Its own check is `methodVariantDiverges`.
+    if (variant.type === 'method') continue
 
     // The project owns its own POUs, so they win over a library of the same
     // name -- and they are refreshed silently, without the library reporting.

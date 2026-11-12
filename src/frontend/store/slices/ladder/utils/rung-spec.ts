@@ -236,16 +236,27 @@ export function buildRungFromSpec(args: {
     }
 
     let instanceVariable: PLCVariable | undefined
-    if (blockVariant.type === 'function-block') {
+    if (blockVariant.type === 'function-block' || blockVariant.type === 'method') {
       if (!element.instanceName) {
         errors.push(
-          `Element ${elementNumber}: block type "${element.blockType}" is a function block and requires "instanceName"`,
+          blockVariant.type === 'method'
+            ? `Element ${elementNumber}: "${element.blockType}" is a method and requires "instanceName": the ${blockVariant.owner ?? ''} instance it is called on`
+            : `Element ${elementNumber}: block type "${element.blockType}" is a function block and requires "instanceName"`,
         )
         return
       }
       instanceVariable = findVariable(variables, element.instanceName)
       if (!instanceVariable) {
         errors.push(`Element ${elementNumber}: instance variable "${element.instanceName}" not found`)
+        return
+      }
+      if (
+        blockVariant.type === 'method' &&
+        instanceVariable.type.value.toUpperCase() !== (blockVariant.owner ?? '').toUpperCase()
+      ) {
+        errors.push(
+          `Element ${elementNumber}: "${element.instanceName}" is ${instanceVariable.type.value}, not ${blockVariant.owner ?? ''}`,
+        )
         return
       }
     }

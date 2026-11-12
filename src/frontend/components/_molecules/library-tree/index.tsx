@@ -139,12 +139,23 @@ type ILibraryMethodProps = {
   label: string
   /** The method as a call is written, shown on hover. */
   signature: string
+  /** Dragged onto a Ladder or FBD diagram, it places a method box. */
+  draggable?: boolean
+  onDragStart?: (event: React.DragEvent<HTMLLIElement>) => void
 }
 
-/** A method of the block above it: shown, not dragged. */
-const LibraryMethod = ({ label, signature }: ILibraryMethodProps) => {
+/** A method of the block above it. */
+const LibraryMethod = ({ label, signature, draggable, onDragStart }: ILibraryMethodProps) => {
   return (
-    <li className='ml-2 cursor-default pl-2' title={signature}>
+    <li
+      className={cn(
+        'ml-2 pl-2',
+        draggable ? 'cursor-grab hover:bg-slate-50 dark:hover:bg-neutral-900' : 'cursor-default',
+      )}
+      title={signature}
+      draggable={draggable}
+      onDragStart={onDragStart}
+    >
       <div className='flex flex-row items-center gap-[6px] py-0.5 pl-12'>
         <span className='font-caption text-[10px] font-medium text-brand'>M</span>
         <p className='ml-1 w-full truncate font-caption text-xs font-normal text-neutral-700 dark:text-neutral-400'>

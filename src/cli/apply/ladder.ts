@@ -14,7 +14,7 @@ import {
   type RungOutput,
   type RungVariableResolver,
 } from '@root/frontend/store/slices/ladder/utils/build-rung'
-import { buildBlockVariant } from '@root/frontend/utils/PLC/block-variant'
+import { buildBlockVariant, methodInstanceError } from '@root/frontend/utils/PLC/block-variant'
 import type { Edge, Node } from '@xyflow/react'
 
 import { unresolvedHandles } from './handles'
@@ -207,6 +207,15 @@ function toOutput(store: OpenPLCStore, pouName: string, output: SpecLadderOutput
   // Cloned for the same reason as in `apply/fbd.ts`: the library's `variables`
   // array is frozen, and a placed block should carry its own copy.
   const variant = structuredClone(built.variant)
+
+  if (variant.type === 'method') {
+    const declared = state.project.data.pous.find((pou) => pou.name === pouName)?.interface?.variables ?? []
+    const problem = methodInstanceError(output.block.instance, variant, declared, state.project.data.pous)
+    if (problem !== undefined) {
+      errors.push(`POU "${pouName}": block "${output.block.call}" — ${problem}.`)
+      return null
+    }
+  }
 
   // A pin name that is not on the block would otherwise be dropped in silence —
   // the rung would look wired and the call would go out without it.

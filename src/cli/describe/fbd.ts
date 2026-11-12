@@ -52,6 +52,24 @@ function resolveCall(
   return owners.length === 1 ? `system/${owners[0].name}/${blockName}` : null
 }
 
+/**
+ * A method box's reference: its block's, and `.<method>` (`user/FB_X.Do`,
+ * `system/lib/FB_X.Do`). A box calling a method records the block that declares it.
+ */
+function resolveBlockCall(
+  variant: { name?: string; type?: string; owner?: string } | undefined,
+  libraries: readonly SystemLibrary[],
+  userPouNames: ReadonlySet<string>,
+): string | null {
+  if (!variant?.name) return null
+  if (variant.type === 'method') {
+    if (!variant.owner) return null
+    const block = resolveCall(variant.owner, libraries, userPouNames)
+    return block === null ? null : `${block}.${variant.name}`
+  }
+  return resolveCall(variant.name, libraries, userPouNames)
+}
+
 export function describeFbdBody(
   value: unknown,
   libraries: readonly SystemLibrary[] = [],
@@ -80,10 +98,16 @@ export function describeFbdBody(
 
   const unresolvedBlocks: string[] = []
   const describedNodes = nodes.map((node) => {
-    const data = node.data as { variable?: { name?: string }; variant?: { name?: string }; value?: string } | undefined
+    const data = node.data as
+      | {
+          variable?: { name?: string }
+          variant?: { name?: string; type?: string; owner?: string }
+          value?: string
+        }
+      | undefined
     const out: Record<string, unknown> = { label: labelById.get(node.id), kind: node.type }
     if (node.type === 'block') {
-      const call = data?.variant?.name ? resolveCall(data.variant.name, libraries, userPouNames) : null
+      const call = resolveBlockCall(data?.variant, libraries, userPouNames)
       if (call) out.call = call
       else unresolvedBlocks.push(data?.variant?.name ?? node.id)
       if (data?.variable?.name) out.instance = data.variable.name

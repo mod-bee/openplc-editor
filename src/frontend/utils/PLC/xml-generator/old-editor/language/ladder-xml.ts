@@ -494,7 +494,11 @@ const blockToXml = (block: BlockNode<BlockVariant>, rung: RungLadderState, offse
 
   return {
     '@localId': block.data.numericId,
-    '@typeName': block.data.variant.name,
+    // A method box is the call `instance.Method`, as CODESYS names the box.
+    '@typeName':
+      block.data.variant.type === 'method'
+        ? `${block.data.variable.name}.${block.data.variant.name}`
+        : block.data.variant.name,
     '@instanceName': block.data.variant.type === 'function-block' ? block.data.variable.name : undefined,
     '@width': block.width as number,
     '@height': block.height as number,

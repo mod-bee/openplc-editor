@@ -323,7 +323,11 @@ function parseBlockXml(entry: Record<string, unknown>): { node: BlockNode<BlockV
     return makeHandle(handleId, 'source', Position.Right, position, connOut.relPosition)
   })
 
-  const variableName = isFunctionBlock ? asString(instanceName) : typeName
+  // `instance.Method`, as a method box is written (and named by CODESYS): its owner, the
+  // instance's type, is filled in from the POU's declarations (`fillMethodOwners`).
+  const dot = typeName.lastIndexOf('.')
+  const isMethod = !isFunctionBlock && dot > 0
+  const variableName = isFunctionBlock ? asString(instanceName) : isMethod ? typeName.slice(0, dot) : typeName
 
   const node: BlockNode<BlockVariant> = {
     id: `BLOCK-${numericId}`,
@@ -349,8 +353,8 @@ function parseBlockXml(entry: Record<string, unknown>): { node: BlockNode<BlockV
       // (it only ever names pins, never their IEC class/type) — an honest
       // documented gap, same as the FBD importer's block variant.
       variant: {
-        name: typeName,
-        type: isFunctionBlock ? 'function-block' : 'function',
+        name: isMethod ? typeName.slice(dot + 1) : typeName,
+        type: isFunctionBlock ? 'function-block' : isMethod ? 'method' : 'function',
         variables: [],
         documentation: '',
         extensible: false,

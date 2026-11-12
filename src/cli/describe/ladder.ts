@@ -49,6 +49,24 @@ function resolveCall(
   return owners.length === 1 ? `system/${owners[0].name}/${blockName}` : null
 }
 
+/**
+ * A method box's reference: its block's, and `.<method>` (`user/FB_X.Do`,
+ * `system/lib/FB_X.Do`). A box calling a method records the block that declares it.
+ */
+function resolveBlockCall(
+  variant: { name?: string; type?: string; owner?: string } | undefined,
+  libraries: readonly SystemLibrary[],
+  userPouNames: ReadonlySet<string>,
+): string | null {
+  if (!variant?.name) return null
+  if (variant.type === 'method') {
+    if (!variant.owner) return null
+    const block = resolveCall(variant.owner, libraries, userPouNames)
+    return block === null ? null : `${block}.${variant.name}`
+  }
+  return resolveCall(variant.name, libraries, userPouNames)
+}
+
 export function describeLadderBody(
   value: unknown,
   libraries: readonly SystemLibrary[] = [],
@@ -160,11 +178,13 @@ function describeRung(
    * wired to nothing and is simply omitted.
    */
   function describeBlock(block: RungNode): { ok: true; output: unknown } | { ok: false; reason: string } {
-    const data = block.data as { variable?: { name?: string }; variant?: { name?: string } } | undefined
+    const data = block.data as
+      | { variable?: { name?: string }; variant?: { name?: string; type?: string; owner?: string } }
+      | undefined
     const blockName = data?.variant?.name
     if (!blockName) return { ok: false, reason: 'a placed block carries no type name' }
 
-    const call = resolveCall(blockName, libraries, userPouNames)
+    const call = resolveBlockCall(data?.variant, libraries, userPouNames)
     if (!call) {
       return { ok: false, reason: `no project POU or single installed library provides "${blockName}"` }
     }

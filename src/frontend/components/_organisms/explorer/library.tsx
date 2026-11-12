@@ -1,12 +1,14 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
 
-import type { SystemLibrary, UserLibrary } from '../../../../middleware/shared/ports/library-types'
+import type { SystemLibrary, SystemLibraryMethod, UserLibrary } from '../../../../middleware/shared/ports/library-types'
+import type { PLCPou } from '../../../../middleware/shared/ports/types'
 import { BookIcon } from '../../../assets/icons/interface/Book'
 import { CloseIcon } from '../../../assets/icons/interface/Close'
 import { MagnifierIcon } from '../../../assets/icons/interface/Magnifier'
 import { useOpenPLCStore } from '../../../store'
 import { CreateLibraryManagerEditor } from '../../../store/slices/tabs/utils'
 import { buildLibraryTree, type LibraryTreeNode, methodLabel, methodSignature } from '../../../utils/library-tree'
+import { isCallableMethod, pouMethods } from '../../../utils/PLC/pou-methods'
 import { InputWithRef } from '../../_atoms/input'
 import { LibraryFile, LibraryFolder, LibraryMethod, LibraryRoot } from '../../_molecules/library-tree'
 
@@ -48,6 +50,7 @@ const Library = ({
   const addModel = useOpenPLCStore((s) => s.editorActions.addModel)
   const setEditor = useOpenPLCStore((s) => s.editorActions.setEditor)
   const getEditorFromEditors = useOpenPLCStore((s) => s.editorActions.getEditorFromEditors)
+  const projectPous = useOpenPLCStore((s) => s.project.data.pous)
 
   /**
    * Open the Library Manager tab.  Same idiom the explorer's Project
@@ -195,29 +198,38 @@ const Library = ({
               {filteredUserLibraries
                 .filter((userLibrary) => userLibrary.name.toLowerCase().includes(filterText))
                 .map((userLibrary) => (
-                  <LibraryFile
+                  <UserLibraryBlock
                     key={userLibrary.name}
-                    label={userLibrary.name}
-                    onClick={() => setSelectedFileKey(userLibrary.name)}
-                    onSelect={() => setSelectedFileKey(userLibrary.name)}
-                    isSelected={selectedFileKey === userLibrary.name}
-                    draggable
-                    onDragStart={(e) => {
-                      if (type === 'plc-textual')
-                        e.dataTransfer.setData('application/library', `user/${userLibrary.name}`)
-                      else if (type === 'plc-graphical') {
-                        if (meta.language === 'ld') {
-                          e.dataTransfer.setData('application/reactflow/ladder-blocks', 'block')
-                          e.dataTransfer.setData('text/plain', 'block') // WebKit fallback
-                        }
-                        if (meta.language === 'fbd') {
-                          e.dataTransfer.setData('application/reactflow/fbd-blocks', 'block')
-                          e.dataTransfer.setData('text/plain', 'block') // WebKit fallback
-                        }
-                        e.dataTransfer.setData('application/library', `user/${userLibrary.name}`)
-                      }
-                    }}
-                  />
+                    name={userLibrary.name}
+                    methods={callableMethods(projectPous, userLibrary.name)}
+                    ctx={{ type, language: 'language' in meta ? (meta.language as string) : '' }}
+                  >
+                    {(expand) => (
+                      <LibraryFile
+                        {...expand}
+                        label={userLibrary.name}
+                        onClick={() => setSelectedFileKey(userLibrary.name)}
+                        onSelect={() => setSelectedFileKey(userLibrary.name)}
+                        isSelected={selectedFileKey === userLibrary.name}
+                        draggable
+                        onDragStart={(e) => {
+                          if (type === 'plc-textual')
+                            e.dataTransfer.setData('application/library', `user/${userLibrary.name}`)
+                          else if (type === 'plc-graphical') {
+                            if (meta.language === 'ld') {
+                              e.dataTransfer.setData('application/reactflow/ladder-blocks', 'block')
+                              e.dataTransfer.setData('text/plain', 'block') // WebKit fallback
+                            }
+                            if (meta.language === 'fbd') {
+                              e.dataTransfer.setData('application/reactflow/fbd-blocks', 'block')
+                              e.dataTransfer.setData('text/plain', 'block') // WebKit fallback
+                            }
+                            e.dataTransfer.setData('application/library', `user/${userLibrary.name}`)
+                          }
+                        }}
+                      />
+                    )}
+                  </UserLibraryBlock>
                 ))}
             </LibraryFolder>
           </LibraryRoot>
@@ -336,10 +348,77 @@ function SystemLibraryBlock({
     <>
       {block}
       {methods.map((method) => (
-        <LibraryMethod key={method.name} label={methodLabel(method)} signature={methodSignature(method)} />
+        <LibraryMethod
+          key={method.name}
+          label={methodLabel(method)}
+          signature={methodSignature(method)}
+          {...methodDrag(ctx, `system/${libraryName}/${pou.name}.${method.name}`)}
+        />
       ))}
     </>
   )
+}
+
+/**
+ * A method dragged onto a Ladder or FBD diagram places a method box (CODESYS's
+ * `instance.Method` box); its instance is named on the box. Text editors take
+ * a call written out instead, so there the row is not dragged.
+ */
+function methodDrag(ctx: { type: string; language: string }, blockRef: string) {
+  if (ctx.type !== 'plc-graphical') return {}
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent<HTMLLIElement>) => {
+      const kind = ctx.language === 'fbd' ? 'application/reactflow/fbd-blocks' : 'application/reactflow/ladder-blocks'
+      e.dataTransfer.setData(kind, 'block')
+      e.dataTransfer.setData('text/plain', 'block') // WebKit fallback
+      e.dataTransfer.setData('application/library', blockRef)
+    },
+  }
+}
+
+/** A function block of this project, with its callable methods below it. */
+function UserLibraryBlock({
+  name,
+  methods,
+  ctx,
+  children,
+}: {
+  name: string
+  methods: SystemLibraryMethod[]
+  ctx: { type: string; language: string }
+  children: (expand: { expanded?: boolean; onToggleExpanded?: () => void }) => ReactNode
+}) {
+  const [showMethods, setShowMethods] = useState(false)
+  const toggle =
+    methods.length > 0 ? { expanded: showMethods, onToggleExpanded: () => setShowMethods(!showMethods) } : {}
+  return (
+    <>
+      {children(toggle)}
+      {showMethods &&
+        methods.map((method) => (
+          <LibraryMethod
+            key={method.name}
+            label={methodLabel(method)}
+            signature={methodSignature(method)}
+            {...methodDrag(ctx, `user/${name}.${method.name}`)}
+          />
+        ))}
+    </>
+  )
+}
+
+/** A project block's methods a caller may call, in the library tree's shape. */
+function callableMethods(pous: readonly PLCPou[], name: string): SystemLibraryMethod[] {
+  return (pouMethods(pous, name) ?? []).filter(isCallableMethod).map((method) => ({
+    name: method.name,
+    ...(method.returnType !== undefined ? { returnType: method.returnType } : {}),
+    variables: method.variables.map((variable) => ({
+      name: variable.name,
+      class: variable.class as SystemLibraryMethod['variables'][number]['class'],
+      type: variable.type as SystemLibraryMethod['variables'][number]['type'],
+    })),
+  }))
 }
 
 export { Library }

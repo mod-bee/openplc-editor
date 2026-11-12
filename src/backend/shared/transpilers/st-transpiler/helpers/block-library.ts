@@ -42,8 +42,10 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
  */
 export function blockInfosFromVariant(variant: unknown): BlockInfos | null {
   if (!isRecord(variant)) return null
-  const name = typeof variant.name === 'string' ? variant.name : null
-  if (name === null) return null
+  const ownName = typeof variant.name === 'string' ? variant.name : null
+  if (ownName === null) return null
+  // A method is named by its block too: two blocks may each have a `Publish`.
+  const name = variant.type === 'method' && typeof variant.owner === 'string' ? `${variant.owner}.${ownName}` : ownName
 
   const inputs: BlockIO[] = []
   const outputs: BlockIO[] = []

@@ -221,7 +221,15 @@ function describeLibrary(library: SystemLibrary): Record<string, unknown> {
       ...(pou.isAbstract ? { abstract: true } : {}),
       ...(pou.extends ? { extends: pou.extends } : {}),
       ...(pou.implements?.length ? { implements: pou.implements } : {}),
-      ...(pou.methods?.length ? { methods: pou.methods.map(describeMethod) } : {}),
+      ...(pou.methods?.length
+        ? {
+            methods: pou.methods.map((method) => ({
+              // A method box in Ladder or FBD: `call` this, with an instance of the block.
+              call: `system/${library.name}/${pou.name}.${method.name}`,
+              ...describeMethod(method),
+            })),
+          }
+        : {}),
       ...(pou.documentation ? { documentation: pou.documentation } : {}),
       pins: pou.variables.map((variable) => ({
         name: variable.name,

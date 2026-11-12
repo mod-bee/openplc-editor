@@ -23,7 +23,8 @@ export function blockPinVariableName(block: PinBlock, pin: string, side: 'input'
     const instance = block.variable?.name
     return instance ? `${instance}.${pin}` : undefined
   }
-  if (type === 'function' && side === 'output' && block.numericId && block.variant) {
+  // A method box's outputs are not the instance's: like a function's, each is the call's temporary.
+  if ((type === 'function' || type === 'method') && side === 'output' && block.numericId && block.variant) {
     return `_TMP_${block.variant.name.toUpperCase()}${block.numericId}_${pin.toUpperCase()}`
   }
   return undefined
