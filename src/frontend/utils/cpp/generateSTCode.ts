@@ -80,6 +80,63 @@ const generateVariableAssignment = (variable: PLCVariable, functionBlockNames?: 
 }
 
 /**
+ * `c_blocks.h` helpers for every block's `<pou>_bind_vars`, emitted once.
+ *
+ * `c_blocks_bind` points a `<POU>_VARS` field at a member: at the member itself,
+ * or, when the member already is a pointer of the field's type (a function block
+ * passed as an in-out is an alias for the caller's instance), at what it holds.
+ * Deciding by type lets the header do without the project's list of function
+ * blocks. Tag dispatch rather than `if constexpr`: `c_blocks_code.cpp` may be
+ * built at the core's own standard.
+ */
+const C_BLOCKS_BIND_HELPERS = `#include <type_traits>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define C_BLOCKS_NOINLINE __attribute__((noinline))
+#else
+#define C_BLOCKS_NOINLINE
+#endif
+
+template <class Field, class Member>
+inline void c_blocks_bind(Field *&field, Member &member, std::true_type) { field = member; }
+template <class Field, class Member>
+inline void c_blocks_bind(Field *&field, Member &member, std::false_type) { field = &member; }
+template <class Field, class Member> inline void c_blocks_bind(Field *&field, Member &member) {
+  c_blocks_bind(field, member, std::integral_constant<bool, std::is_convertible<Member &, Field *>::value>());
+}
+
+`
+
+/** The C++ function that fills a block's `<POU>_VARS` from an instance. */
+const cBlockBindVarsFunctionName = (pouName: string): string => `${pouName.toLowerCase()}_bind_vars`
+
+/**
+ * `<pou>_bind_vars`, for `c_blocks.h`: the assignments `generateVariableAssignment`
+ * writes, made through `self`, in one out-of-line function. A block with methods
+ * fills its struct with it in its body and in every method, so the assignments
+ * are compiled once instead of once per method. A template, so the header need
+ * not name the block's class. Externals are left out: their pointers are taken
+ * under each global's lock, at the call.
+ */
+const generateBindVarsFunction = (pouName: string, allVariables: readonly PLCVariable[]): string => {
+  let body = ''
+  for (const variable of cBlockInterfaceVariables(allVariables)) {
+    const name = variable.name.toUpperCase()
+    const member = `self->${memberName(variable)}`
+    if (isArrayVariable(variable) && !multiDimensionalContainerType(variable) && !isVariableLengthArray(variable)) {
+      const startIndex = getArrayStartIndex(variable)
+      body += `  vars->${name} = &${member}[${startIndex}] - ${startIndex};\n`
+    } else {
+      body += `  c_blocks_bind(vars->${name}, ${member});\n`
+    }
+  }
+  return (
+    `template <class Self> C_BLOCKS_NOINLINE void ${cBlockBindVarsFunctionName(pouName)}` +
+    `(${pouName.toUpperCase()}_VARS *vars, Self *self) {\n${body}}\n`
+  )
+}
+
+/**
  * Wrap a call to the block so every `VAR_EXTERNAL` pointer is taken, and held,
  * under its global's own lock.
  *
@@ -154,18 +211,16 @@ const generateArgumentAssignment = (variable: PLCVariable): string => {
 const generateMethodCode = (
   pouName: string,
   method: CppMethod,
-  variableAssignments: string,
+  structFill: string,
   externals: PLCVariable[],
 ): string => {
-  const structName = `${pouName.toUpperCase()}_VARS`
   const argsName = cppMethodArgsStructName(pouName, method.name)
   const call = `${cppMethodFunctionName(pouName, method.name)}(&vars, &args);`
   const invoke = method.returnType === undefined ? call : `${method.name.toUpperCase()}_result = ${call}`
   const argumentAssignments = method.variables.map(generateArgumentAssignment).join('')
   return `${method.declaration.trimEnd()}
 {external
-${structName} vars;
-${variableAssignments}${argsName} args;
+${structFill}${argsName} args;
 ${argumentAssignments}}
 if hasBeenInitialized = False then
 {external
@@ -204,13 +259,16 @@ const generateSTCode = (params: STCodeGenerationParams): string => {
   // `strucpp::IEC_*` wrapper on both sides of the call, so taking its
   // address is type-compatible with the struct field.
   const methods = params.body === undefined ? [] : splitCppMethods(params.body).methods
-  const methodCode = methods
-    .map((method) => generateMethodCode(pouName, method, variableAssignments, externals))
-    .join('')
+  // With methods, the body and every method fill the struct through the one
+  // `<pou>_bind_vars` in c_blocks.h instead of each repeating the assignments.
+  const structFill =
+    methods.length === 0
+      ? `${structName} vars;\n${variableAssignments}`
+      : `${structName} vars;\n${cBlockBindVarsFunctionName(pouName)}(&vars, this);\n`
+  const methodCode = methods.map((method) => generateMethodCode(pouName, method, structFill, externals)).join('')
 
   return `${methodCode}{external
-${structName} vars;
-${variableAssignments}}
+${structFill}}
 if hasBeenInitialized = False then
 {external
 ${wrapInGlobalLocks(externals, `${setupFunctionName}(&vars);`)}
@@ -222,4 +280,10 @@ ${wrapInGlobalLocks(externals, `${loopFunctionName}(&vars);`)}
 }`
 }
 
-export { generateSTCode, type STCodeGenerationParams }
+export {
+  C_BLOCKS_BIND_HELPERS,
+  cBlockBindVarsFunctionName,
+  generateBindVarsFunction,
+  generateSTCode,
+  type STCodeGenerationParams,
+}

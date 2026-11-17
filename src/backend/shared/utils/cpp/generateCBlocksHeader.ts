@@ -4,6 +4,7 @@ import {
   cppMethodFunctionName,
   splitCppMethods,
 } from '../../../../frontend/utils/cpp/cpp-methods'
+import { C_BLOCKS_BIND_HELPERS, generateBindVarsFunction } from '../../../../frontend/utils/cpp/generateSTCode'
 import { generateStructMember, mapBaseTypeToIEC } from '../../../../frontend/utils/PLC/array-codegen-helpers'
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
 
@@ -61,6 +62,9 @@ const generateCBlocksHeader = (cppPous: CppPouData[], userTypeNames: Iterable<st
 
 `
 
+  const methodsOf = (pou: CppPouData) => (pou.code === undefined ? [] : splitCppMethods(pou.code).methods)
+  if (cppPous.some((pou) => methodsOf(pou).length > 0)) headerContent += C_BLOCKS_BIND_HELPERS
+
   cppPous.forEach((pou) => {
     const structName = `${pou.name.toUpperCase()}_VARS`
     const setupFunctionName = `${pou.name.toLowerCase()}_setup`
@@ -91,7 +95,8 @@ const generateCBlocksHeader = (cppPous: CppPouData[], userTypeNames: Iterable<st
     headerContent += `extern "C" void ${loopFunctionName}(${structName} *vars);\n`
 
     // A method's parameters, each a pointer like a pin, and its entry point.
-    for (const method of pou.code === undefined ? [] : splitCppMethods(pou.code).methods) {
+    const methods = methodsOf(pou)
+    for (const method of methods) {
       const argsName = cppMethodArgsStructName(pou.name, method.name)
       headerContent += `typedef struct {\n`
       method.variables.forEach((variable) => {
@@ -102,6 +107,8 @@ const generateCBlocksHeader = (cppPous: CppPouData[], userTypeNames: Iterable<st
         `extern "C" ${cppMethodReturnType(method.returnType, typeNames)} ` +
         `${cppMethodFunctionName(pou.name, method.name)}(${structName} *vars, ${argsName} *args);\n`
     }
+    // The body and every method fill the struct through this one function.
+    if (methods.length > 0) headerContent += generateBindVarsFunction(pou.name, pou.variables)
     headerContent += '\n'
   })
 
