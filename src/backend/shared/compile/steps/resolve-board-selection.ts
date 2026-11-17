@@ -55,19 +55,7 @@ export function resolveBoardSelection(resolver: BoardInfoResolver, boardTarget: 
       ...(boardInfo.compilerFlags?.cxx_flags ? { cxx_flags: boardInfo.compilerFlags.cxx_flags } : {}),
       ...(boardInfo.compilerFlags?.ld_flags ? { ld_flags: boardInfo.compilerFlags.ld_flags } : {}),
       ...(boardInfo.maxDataSize !== undefined ? { max_data_size: boardInfo.maxDataSize } : {}),
-      // Per-board extra libraries — the editor's arduino-cli `lib
-      // install` step uses these.  Identical contract for static
-      // hals.json (`extra_libraries`) and VPP manifests
-      // (`hal.extraArduinoLibraries`); both arrive in
-      // `BoardBuildInfo.extraArduinoLibraries` from the resolver.
-      ...(boardInfo.extraArduinoLibraries && boardInfo.extraArduinoLibraries.length > 0
-        ? { extra_libraries: boardInfo.extraArduinoLibraries }
-        : {}),
-      // Prebuilt arduino-hal (mixed): the precompiled vendor library to link
-      // (2nd --library) + the ABI-locked core version to install/verify. Both
-      // come from the VPP manifest via BoardBuildInfo; absent for source boards.
       ...(boardInfo.precompiledLibraryDir ? { precompiledLibraryDir: boardInfo.precompiledLibraryDir } : {}),
-      ...(boardInfo.coreVersion ? { coreVersion: boardInfo.coreVersion } : {}),
       // Upload transport ("ethernet" for the LOGO! 8.2; serial otherwise).
       ...(boardInfo.uploadMethod ? { uploadMethod: boardInfo.uploadMethod } : {}),
       // Where the PLC data lives ("external": the PLC data block in PSRAM).

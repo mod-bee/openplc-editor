@@ -33,7 +33,7 @@ const BOOL = { definition: 'base-type' as const, value: 'BOOL' }
 const DINT = { definition: 'base-type' as const, value: 'DINT' }
 const counter = { definition: 'derived' as const, value: 'Counter' }
 
-const COUNTER_BODY = `METHOD PUBLIC Add : DINT
+const COUNTER_BODY = `METHOD PUBLIC Increase : DINT
   VAR_INPUT
     nStep : DINT := 1;
   END_VAR
@@ -42,7 +42,7 @@ const COUNTER_BODY = `METHOD PUBLIC Add : DINT
   END_VAR
   n := n + nStep;
   nTwice := n * 2;
-  Add := n;
+  Increase := n;
 END_METHOD
 
 METHOD PUBLIC Clear
@@ -93,7 +93,7 @@ const SPEC = {
             outputs: [
               {
                 block: {
-                  call: 'user/Counter.Add',
+                  call: 'user/Counter.Increase',
                   instance: 'c',
                   inputs: { nStep: 'nStepIn' },
                   outputs: { OUT: 'sum', NTWICE: 'twice' },
@@ -106,7 +106,7 @@ const SPEC = {
             logic: { contact: { variable: 'stop', variant: 'default' } },
             outputs: [
               {
-                block: { call: 'user/Counter.Add', instance: 'c', inputs: { nStep: '100' }, outputs: { OUT: 'sum2' } },
+                block: { call: 'user/Counter.Increase', instance: 'c', inputs: { nStep: '100' }, outputs: { OUT: 'sum2' } },
               },
             ],
           },
@@ -124,7 +124,7 @@ const SPEC = {
       body: {
         nodes: [
           { label: 'k', kind: 'input-variable', variable: '5' },
-          { label: 'add', kind: 'block', call: 'user/Counter.Add', instance: 'c2' },
+          { label: 'add', kind: 'block', call: 'user/Counter.Increase', instance: 'c2' },
           { label: 'out', kind: 'output-variable', variable: 'r' },
         ],
         connections: [
@@ -165,10 +165,10 @@ describe('method boxes in Ladder and FBD', () => {
     const cases: Array<[Record<string, unknown>, RegExp]> = [
       [{ call: 'user/Counter.Nope', instance: 'c' }, /unknown method/],
       [{ call: 'user/Counter.Secret', instance: 'c' }, /not callable/],
-      [{ call: 'user/Counter.Add' }, /a method box needs "instance"/],
-      [{ call: 'user/Counter.Add', instance: 'missing' }, /"missing" is not declared; declare it as Counter/],
-      [{ call: 'user/Counter.Add', instance: 'go' }, /"go" is BOOL, not Counter/],
-      [{ call: 'user/Counter.Add', instance: 'c', inputs: { nNope: '1' } }, /has no input pin "nNope"/],
+      [{ call: 'user/Counter.Increase' }, /a method box needs "instance"/],
+      [{ call: 'user/Counter.Increase', instance: 'missing' }, /"missing" is not declared; declare it as Counter/],
+      [{ call: 'user/Counter.Increase', instance: 'go' }, /"go" is BOOL, not Counter/],
+      [{ call: 'user/Counter.Increase', instance: 'c', inputs: { nNope: '1' } }, /has no input pin "nNope"/],
     ]
     for (const [block, message] of cases) {
       const outcome = await applySpec(createTestStore(), withLadderBlock(block), { prune: false, projectPath: '/p' })
@@ -187,7 +187,7 @@ describe('method boxes in Ladder and FBD', () => {
     if (!ladder.ok || !fbd.ok) throw new Error('not described')
     const first = (ladder.body.rungs[0] as { outputs: Array<{ block?: Record<string, unknown> }> }).outputs[0].block
     expect(first).toMatchObject({
-      call: 'user/Counter.Add',
+      call: 'user/Counter.Increase',
       instance: 'c',
       inputs: { nStep: 'nStepIn' },
       outputs: { OUT: 'sum', nTwice: 'twice' },
@@ -195,7 +195,7 @@ describe('method boxes in Ladder and FBD', () => {
     const fbdBlock = (fbd.body as unknown as { nodes: Array<Record<string, unknown>> }).nodes.find(
       (node) => node.kind === 'block',
     )
-    expect(fbdBlock).toMatchObject({ call: 'user/Counter.Add', instance: 'c2' })
+    expect(fbdBlock).toMatchObject({ call: 'user/Counter.Increase', instance: 'c2' })
 
     const again = structuredClone(SPEC) as unknown as { pous: Array<{ name: string; body: unknown }> }
     again.pous.find((pou) => pou.name === 'ladderMain')!.body = ladder.body
@@ -237,8 +237,8 @@ describe('method boxes in Ladder and FBD', () => {
     expect(transpiled.errors).toEqual([])
     const st = transpiled.programSt ?? ''
     // The rung gates the call through EN; the result and the output come back through temps.
-    expect(st).toMatch(/_TMP_Add\d+_OUT := c\.Add\(EN := go, nStep := nStepIn, .*nTwice => _TMP_Add\d+_nTwice/)
-    expect(st).toMatch(/_TMP_Add\d+_OUT := c2\.Add\(nStep := 5, /)
+    expect(st).toMatch(/_TMP_Increase\d+_OUT := c\.Increase\(EN := go, nStep := nStepIn, .*nTwice => _TMP_Increase\d+_nTwice/)
+    expect(st).toMatch(/_TMP_Increase\d+_OUT := c2\.Increase\(nStep := 5, /)
 
     const result = compile(st, { headerFileName: 'generated.hpp' })
     expect(result.errors.map((error) => error.message)).toEqual([])

@@ -131,8 +131,6 @@ describe('createEditorCompilerPlatformPort', () => {
     return {
       handleCompileArduinoProgram: jest.fn(),
       handleUploadProgram: jest.fn(),
-      handleCoreInstallation: jest.fn(),
-      handleLibraryInstallation: jest.fn(),
       handleVendorPluginPackaging: jest.fn(),
       ...overrides,
     } as unknown as EditorCompilerHandlers
@@ -167,128 +165,6 @@ describe('createEditorCompilerPlatformPort', () => {
     const md5 = await port.computeMd5('hello world')
     // crypto.createHash('md5').update('hello world').digest('hex')
     expect(md5).toBe('5eb63bbbe01eeed093cb22bb8f5acdc3')
-  })
-
-  // ---- installArduinoCore / installArduinoLib ----------------------------
-
-  it('installArduinoCore forwards to handler and returns ok:true on resolve', async () => {
-    const handleCoreInstallation = jest.fn(async () => undefined)
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleCoreInstallation }), makeContext())
-    const result = await port.installArduinoCore({ coreId: 'arduino:avr' }, () => undefined)
-    expect(handleCoreInstallation).toHaveBeenCalledTimes(1)
-    expect(result).toEqual({ ok: true })
-  })
-
-  it('installArduinoCore returns ok:false when the handler throws', async () => {
-    const handleCoreInstallation = jest.fn(async () => {
-      throw new Error('core install failed')
-    })
-    const log = jest.fn()
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleCoreInstallation }), makeContext())
-    const result = await port.installArduinoCore({ coreId: 'arduino:avr' }, log)
-    expect(result.ok).toBe(false)
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('core install failed'), 'error')
-  })
-
-  it('installArduinoLib forwards extraLibraries to handler and returns ok:true', async () => {
-    const handleLibraryInstallation = jest.fn(async () => ({ success: true }))
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleLibraryInstallation }), makeContext())
-    const result = await port.installArduinoLib(
-      { libId: '', extraLibraries: ['Arduino_Opta_Blueprint', 'P1AM'] },
-      () => undefined,
-    )
-    expect(handleLibraryInstallation).toHaveBeenCalledTimes(1)
-    // The per-board library list is the first argument; the output
-    // callback follows, then the git-installed third-party list.
-    // Asserting the exact list catches accidental drops in plumbing
-    // between port → handler.
-    expect(handleLibraryInstallation).toHaveBeenCalledWith(['Arduino_Opta_Blueprint', 'P1AM'], expect.any(Function), [])
-    expect(result).toEqual({ ok: true })
-  })
-
-  it('installArduinoLib defaults extraLibraries to [] when the caller omits it', async () => {
-    const handleLibraryInstallation = jest.fn(async () => ({ success: true }))
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleLibraryInstallation }), makeContext())
-    await port.installArduinoLib({ libId: '' }, () => undefined)
-    expect(handleLibraryInstallation).toHaveBeenCalledWith([], expect.any(Function), [])
-  })
-
-  it('installArduinoLib forwards third-party libraries as a separate list', async () => {
-    // Index-installed and git-installed libraries travel separately all the way
-    // down, because they are installed by different arduino-cli invocations:
-    // `lib install <name>` versus `lib install --git-url`.
-    const handleLibraryInstallation = jest.fn(async () => ({ success: true }))
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleLibraryInstallation }), makeContext())
-    await port.installArduinoLib(
-      {
-        libId: '',
-        extraLibraries: ['P1AM'],
-        thirdPartyLibraries: [
-          { name: 'open62541', gitUrl: 'https://example.invalid/open62541.git', reason: 'OPC-UA server' },
-        ],
-      },
-      () => undefined,
-    )
-    expect(handleLibraryInstallation).toHaveBeenCalledWith(['P1AM'], expect.any(Function), [
-      { name: 'open62541', gitUrl: 'https://example.invalid/open62541.git', reason: 'OPC-UA server' },
-    ])
-  })
-
-  it('installArduinoLib warns and returns ok:false when the install machinery throws', async () => {
-    // Only catastrophic failures (binary missing, spawn error) bubble out
-    // as throws. The port logs a warning and reports ok:false; the board's
-    // own library step still only warns on that, and RTOS mode uses it to
-    // tell that its library is missing.
-    const handleLibraryInstallation = jest.fn(async () => {
-      throw new Error('lib install failed')
-    })
-    const log = jest.fn()
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleLibraryInstallation }), makeContext())
-    const result = await port.installArduinoLib({ libId: '' }, log)
-    expect(result.ok).toBe(false)
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('lib install failed'), 'warning')
-  })
-
-  it('installArduinoLib returns ok:false when a library failed to install', async () => {
-    const handleLibraryInstallation = jest.fn(async () => ({ success: false }))
-    const port = createEditorCompilerPlatformPort(makeHandlers({ handleLibraryInstallation }), makeContext())
-    const result = await port.installArduinoLib({ libId: '', extraLibraries: ['FreeRTOS'] }, () => undefined)
-    expect(result).toEqual({ ok: false })
-  })
-
-  // ---- compileArduino: RTOS-mode sources -----------------------------------
-
-  describe('compileArduino', () => {
-    let tmp: string
-    beforeEach(() => {
-      tmp = mkdtempSync(join(tmpdir(), 'compile-arduino-'))
-    })
-    afterEach(() => {
-      rmSync(tmp, { recursive: true, force: true })
-    })
-
-    it('removes an earlier RTOS build’s sources before a single-loop build, and keeps them for an RTOS one', async () => {
-      const sketchDir = join(tmp, 'examples', 'Baremetal')
-      mkdirSync(sketchDir, { recursive: true })
-      writeFileSync(join(sketchDir, 'plc_os.cpp'), '// stale')
-      writeFileSync(join(sketchDir, 'plc_rtos.cpp'), '// stale')
-      const handleCompileArduinoProgram = jest.fn(async () => ({ success: true }))
-      const port = createEditorCompilerPlatformPort(
-        makeHandlers({ handleCompileArduinoProgram }),
-        makeContext({ compilationPath: tmp }),
-      )
-      const sketch = { 'examples/Baremetal/Baremetal.ino': '// sketch' }
-
-      await port.compileArduino({ files: sketch, argv: [], parallel: true }, () => undefined)
-      expect(existsSync(join(sketchDir, 'plc_os.cpp'))).toBe(false)
-      expect(existsSync(join(sketchDir, 'plc_rtos.cpp'))).toBe(false)
-
-      const rtos = { ...sketch, 'examples/Baremetal/plc_os.cpp': '// os', 'examples/Baremetal/plc_rtos.cpp': '// rtos' }
-      await port.compileArduino({ files: rtos, argv: [], parallel: true }, () => undefined)
-      expect(existsSync(join(sketchDir, 'plc_os.cpp'))).toBe(true)
-      expect(existsSync(join(sketchDir, 'plc_rtos.cpp'))).toBe(true)
-      expect(handleCompileArduinoProgram).toHaveBeenCalledTimes(2)
-    })
   })
 
   // ---- uploadArduinoBoard — port wiring (regression for issue #5) ----

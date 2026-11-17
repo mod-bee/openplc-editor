@@ -180,11 +180,7 @@ describe('resolveBoardSelection', () => {
     }
   })
 
-  it('maps a prebuilt arduino-hal VPP board: coreVersion + resolved precompiledLibraryDir', () => {
-    // Prebuilt mixed VPP: target.coreVersion (ABI-locked core) and
-    // hal.precompiledLibrary (vendor lib dir, resolved package-relative)
-    // must surface on boardEntry so the pipeline pins the core and passes
-    // the 2nd --library. The open hal.source integration layer stays.
+  it('maps a prebuilt arduino-hal VPP board: resolved precompiledLibraryDir', () => {
     const pkg: InstalledPackage = {
       packageId: 'com.automationdirect.p1am-prebuilt-test',
       version: '0.1.0',
@@ -233,10 +229,8 @@ describe('resolveBoardSelection', () => {
     if (result.ok) {
       expect(result.boardEntry.platform).toBe('FACTS:samd:P1AM-200')
       expect(result.boardEntry.core).toBe('FACTS:samd')
-      expect(result.boardEntry.coreVersion).toBe('1.7.13')
       // resolvePackageRelativePath fake joins as `${pkg.path}/${rel}`.
       expect(result.boardEntry.precompiledLibraryDir).toBe('/fake/packages/p1am/hal/arduino/lib')
-      expect(result.boardEntry.extra_libraries).toEqual(['P1AM'])
     }
   })
 

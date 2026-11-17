@@ -9,6 +9,7 @@ import { executeSaveActiveFile, executeSaveProject } from '../../services/save-a
 import { executeSaveProjectAs } from '../../services/save-project-as'
 import { type OpenPLCStore, useOpenPLCStore, useOpenPLCStoreApi } from '../../store'
 import type { ModalTypes } from '../../store/slices/modal'
+import { selectIsEditingLocked } from '../../store/slices/workspace/selectors'
 import { canExportPdf } from '../../utils/print-availability'
 import { toast } from '../_features/[app]/toast/use-toast'
 
@@ -24,6 +25,9 @@ const quitAppRequest = (isUnsaved: boolean, openModal: (modal: ModalTypes, data?
 
 // The native menu disables project-only items on the start screen; this covers a keypress that beats the rebuild.
 const hasOpenProject = (store: OpenPLCStore) => store.getState().project.meta.path !== ''
+
+/** Whether editing accelerators are refused because a debug session is open. */
+const isEditingLocked = (store: OpenPLCStore) => selectIsEditingLocked(store.getState())
 
 const AcceleratorHandler = () => {
   const accelerator = useAccelerator()
@@ -247,10 +251,11 @@ const AcceleratorHandler = () => {
 
   useEffect(() => {
     const unsub = accelerator.onImportPlcopen(() => {
+      if (isEditingLocked(store)) return
       openModal('confirm-plcopen-import', null)
     })
     return unsub
-  }, [accelerator, openModal])
+  }, [store, accelerator, openModal])
 
   /**
    * Delete file
@@ -285,7 +290,7 @@ const AcceleratorHandler = () => {
     }
 
     const unsub = accelerator.onDeleteFile(() => {
-      if (!hasOpenProject(store)) return
+      if (!hasOpenProject(store) || isEditingLocked(store)) return
       handleDelete()
     })
     return unsub
@@ -377,7 +382,7 @@ const AcceleratorHandler = () => {
 
   useEffect(() => {
     const unsub = accelerator.onUndo(() => {
-      if (!hasOpenProject(store) || !meta?.name) return
+      if (!hasOpenProject(store) || isEditingLocked(store) || !meta?.name) return
       if (!undo(meta.name)) notifyStaleBody(meta.name)
     })
     return unsub
@@ -385,7 +390,7 @@ const AcceleratorHandler = () => {
 
   useEffect(() => {
     const unsub = accelerator.onRedo(() => {
-      if (!hasOpenProject(store) || !meta?.name) return
+      if (!hasOpenProject(store) || isEditingLocked(store) || !meta?.name) return
       if (!redo(meta.name)) notifyStaleBody(meta.name)
     })
     return unsub

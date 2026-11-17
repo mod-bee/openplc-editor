@@ -256,7 +256,7 @@ export function libraryStructTypes(
       out.push({
         name: type.name,
         fields: type.fields.map((f) => ({
-          name: f.declaredName ?? f.name,
+          name: f.displayName ?? f.name,
           type:
             f.elementTypeName && f.arrayDimensions?.length
               ? `ARRAY [${f.arrayDimensions.map((d) => `${d.start}..${d.end}`).join(', ')}] OF ${f.elementTypeName}`

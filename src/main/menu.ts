@@ -21,6 +21,8 @@ export default class MenuBuilder {
   private projectService: ProjectService
   private updates: UpdateService | undefined
   private projectOpen = false
+  /** Whether a debug session is open, which makes the editing menu items read-only. */
+  private debuggerActive = false
   private readonly handleDevelopmentContextMenu = (_: Electron.Event, props: Electron.ContextMenuParams): void => {
     if (!this.hasLiveWindow()) return
 
@@ -105,6 +107,17 @@ export default class MenuBuilder {
     if (open === this.projectOpen) return
     this.projectOpen = open
     await this.buildMenu()
+  }
+
+  async setDebuggerActive(active: boolean): Promise<void> {
+    if (active === this.debuggerActive) return
+    this.debuggerActive = active
+    await this.buildMenu()
+  }
+
+  /** True only where the four editing items may act: a project is open and no debug session is. */
+  private get editingAllowed(): boolean {
+    return this.projectOpen && !this.debuggerActive
   }
 
   handleCreateProject() {
@@ -365,7 +378,7 @@ export default class MenuBuilder {
         {
           label: i18n.t('menu:file.submenu.importFromPLCOpenXml'),
           click: () => this.handleImportPlcopenRequest(),
-          enabled: this.projectOpen,
+          enabled: this.editingAllowed,
         },
         { type: 'separator' },
         // Its own group: retrieving is not a save, a close, or an export, and
@@ -411,12 +424,16 @@ export default class MenuBuilder {
         {
           label: i18n.t('menu:edit.submenu.undo'),
           accelerator: 'Cmd+Z',
-          ...(this.projectOpen ? { click: () => this.handleUndoRequest() } : { role: 'undo' }),
+          ...(this.projectOpen
+            ? { click: () => this.handleUndoRequest(), enabled: this.editingAllowed }
+            : { role: 'undo' }),
         },
         {
           label: i18n.t('menu:edit.submenu.redo'),
           accelerator: 'Cmd+Shift+Z',
-          ...(this.projectOpen ? { click: () => this.handleRedoRequest() } : { role: 'redo' }),
+          ...(this.projectOpen
+            ? { click: () => this.handleRedoRequest(), enabled: this.editingAllowed }
+            : { role: 'redo' }),
         },
         { type: 'separator' },
         {
@@ -486,7 +503,7 @@ export default class MenuBuilder {
           accelerator: 'Cmd+backspace',
           // role: 'delete',
           click: () => this.handleDeletePou(),
-          enabled: this.projectOpen,
+          enabled: this.editingAllowed,
         },
       ],
     }
@@ -677,7 +694,7 @@ export default class MenuBuilder {
           {
             label: i18n.t('menu:file.submenu.importFromPLCOpenXml'),
             click: () => this.handleImportPlcopenRequest(),
-            enabled: this.projectOpen,
+            enabled: this.editingAllowed,
           },
           {
             type: 'separator',
@@ -733,13 +750,13 @@ export default class MenuBuilder {
             label: i18n.t('menu:edit.submenu.undo'),
             accelerator: 'Ctrl+Z',
             click: () => this.handleUndoRequest(),
-            enabled: this.projectOpen,
+            enabled: this.editingAllowed,
           },
           {
             label: i18n.t('menu:edit.submenu.redo'),
             accelerator: 'Ctrl+Shift+Z',
             click: () => this.handleRedoRequest(),
-            enabled: this.projectOpen,
+            enabled: this.editingAllowed,
           },
           { type: 'separator' },
           {
@@ -812,7 +829,7 @@ export default class MenuBuilder {
             label: i18n.t('menu:edit.submenu.deletePou'),
             accelerator: 'Ctrl+Shift+delete',
             click: () => this.handleDeletePou(),
-            enabled: this.projectOpen,
+            enabled: this.editingAllowed,
           },
         ],
       },

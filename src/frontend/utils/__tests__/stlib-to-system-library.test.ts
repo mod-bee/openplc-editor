@@ -118,7 +118,7 @@ describe('stlibToSystemLibrary — function blocks', () => {
 
 describe('stlibToSystemLibrary — declared spelling', () => {
   // strucpp folds every name (IEC 61131-3 6.1.2: case is not significant) and
-  // records the author's spelling as `declaredName`. Pins show that spelling,
+  // records the author's spelling as `displayName`. Pins show that spelling,
   // as a pin of the project's own blocks does; block names stay folded.
   it('names pins, parameters and method parameters as the library declared them', () => {
     const lib = stlibToSystemLibrary(
@@ -127,23 +127,23 @@ describe('stlibToSystemLibrary — declared spelling', () => {
           {
             name: 'SCALE_VALUE',
             returnType: 'REAL',
-            parameters: [{ name: 'RAWVALUE', declaredName: 'rawValue', type: 'INT', direction: 'input' }],
+            parameters: [{ name: 'RAWVALUE', displayName: 'rawValue', type: 'INT', direction: 'input' }],
           },
         ],
         functionBlocks: [
           {
             name: 'FB_PUMP',
             inputs: [
-              { name: 'MYPIN', declaredName: 'myPin', type: 'BOOL' },
+              { name: 'MYPIN', displayName: 'myPin', type: 'BOOL' },
               { name: 'RUN', type: 'BOOL' },
             ],
-            outputs: [{ name: 'NOTOFF', declaredName: 'NotOff', type: 'BOOL' }],
-            inouts: [{ name: 'CMD', declaredName: 'Cmd', type: 'INT' }],
+            outputs: [{ name: 'NOTOFF', displayName: 'NotOff', type: 'BOOL' }],
+            inouts: [{ name: 'CMD', displayName: 'Cmd', type: 'INT' }],
             methods: [
               {
                 name: 'SETSPEED',
-                declaredName: 'SetSpeed',
-                inputs: [{ name: 'NEWSPEED', declaredName: 'newSpeed', type: 'INT' }],
+                displayName: 'SetSpeed',
+                inputs: [{ name: 'NEWSPEED', displayName: 'newSpeed', type: 'INT' }],
                 outputs: [],
                 inouts: [],
               },
@@ -162,6 +162,41 @@ describe('stlibToSystemLibrary — declared spelling', () => {
   })
 })
 
+describe('stlibToSystemLibrary — methods', () => {
+  // A library lists each block's own methods, of every visibility. A caller
+  // sees the PUBLIC ones, its own and those inherited through EXTENDS, with an
+  // override in place of its base's method (IEC 61131-3 6.6.5.5).
+  it('offers own and inherited PUBLIC methods, an override replacing its base', () => {
+    const method = (name: string, extra: object = {}) => ({ name, inputs: [], outputs: [], inouts: [], ...extra })
+    const lib = stlibToSystemLibrary(
+      makeArchive({
+        functionBlocks: [
+          {
+            name: 'FB_BASE',
+            inputs: [],
+            outputs: [],
+            inouts: [],
+            methods: [method('START'), method('STOP', { returnType: { type: 'BOOL' } }), method('HIDDEN', { visibility: 'PRIVATE' })],
+          },
+          {
+            name: 'FB_DERIVED',
+            extends: 'FB_BASE',
+            inputs: [],
+            outputs: [],
+            inouts: [],
+            methods: [method('STOP', { returnType: { type: 'INT' }, isOverride: true }), method('RESET')],
+          },
+        ],
+      }),
+    )
+    const derived = lib.pous.find((pou) => pou.name === 'FB_DERIVED')
+    expect(derived?.methods?.map((m) => m.name).sort()).toEqual(['RESET', 'START', 'STOP'])
+    expect(derived?.methods?.find((m) => m.name === 'STOP')?.returnType).toBe('INT')
+    const base = lib.pous.find((pou) => pou.name === 'FB_BASE')
+    expect(base?.methods?.map((m) => m.name).sort()).toEqual(['START', 'STOP'])
+  })
+})
+
 describe('stlibToSystemLibrary — data types', () => {
   it('gives the debugger the STRUCT and enumerated types, as declared', () => {
     const lib = stlibToSystemLibrary(
@@ -171,8 +206,8 @@ describe('stlibToSystemLibrary — data types', () => {
             name: 'UT_IO_DO',
             kind: 'struct',
             fields: [
-              { name: 'Q', declaredName: 'q', type: 'BOOL' },
-              { name: 'HOLDOFF', declaredName: 'holdOff', type: 'LTIME' },
+              { name: 'Q', displayName: 'q', type: 'BOOL' },
+              { name: 'HOLDOFF', displayName: 'holdOff', type: 'LTIME' },
               { name: 'SRC', type: 'UT_SRC' },
               { name: 'HIST', type: 'ARRAY', elementTypeName: 'INT', arrayDimensions: [{ start: 1, end: 4 }] },
             ],
@@ -180,9 +215,10 @@ describe('stlibToSystemLibrary — data types', () => {
           {
             name: 'E_MODE',
             kind: 'enum',
-            members: ['OFF', 'AUTO'],
-            declaredMembers: ['Off', 'Auto'],
-            values: [null, '5'],
+            members: [
+              { name: 'OFF', displayName: 'Off' },
+              { name: 'AUTO', displayName: 'Auto', value: '5' },
+            ],
           },
           { name: 'T_SPEED', kind: 'alias', baseType: 'REAL' },
         ],

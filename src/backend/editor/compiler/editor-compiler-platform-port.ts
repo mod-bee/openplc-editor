@@ -24,7 +24,11 @@
  * `middleware/adapters/web/`.
  */
 
-import { RTOS_SKETCH_SOURCES } from '@root/backend/shared/compile/steps/generate-rtos-config'
+import {
+  ARDUINO_EXPORT_DIR,
+  planBuildTreeSync,
+  staticCandidates,
+} from '@root/backend/shared/compile/steps/plan-build-tree-sync'
 import { deployReachedDevice, deployRuntimeProgram } from '@root/backend/shared/library/deploy-runtime-program'
 import { probeRuntimeVersion } from '@root/backend/shared/library/probe-runtime-version'
 import {
@@ -42,8 +46,6 @@ import type {
   CompileArduinoArgs,
   CompileArduinoResult,
   CompilerPlatformPort,
-  InstallArduinoCoreArgs,
-  InstallArduinoLibArgs,
   KeepBuildOutputArgs,
   KeepBuildOutputResult,
   MaterializeRuntimeV4BundleArgs,
@@ -62,11 +64,65 @@ import type {
 import type { BundleFile } from '@root/middleware/shared/utils/library/bundle-file'
 import { isBinaryBundleFile } from '@root/middleware/shared/utils/library/bundle-file'
 import { createHash } from 'crypto'
-import { promises as fs } from 'fs'
+import { type Dirent, promises as fs } from 'fs'
 import { dirname, join } from 'path'
 
 import type { CompilerModule } from './compiler-module'
 import { keepBuildOutputFiles } from './keep-build-output'
+
+/** Every file under `root` as a POSIX path relative to it, skipping arduino-cli's export folder. */
+async function listBuildFolder(root: string, relDir = ''): Promise<string[]> {
+  let entries: Dirent[]
+  try {
+    entries = await fs.readdir(join(root, relDir), { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const paths: string[] = []
+  for (const entry of entries) {
+    const relPath = relDir === '' ? entry.name : `${relDir}/${entry.name}`
+    if (entry.isDirectory()) {
+      if (`${relPath}/` === ARDUINO_EXPORT_DIR) continue
+      paths.push(...(await listBuildFolder(root, relPath)))
+    } else {
+      paths.push(relPath)
+    }
+  }
+  return paths
+}
+
+/**
+ * Apply `planBuildTreeSync` to the build folder at `root`. A binary entry (a
+ * precompiled library's `.a`) is never one of the editor's static text files,
+ * so the plan always writes it, as bytes.
+ */
+export async function syncBuildFolder(
+  root: string,
+  files: Record<string, BundleFile>,
+  staticFiles: Record<string, string>,
+): Promise<void> {
+  const desired: Record<string, string> = {}
+  for (const [path, file] of Object.entries(files)) desired[path] = typeof file === 'string' ? file : '\u0000binary'
+  const existingPaths = await listBuildFolder(root)
+  const present = new Set(existingPaths)
+  const existingContents: Record<string, string> = {}
+  for (const path of staticCandidates(desired, staticFiles)) {
+    if (!present.has(path)) continue
+    try {
+      existingContents[path] = await fs.readFile(join(root, path), 'utf-8')
+    } catch {
+      continue
+    }
+  }
+  const plan = planBuildTreeSync({ desired, staticFiles, existingPaths, existingContents })
+  await Promise.all(plan.remove.map((path) => fs.rm(join(root, path), { force: true })))
+  await Promise.all(
+    plan.write.map(async (path) => {
+      const absPath = join(root, path)
+      await writeBundleFile(absPath, files[path])
+    }),
+  )
+}
 
 /**
  * Subset of `CompilerModule` the port adapter calls into.  Declared
@@ -103,8 +159,6 @@ async function writeBundleFile(absPath: string, file: BundleFile | Uint8Array): 
 export interface EditorCompilerHandlers {
   handleCompileArduinoProgram: CompilerModule['handleCompileArduinoProgram']
   handleUploadProgram: CompilerModule['handleUploadProgram']
-  handleCoreInstallation: CompilerModule['handleCoreInstallation']
-  handleLibraryInstallation: CompilerModule['handleLibraryInstallation']
   handleVendorPluginPackaging: CompilerModule['handleVendorPluginPackaging']
 }
 
@@ -131,6 +185,10 @@ export interface EditorCompilerPlatformPortContext {
   /** Whether the user requested a clean rebuild (drives arduino-cli's
    *  `--clean` flag). */
   cleanBuild: boolean
+  /** The editor's static firmware resources at their build-folder paths, so
+   *  `compileArduino` rewrites them only when they changed. Absent: every
+   *  file is written. */
+  staticFirmwareFiles?: Record<string, string>
   /** Bridge methods for runtime API calls (compile-status poll, etc.). */
   mainProcessBridge: {
     makeRuntimeApiRequest: <T = void>(
@@ -257,67 +315,6 @@ export function createEditorCompilerPlatformPort(
     },
 
     /**
-     * Arduino-cli core install.  The existing
-     * `handleCoreInstallation` already takes a core id and a log
-     * callback — direct passthrough modulo the log-shape
-     * translation.
-     *
-     * `args.boardManagerUrl` (the VPP's `target.boardManagerUrl`) is
-     * forwarded so vendor cores outside arduino-cli's built-in index
-     * install automatically rather than failing with "Platform not
-     * found".  `handleCoreInstallation` refreshes the index against
-     * that URL before installing.
-     */
-    async installArduinoCore(args: InstallArduinoCoreArgs, log: PlatformLog): Promise<UploadResult> {
-      try {
-        await handlers.handleCoreInstallation(
-          args.coreId,
-          (chunk, level) => {
-            const message = typeof chunk === 'string' ? chunk : chunk.toString()
-            log(message, level ?? 'info')
-          },
-          args.coreVersion,
-          args.boardManagerUrl,
-        )
-        return { ok: true }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        log(`Arduino core install failed: ${message}`, 'error')
-        return { ok: false }
-      }
-    },
-
-    /**
-     * Arduino-cli library install.  Forwards `args.extraLibraries`
-     * (the per-board library list from `BoardBuildInfo`) to
-     * `handleLibraryInstallation`, which combines them with the
-     * editor's `GLOBAL_LIBRARIES` and runs `arduino-cli lib install`
-     * for whatever's missing.  `args.libId` is unused on this path —
-     * kept in the port shape for the legacy single-library callers.
-     */
-    async installArduinoLib(args: InstallArduinoLibArgs, log: PlatformLog): Promise<UploadResult> {
-      try {
-        const result = await handlers.handleLibraryInstallation(
-          args.extraLibraries ?? [],
-          (chunk, level) => {
-            const message = typeof chunk === 'string' ? chunk : chunk.toString()
-            log(message, level ?? 'info')
-          },
-          args.thirdPartyLibraries ?? [],
-        )
-        // Whether the libraries the caller named are there now; a global
-        // library that failed only warns.
-        return { ok: result?.success !== false }
-      } catch (error) {
-        // Reached only when the install machinery itself can't run
-        // (arduino-cli binary missing, spawn failure, etc.).
-        const message = error instanceof Error ? error.message : String(error)
-        log(`Warning: library install machinery failed: ${message}. Continuing build.`, 'warning')
-        return { ok: false }
-      }
-    },
-
-    /**
      * Materialise the in-memory file map to disk under the project's
      * build directory, then spawn `arduino-cli compile` via the
      * existing `handleCompileArduinoProgram`.
@@ -336,23 +333,7 @@ export function createEditorCompilerPlatformPort(
      */
     async compileArduino(args: CompileArduinoArgs, log: PlatformLog): Promise<CompileArduinoResult> {
       try {
-        // Materialise every entry in the in-memory file map under
-        // the project's build directory.  Editor's existing flow
-        // wrote these files in scattered places throughout the
-        // compile pipeline; doing it here once preserves the same
-        // on-disk layout arduino-cli expects.
-        await Promise.all(
-          Object.entries(args.files).map(async ([relPath, content]) =>
-            writeBundleFile(join(context.compilationPath, relPath), content),
-          ),
-        )
-        // An earlier RTOS-mode build's own sources are still on disk: a build
-        // that is not in RTOS mode must not compile them in, even to nothing.
-        await Promise.all(
-          RTOS_SKETCH_SOURCES.filter((relPath) => !(relPath in args.files)).map((relPath) =>
-            fs.rm(join(context.compilationPath, relPath), { force: true }),
-          ),
-        )
+        await syncBuildFolder(context.compilationPath, args.files, context.staticFirmwareFiles ?? {})
 
         // Invoke the existing handler — it spawns arduino-cli compile
         // with the per-board hals entry's flags.  The canonical

@@ -53,22 +53,33 @@ export type CatalogQueryResult =
  */
 /**
  * A pin or parameter as a `.stlib` manifest carries it. strucpp folds every
- * name (IEC 61131-3 6.1.2: case is not significant); `declaredName` is the
+ * name (IEC 61131-3 6.1.2: case is not significant); `displayName` is the
  * spelling the library's author wrote, present when it differs (`myPin` for
- * `MYPIN`), absent in an archive built before strucpp exported it.
+ * `MYPIN`).
  */
 export interface StlibPinDTO {
   name: string
-  declaredName?: string
+  displayName?: string
   type: string
+}
+
+/** A method's return type as a `.stlib` manifest carries it. */
+export interface StlibTypeRefDTO {
+  type: string
+  maxLength?: number
 }
 
 /** A method prototype as a `.stlib` manifest carries it. */
 export interface StlibMethodDTO {
   name: string
   /** `name` as declared, when that differs (IEC names are case-insensitive). */
-  declaredName?: string
-  returnType?: string
+  displayName?: string
+  returnType?: StlibTypeRefDTO
+  /** PUBLIC when absent (IEC 61131-3 6.6.5.5). */
+  visibility?: 'PUBLIC' | 'PRIVATE' | 'PROTECTED' | 'INTERNAL'
+  isAbstract?: boolean
+  isOverride?: boolean
+  isFinal?: boolean
   inputs: StlibPinDTO[]
   outputs: StlibPinDTO[]
   inouts: StlibPinDTO[]
@@ -86,7 +97,7 @@ export interface StlibArchiveDTO {
     functions: Array<{
       name: string
       /** `name` as the library declared it, when that differs. */
-      declaredName?: string
+      displayName?: string
       returnType: string
       parameters: Array<StlibPinDTO & { direction: 'input' | 'output' | 'inout' }>
       variadic?: { minArgs: number }
@@ -96,7 +107,7 @@ export interface StlibArchiveDTO {
     functionBlocks: Array<{
       name: string
       /** `name` as the library declared it (`FB_MqttClient` for `FB_MQTTCLIENT`), when that differs. */
-      declaredName?: string
+      displayName?: string
       inputs: Array<StlibPinDTO & { edge?: 'R_EDGE' | 'F_EDGE' }>
       outputs: StlibPinDTO[]
       inouts: StlibPinDTO[]
@@ -121,7 +132,7 @@ export interface StlibArchiveDTO {
       isAbstract?: true
       /** The interfaces it names in IMPLEMENTS. */
       implements?: string[]
-      /** Its PUBLIC methods, own and inherited. */
+      /** Its own methods, every visibility; inherited ones are on the block it `extends`. */
       methods?: StlibMethodDTO[]
     }>
     /** The library's interfaces (IEC 61131-3 6.6.6); absent in an archive built before they were exported. */
@@ -135,22 +146,19 @@ export interface StlibArchiveDTO {
     types: Array<{
       name: string
       /** `name` as the library declared it, when that differs. */
-      declaredName?: string
+      displayName?: string
       kind: 'struct' | 'enum' | 'alias'
       baseType?: string
       documentation?: string
       category?: string
-      /** An enum's members, folded; `declaredMembers` as the library spelled them, when one differs. */
-      members?: string[]
-      declaredMembers?: string[]
-      /** Each member's explicit value as ST text, parallel to `members` (`null` where none was written). */
-      values?: Array<string | null>
+      /** An enum's members: folded name, spelling as written when it differs, explicit value as ST text. */
+      members?: Array<{ name: string; displayName?: string; value?: string }>
       /** A STRUCT's members (absent in an archive built before strucpp exported them). An inline
        *  array member carries its element type and dimensions. */
       fields?: Array<{
         name: string
         type: string
-        declaredName?: string
+        displayName?: string
         elementTypeName?: string
         arrayDimensions?: Array<{ start: number; end: number }>
       }>

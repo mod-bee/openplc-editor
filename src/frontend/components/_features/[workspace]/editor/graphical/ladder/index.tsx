@@ -1,8 +1,3 @@
-/**
- * Explain - This is a workaround to avoid the following error:
- * The ```@dnd-kit``` package is not correctly asserted by the lint tool.
- */
-
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
   closestCenter,
@@ -26,6 +21,7 @@ import { usePouSnapshot } from '../../../../../../hooks/use-pou-snapshot'
 import { ladderSelectors } from '../../../../../../hooks/use-store-selectors'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../../../store'
 import { RungLadderState } from '../../../../../../store/slices/ladder'
+import { graphicalElementModalFor } from '../../../../../../store/slices/modal'
 import { scheduleFlowWriteBack } from '../../../../../../store/slices/shared/flow-writeback'
 import { cn } from '../../../../../../utils/cn'
 import { hasLegacyInOutOutputHandle } from '../../../../../../utils/graphical/in-out-pin-rules'
@@ -51,12 +47,7 @@ const EMPTY_DIVERGENCES: string[] = []
 
 export default function LadderEditor() {
   const store = useOpenPLCStoreApi()
-  // Bound POU comes from the `GraphicalEditorActiveProvider` set up
-  // in the wrapper one level up.  Mirrors `FbdEditor` — see that
-  // file for the multi-mount rationale.
   const pouName = useBoundPou()
-  // Pou-scoped subscription: immer's structural sharing keeps this flow's
-  // identity stable when other POUs' flows (or unrelated slices) change.
   const flow = useOpenPLCStore((state) => state.ladderFlows.find((f) => f.name === pouName))
   const ladderFlowActions = useOpenPLCStore((state) => state.ladderFlowActions)
   const revealTarget = useOpenPLCStore((state) => state.revealTarget)
@@ -70,6 +61,9 @@ export default function LadderEditor() {
   const userLibraries = useOpenPLCStore((state) => state.libraries.user)
   const systemLibraries = useOpenPLCStore((state) => state.libraries.system)
   const isDebuggerVisible = useOpenPLCStore((state) => state.workspace.isDebuggerVisible)
+  const blockElement = graphicalElementModalFor(blockElementModal, pouName)
+  const contactElement = graphicalElementModalFor(contactElementModal, pouName)
+  const coilElement = graphicalElementModalFor(coilElementModal, pouName)
 
   const { captureAndPush } = usePouSnapshot()
   const placement = useGraphicalPlacement()
@@ -149,9 +143,6 @@ export default function LadderEditor() {
         const hasDivergence =
           originalInOut?.length !== currentVariables.length ||
           !originalInOut?.every((variable) => currentMap.has(formatVariable(variable))) ||
-          // The declarations can agree while the persisted GEOMETRY is stale: a rung saved
-          // before a VAR_IN_OUT pin became input-only still carries the pin's output side. The
-          // interface never changed, so the comparison above cannot see it.
           hasLegacyInOutOutputHandle(node)
 
         if (hasDivergence) {
@@ -194,13 +185,6 @@ export default function LadderEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealTarget?.seq])
 
-  /**
-   * Queue the flow → project JSON write-back. The scheduler debounces it
-   * (edits inside the window coalesce), persists the raw flow object, and
-   * clears the `updated` flag; save paths flush it so a save landing inside
-   * the window still serializes the fresh body. Validation and the DOPE-477
-   * raw-object policy live in store/slices/shared/flow-writeback.ts.
-   */
   useEffect(() => {
     if (!flowUpdated) return
     scheduleFlowWriteBack(store.getState, pouName, 'ld')
@@ -272,7 +256,6 @@ export default function LadderEditor() {
     }
 
     const auxRungs = [...(flow?.rungs || [])]
-    // Store the original state for recovery
     const originalRungs = [...auxRungs]
     const [removed] = auxRungs.splice(sourceIndex, 1)
     auxRungs.splice(destinationIndex, 0, removed)
@@ -282,16 +265,11 @@ export default function LadderEditor() {
       ladderFlowActions.setRungs({ editorName: pouName, rungs: auxRungs })
     } catch (error) {
       console.error('Failed to update rungs:', error)
-      // Recover the original state
       ladderFlowActions.setRungs({ editorName: pouName, rungs: originalRungs })
-      // Notify the user
       console.error('Failed to reorder rungs. The operation has been reverted.')
     }
   }
 
-  /**
-   * Handle the close of the modal
-   */
   const handleModalClose = () => {
     closeModal()
   }
@@ -339,24 +317,24 @@ export default function LadderEditor() {
         </DndContext>
         <CreateRung onClick={handleAddNewRung} />
         <Portal.Root>
-          {blockElementModal?.open && (
+          {blockElement && (
             <BlockElement
               onClose={handleModalClose}
-              selectedNode={blockElementModal.data as BlockNode<BlockVariant>}
+              selectedNode={blockElement.node as BlockNode<BlockVariant>}
               isOpen={blockElementModal.open}
             />
           )}
-          {contactElementModal?.open && (
+          {contactElement && (
             <ContactElement
               onClose={handleModalClose}
-              node={contactElementModal.data as ContactNode}
+              node={contactElement.node as ContactNode}
               isOpen={contactElementModal.open}
             />
           )}
-          {coilElementModal?.open && (
+          {coilElement && (
             <CoilElement
               onClose={handleModalClose}
-              node={coilElementModal.data as CoilNode}
+              node={coilElement.node as CoilNode}
               isOpen={coilElementModal.open}
             />
           )}

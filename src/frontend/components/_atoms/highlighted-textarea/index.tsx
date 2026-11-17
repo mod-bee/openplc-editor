@@ -144,6 +144,7 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
     }, [textAreaValue, scrollLimiter, limitedHeight])
 
     const onChangeHandler = (e: ChangeEvent<HTMLTextAreaElement>) => {
+      if (props.readOnly) return
       setTextAreaValue(e.target.value)
       if (props.onChange) props.onChange(e)
     }
@@ -176,6 +177,7 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
         <textarea
           value={textAreaValue}
           onChange={onChangeHandler}
+          readOnly={props.readOnly}
           placeholder={placeholder ?? '???'}
           className={cn(
             'absolute w-full resize-none bg-transparent outline-none',
@@ -193,7 +195,7 @@ const HighlightedTextArea = forwardRef<HTMLTextAreaElement, HighlightedTextAreaP
               highlightDivRef.current.scrollTop = 0
             }
             props.onBlur?.(e)
-            if (canSubmit && handleSubmit) handleSubmit(e.target.value)
+            if (canSubmit && handleSubmit && !props.readOnly) handleSubmit(e.target.value)
             setCanSubmit(true)
           }}
           onScroll={(e) => onScrollHandler(e)}

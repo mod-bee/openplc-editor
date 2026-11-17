@@ -8,6 +8,7 @@ import type { CellContext, RowData } from '@tanstack/react-table'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
+import { useIsEditingLocked } from '../../../hooks/use-editing-lock'
 import { pinSelectors, remoteDeviceSelectors, vendorIoSelectors } from '../../../hooks/use-store-selectors'
 import { useOpenPLCStore } from '../../../store'
 import { ProjectResponse } from '../../../store/slices/project'
@@ -60,8 +61,8 @@ const EditableNameCell = ({
     project: {
       data: { pous, configurations },
     },
-    workspace: { isDebuggerVisible },
   } = useOpenPLCStore()
+  const isDebuggerVisible = useIsEditingLocked()
   // We need to keep and update the state of the cell normally
   const [cellValue, setCellValue] = useState(initialValue)
   const [isEditing, setIsEditing] = useState(false)
@@ -341,8 +342,8 @@ const EditableInitialValueCell = ({
     editor,
     searchQuery,
     projectActions: { getVariable },
-    workspace: { isDebuggerVisible },
   } = useOpenPLCStore()
+  const isDebuggerVisible = useIsEditingLocked()
   // We need to keep and update the state of the cell normally
   const [cellValue, setCellValue] = useState(initialValue)
   const [isEditing, setIsEditing] = useState(false)
@@ -449,8 +450,8 @@ const EditableLocationCell = ({
     editor,
     searchQuery,
     projectActions: { getVariable },
-    workspace: { isDebuggerVisible },
   } = useOpenPLCStore()
+  const isDebuggerVisible = useIsEditingLocked()
   const existingPins = pinSelectors.usePins()
   const remoteIOPoints = remoteDeviceSelectors.useRemoteDeviceIOPoints()
   const vendorIoEntries = vendorIoSelectors.useVendorIoEntries()
@@ -657,9 +658,7 @@ const EditableDocumentationCell = ({
   selected = true,
 }: IEditableCellProps) => {
   const initialValue = getValue<string | undefined>()
-  const {
-    workspace: { isDebuggerVisible },
-  } = useOpenPLCStore()
+  const isDebuggerVisible = useIsEditingLocked()
   // We need to keep and update the state of the cell normally
   const [cellValue, setCellValue] = useState(initialValue ?? '')
 

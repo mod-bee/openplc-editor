@@ -105,7 +105,7 @@ function typeRef(typeName: string): SystemLibraryVariable['type'] {
  * the debugger find the same variable either way. Block and type names stay
  * folded: projects store them and look them up by that spelling.
  */
-const pinName = (pin: StlibPinDTO): string => pin.declaredName ?? pin.name
+const pinName = (pin: StlibPinDTO): string => pin.displayName ?? pin.name
 
 /** Every IEC 61131-3 elementary type (Table 10), which a struct member of the library may have. */
 const ELEMENTARY_TYPE_NAMES = new Set([
@@ -152,19 +152,18 @@ function toDataTypes(types: readonly LibraryTypeDTO[]): PLCDataType[] {
   for (const type of types) {
     if (type.kind === 'struct' && type.fields) {
       out.push({
-        name: type.declaredName ?? type.name,
+        name: type.displayName ?? type.name,
         derivation: 'structure',
-        variable: type.fields.map((field) => ({ name: field.declaredName ?? field.name, type: fieldType(field) })),
+        variable: type.fields.map((field) => ({ name: field.displayName ?? field.name, type: fieldType(field) })),
       })
     } else if (type.kind === 'enum' && type.members) {
-      const names = type.declaredMembers ?? type.members
       out.push({
-        name: type.declaredName ?? type.name,
+        name: type.displayName ?? type.name,
         derivation: 'enumerated',
         ...(type.baseType !== undefined ? { baseType: type.baseType } : {}),
-        values: names.map((description, i) => {
-          const value = type.values?.[i]
-          return value !== undefined && value !== null ? { description, value } : { description }
+        values: type.members.map((member) => {
+          const description = member.displayName ?? member.name
+          return member.value !== undefined ? { description, value: member.value } : { description }
         }),
       })
     }
@@ -180,14 +179,38 @@ function classFromDirection(d: 'input' | 'output' | 'inout'): SystemLibraryVaria
 /** A method prototype, its parameters as pins. */
 function toMethod(method: StlibMethodDTO): SystemLibraryMethod {
   return {
-    name: method.declaredName ?? method.name,
-    ...(method.returnType !== undefined ? { returnType: method.returnType } : {}),
+    name: method.displayName ?? method.name,
+    ...(method.returnType !== undefined ? { returnType: method.returnType.type } : {}),
     variables: [
       ...method.inputs.map((p) => ({ name: pinName(p), class: 'input' as const, type: typeRef(p.type) })),
       ...method.outputs.map((p) => ({ name: pinName(p), class: 'output' as const, type: typeRef(p.type) })),
       ...method.inouts.map((p) => ({ name: pinName(p), class: 'inOut' as const, type: typeRef(p.type) })),
     ],
   }
+}
+
+type LibraryBlockDTO = StlibArchiveDTO['manifest']['functionBlocks'][number]
+
+/**
+ * The methods a block offers a caller: its own PUBLIC ones and those it
+ * inherits through EXTENDS from a block of the same library, an override
+ * replacing its base's (IEC 61131-3 6.6.5.5).
+ */
+function publicMethodsOf(
+  fb: LibraryBlockDTO,
+  blocksByName: ReadonlyMap<string, LibraryBlockDTO>,
+): { methods?: SystemLibraryMethod[] } {
+  const byName = new Map<string, StlibMethodDTO>()
+  const seen = new Set<string>()
+  for (let block: LibraryBlockDTO | undefined = fb; block; block = blocksByName.get(block.extends?.toUpperCase() ?? '')) {
+    if (seen.has(block.name.toUpperCase())) break
+    seen.add(block.name.toUpperCase())
+    for (const method of block.methods ?? []) {
+      if ((method.visibility ?? 'PUBLIC') !== 'PUBLIC') continue
+      if (!byName.has(method.name.toUpperCase())) byName.set(method.name.toUpperCase(), method)
+    }
+  }
+  return byName.size > 0 ? { methods: [...byName.values()].map(toMethod) } : {}
 }
 
 /**
@@ -215,7 +238,7 @@ export function stlibToSystemLibrary(
     ]
     pous.push({
       // As the library declared it: IEC names ignore case, and every lookup does too.
-      name: fn.declaredName ?? fn.name,
+      name: fn.displayName ?? fn.name,
       type: 'function',
       language: 'st',
       variables,
@@ -231,6 +254,7 @@ export function stlibToSystemLibrary(
   // the manifest entry's `sourceFile`.
   const sourceByFile = new Map((archive.sources ?? []).map((src) => [src.fileName, src.source]))
 
+  const blocksByName = new Map(m.functionBlocks.map((block) => [block.name.toUpperCase(), block]))
   for (const fb of m.functionBlocks) {
     const variables: SystemLibraryVariable[] = [
       ...fb.inputs.map((v) => {
@@ -267,7 +291,7 @@ export function stlibToSystemLibrary(
     // wins — rather than by giving native blocks a private namespace.
     const nativeLanguage = fb.implementation
     pous.push({
-      name: fb.declaredName ?? fb.name,
+      name: fb.displayName ?? fb.name,
       type: 'function-block',
       language: nativeLanguage ?? 'st',
       variables,
@@ -278,7 +302,7 @@ export function stlibToSystemLibrary(
       ...(fb.extends !== undefined ? { extends: fb.extends } : {}),
       ...(fb.implements !== undefined && fb.implements.length > 0 ? { implements: [...fb.implements] } : {}),
       ...(fb.isAbstract === true ? { isAbstract: true as const } : {}),
-      ...(fb.methods !== undefined && fb.methods.length > 0 ? { methods: fb.methods.map(toMethod) } : {}),
+      ...publicMethodsOf(fb, blocksByName),
     })
   }
 

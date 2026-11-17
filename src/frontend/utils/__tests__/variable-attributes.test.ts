@@ -47,9 +47,9 @@ describe('reading attribute pragmas', () => {
     expect(vars(text).map((v) => v.attributes)).toEqual([[{ name: 'hide' }], [{ name: 'hide' }]])
   })
 
-  it('reads a pragma set apart by a blank line as STruC++ does, in its folded spelling', () => {
+  it('reads a pragma set apart by a blank line as STruC++ does, in its written spelling', () => {
     const text = "VAR\n    {attribute 'Hide'}\n\n    a : INT;\nEND_VAR"
-    expect(byName(text, 'a')?.attributes).toEqual([{ name: 'hide' }])
+    expect(byName(text, 'a')?.attributes).toEqual([{ name: 'Hide' }])
   })
 })
 

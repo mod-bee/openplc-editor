@@ -11,6 +11,7 @@ import { useRevealInProject } from '../../../../../hooks/use-reveal-in-project'
 import { useStDebugDecorations } from '../../../../../hooks/use-st-debug-decorations'
 import { registerAIInlineCompletions } from '../../../../../services/ai/inline-completions'
 import { getCppMemberCompletions, projectTypeNamePredicate } from '../../../../../services/cpp-scope'
+import { externalReloadWarning, resolveExternalBodyReload } from '../../../../../services/external-pou-reload'
 import { executeSaveActiveFile, executeSaveProject } from '../../../../../services/save-actions'
 import { pouUri, splitExpression } from '../../../../../services/st-lsp'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../../../../../store'
@@ -303,21 +304,26 @@ const MonacoEditor = (props: monacoEditorProps): ReturnType<typeof PrimitiveEdit
     }
 
     const reloadFromDisk = async () => {
-      if (!watchedFilePathRef.current) return
+      const filePath = watchedFilePathRef.current
+      if (!filePath) return
 
       try {
-        const result = await projectPort.readFileContent(watchedFilePathRef.current)
+        const outcome = await resolveExternalBodyReload(store, projectPort, {
+          pouName: name,
+          filePath,
+          language,
+          pouType: pou.pouType,
+        })
 
-        if (result.success && result.content) {
-          const parsedPou =
-            language === 'st' || language === 'il'
-              ? parseTextualPouFromString(result.content, language, pou.pouType)
-              : parseHybridPouFromString(result.content, language, pou.pouType)
-          const newBodyValue = typeof parsedPou.body.value === 'string' ? parsedPou.body.value : ''
-
-          setLocalText(newBodyValue)
+        if (outcome.kind === 'apply') {
+          setLocalText(outcome.body)
           // The body came from disk, so this write must not mark the POU unsaved.
-          runWithoutDirtying(isSyncingModelRef, () => updatePou({ name, content: { language, value: newBodyValue } }))
+          runWithoutDirtying(isSyncingModelRef, () => updatePou({ name, content: { language, value: outcome.body } }))
+        }
+
+        const warning = externalReloadWarning(outcome, 'file-change')
+        if (warning) {
+          toast({ title: warning.title, description: warning.description, variant: 'warn' })
         }
       } catch (err) {
         console.error('[Monaco FileWatch] Failed to reload file:', err)
@@ -767,23 +773,21 @@ const MonacoEditor = (props: monacoEditorProps): ReturnType<typeof PrimitiveEdit
           const pouFolder = getFolderFromPouType(currentPou.pouType)
           const fullPath = `${currentProjectPath}/pous/${pouFolder}/${name}${actualExtension}`
 
-          const result = await projectPort.readFileContent(fullPath)
+          const outcome = await resolveExternalBodyReload(store, projectPort, {
+            pouName: name,
+            filePath: fullPath,
+            language,
+            pouType: currentPou.pouType,
+          })
 
-          if (result.success && result.content) {
-            const parsedPou =
-              language === 'st' || language === 'il'
-                ? parseTextualPouFromString(result.content, language, currentPou.pouType)
-                : parseHybridPouFromString(result.content, language, currentPou.pouType)
-            const newBodyValue = typeof parsedPou.body.value === 'string' ? parsedPou.body.value : ''
+          if (outcome.kind === 'apply') {
+            setLocalText(outcome.body)
+            runWithoutDirtying(isSyncingModelRef, () => updatePou({ name, content: { language, value: outcome.body } }))
+          }
 
-            const currentBodyValue = typeof currentPou.body.value === 'string' ? currentPou.body.value : ''
-            if (newBodyValue !== currentBodyValue) {
-              setLocalText(newBodyValue)
-              // Same as `reloadFromDisk`: the body came from disk, not from the user.
-              runWithoutDirtying(isSyncingModelRef, () =>
-                updatePou({ name, content: { language, value: newBodyValue } }),
-              )
-            }
+          const warning = externalReloadWarning(outcome, 'editor-mount')
+          if (warning) {
+            toast({ title: warning.title, description: warning.description, variant: 'warn' })
           }
         } catch (err) {
           console.error('[Monaco] Failed to check for external changes on mount:', err)
