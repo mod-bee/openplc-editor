@@ -16,6 +16,7 @@
 
 import { importCodesysLibrary } from './codesys-import'
 import { compileStlib } from './compile-stlib'
+import { libraryCompatibilityError } from './library-compatibility'
 import { parseStlibArchive } from './parse-stlib-archive'
 
 /** Source flavor for the registry / install result. */
@@ -100,6 +101,10 @@ export function prepareStlibUpload(text: string): PreparedLibrary {
   if (!manifest) {
     throw new Error('Library archive is missing a manifest with a name and version')
   }
+  // An archive built for another compiler would install and then fail every
+  // build that uses it: refuse it now, with the reason.
+  const incompatible = libraryCompatibilityError(parsed)
+  if (incompatible) throw new Error(incompatible)
   return { ...manifest, origin: 'stlib', archive: text }
 }
 

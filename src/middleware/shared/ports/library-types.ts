@@ -186,6 +186,9 @@ export interface InstalledLibrary {
    *  archive doesn't ripple through every consumer. */
   description?: string
   author?: string
+  /** Set when this compiler cannot use the archive (it was built for another
+   *  compiler's calling convention): the reason, in words, and what to do. */
+  incompatible?: string
 }
 
 /**

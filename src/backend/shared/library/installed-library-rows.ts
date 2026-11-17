@@ -18,6 +18,7 @@
 
 import type { StlibArchiveDTO } from '../../../middleware/shared/ports/library-port'
 import type { InstalledLibrary } from '../../../middleware/shared/ports/library-types'
+import { libraryCompatibilityError } from './library-compatibility'
 
 /**
  * Map a parsed bundled archive (an entry produced by Vite's `?raw`
@@ -53,6 +54,7 @@ export function userArchiveToInstalledRow(
   archive: StlibArchiveDTO,
   metadata: { name: string; version: string; installedAt: string; origin: 'stlib' | 'codesys' },
 ): InstalledLibrary {
+  const incompatible = libraryCompatibilityError(archive)
   return {
     name: metadata.name,
     version: metadata.version,
@@ -61,5 +63,6 @@ export function userArchiveToInstalledRow(
     origin: metadata.origin,
     ...(archive.manifest.displayName ? { displayName: archive.manifest.displayName } : {}),
     ...(archive.manifest.description ? { description: archive.manifest.description } : {}),
+    ...(incompatible ? { incompatible } : {}),
   }
 }

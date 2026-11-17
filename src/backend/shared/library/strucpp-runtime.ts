@@ -42,6 +42,8 @@
  *     (bytes-in; the caller reads the file or upload).
  *   - `loadStlibFromString` — `.stlib` archive parser (text-in;
  *     the caller reads the file or fetches the URL).
+ *   - `libraryAbiErrors` — whether an archive's C++ was built for this
+ *     compiler's calling convention.
  *
  * Every entry pulls its signature through `typeof import('strucpp')[k]`
  * so adding a parameter on the strucpp side surfaces as a compile
@@ -55,6 +57,8 @@ export interface StrucppRuntime {
   compileStlib: (typeof import('strucpp'))['compileStlib']
   importCodesysLibraryFromBytes: (typeof import('strucpp'))['importCodesysLibraryFromBytes']
   loadStlibFromString: (typeof import('strucpp'))['loadStlibFromString']
+  /** Absent from a compiler older than the library calling-convention stamp. */
+  libraryAbiErrors?: (typeof import('strucpp'))['libraryAbiErrors']
 }
 
 let cached: StrucppRuntime | null = null

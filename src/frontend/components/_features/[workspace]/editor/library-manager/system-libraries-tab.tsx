@@ -218,10 +218,19 @@ const SystemLibrariesTab = ({ installed, onRefresh }: SystemLibrariesTabProps) =
                     {lib.bundled ? ' · bundled' : lib.origin === 'codesys' ? ' · CODESYS import' : ''}
                   </span>
                 </div>
-                {lib.bundled && (
-                  <span className='bg-brand/15 rounded-full px-2 py-0.5 text-[10px] font-medium text-brand-medium dark:text-brand-light'>
-                    bundled
+                {lib.incompatible ? (
+                  <span
+                    title={lib.incompatible}
+                    className='rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-300'
+                  >
+                    reinstall
                   </span>
+                ) : (
+                  lib.bundled && (
+                    <span className='bg-brand/15 rounded-full px-2 py-0.5 text-[10px] font-medium text-brand-medium dark:text-brand-light'>
+                      bundled
+                    </span>
+                  )
                 )}
               </button>
             ))
@@ -279,6 +288,7 @@ const SystemLibrariesTab = ({ installed, onRefresh }: SystemLibrariesTabProps) =
               )}
               {selectedRow.author && <DetailRow label='Author' value={selectedRow.author} />}
               {selectedRow.description && <DetailRow label='Description' value={selectedRow.description} />}
+              {selectedRow.incompatible && <DetailRow label='Cannot be used' value={selectedRow.incompatible} />}
             </div>
             {selectedArchive && <PouTreePreview library={selectedArchive} />}
           </>
