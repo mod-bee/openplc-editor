@@ -267,9 +267,10 @@ const dataTypeSchema = z.discriminatedUnion('derivation', [
       baseType: z.string().min(1).optional(),
       /**
        * Attribute pragmas (CODESYS): `qualified_only` (values always written
-       * `E_Type.Value`), `strict` (no arithmetic, no integer assigned).
+       * `E_Type.Value`), `strict` (no arithmetic, no integer assigned),
+       * `to_string` (TO_STRING gives a value's name, not its number).
        */
-      attributes: z.array(z.enum(['qualified_only', 'strict'])).optional(),
+      attributes: z.array(z.enum(['qualified_only', 'strict', 'to_string'])).optional(),
       /** A name, or `{ name, value }` for a named value with an explicit value. */
       values: z
         .array(

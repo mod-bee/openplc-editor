@@ -44,7 +44,7 @@ const PLCEnumeratedDatatypeSchema = z.object({
   initialValue: z.string().optional(),
   values: z.array(z.object({ description: z.string(), value: z.string().optional() })),
   // Attribute pragmas (CODESYS): see `ports/types.ts`.
-  attributes: z.array(z.enum(['qualified_only', 'strict'])).optional(),
+  attributes: z.array(z.enum(['qualified_only', 'strict', 'to_string'])).optional(),
 })
 
 const PLCStructureVariableSchema = z.object({

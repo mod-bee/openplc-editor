@@ -266,10 +266,12 @@ numbers of that type: `x := 27`, `x := RUN + 1`, `n := x` into an INT and
 and is compared only with its own values; `apply` refuses a value outside the
 base type's range, two names with one value, and a non-integer base type.
 
-`"attributes": ["qualified_only", "strict"]` on an enumerated type writes those
-CODESYS attribute pragmas: `qualified_only` means a value is always written
-`Status.RUN`, never a bare `RUN`; `strict` refuses arithmetic on it and an
-integer assigned to it (reading it as a number still works).
+`"attributes": ["qualified_only", "strict", "to_string"]` on an enumerated type
+writes those CODESYS attribute pragmas: `qualified_only` means a value is always
+written `Status.RUN`, never a bare `RUN`; `strict` refuses arithmetic on it and
+an integer assigned to it (reading it as a number still works); `to_string`
+makes `TO_STRING` (and a library that prints values) give a value's name,
+`'RUN'`, instead of its number.
 
 ## tasks[] and instances[]
 

@@ -152,10 +152,11 @@ export type PLCDataType =
       values: Array<{ description: string; value?: string }>
       /**
        * Attribute pragmas on the type (CODESYS): `qualified_only` (a value is
-       * always written `E_Type.Value`) and `strict` (no arithmetic, no
-       * integer assigned to it). Written `{attribute 'x'}` before the type.
+       * always written `E_Type.Value`), `strict` (no arithmetic, no
+       * integer assigned to it) and `to_string` (TO_STRING gives a value's
+       * name, not its number). Written `{attribute 'x'}` before the type.
        */
-      attributes?: Array<'qualified_only' | 'strict'>
+      attributes?: Array<'qualified_only' | 'strict' | 'to_string'>
     }
   | {
       name: string

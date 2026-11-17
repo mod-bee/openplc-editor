@@ -189,10 +189,14 @@ function buildEnum(
         : ''
   const spelled = values.find((value) => value.description.toUpperCase() === initial.toUpperCase())
 
-  // `{attribute 'qualified_only'}` / `{attribute 'strict'}` before the type (CODESYS).
+  // `{attribute 'qualified_only'}` / `{attribute 'strict'}` / `{attribute 'to_string'}`
+  // before the type (CODESYS).
   const attributes = (Array.isArray(pragmas) ? pragmas : [])
     .map((pragma) => (isPlainObject(pragma) && typeof pragma.name === 'string' ? pragma.name.toLowerCase() : ''))
-    .filter((pragma): pragma is 'qualified_only' | 'strict' => pragma === 'qualified_only' || pragma === 'strict')
+    .filter(
+      (pragma): pragma is 'qualified_only' | 'strict' | 'to_string' =>
+        pragma === 'qualified_only' || pragma === 'strict' || pragma === 'to_string',
+    )
     .filter((pragma, index, all) => all.indexOf(pragma) === index)
 
   return {

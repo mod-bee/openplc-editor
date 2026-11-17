@@ -267,6 +267,14 @@ describe('attribute pragmas on an enumeration (CODESYS qualified_only, strict)',
     }
   })
 
+  it("keeps to_string (TO_STRING gives the value's name)", () => {
+    const text = "TYPE\n  {attribute 'qualified_only'}\n  {attribute 'to_string'}\n  E_State : (Idle, Running) := Idle;\nEND_TYPE\n"
+    const parsed = parseDataTypeFromText(text, 'E_State')
+    if (!('dataType' in parsed) || !parsed.dataType) throw new Error('not parsed')
+    expect(parsed.dataType).toMatchObject({ derivation: 'enumerated', attributes: ['qualified_only', 'to_string'] })
+    expect(serializeDataTypeToText(parsed.dataType)).toBe(text)
+  })
+
   it('leaves an enumeration without pragmas as it was', () => {
     const parsed = parseDataTypeFromText('TYPE\n  E_Mode : (Stopped, Running);\nEND_TYPE\n', 'E_Mode')
     expect('dataType' in parsed && parsed.dataType && 'attributes' in parsed.dataType).toBe(false)

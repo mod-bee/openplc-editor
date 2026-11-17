@@ -390,6 +390,12 @@ describe('projecting the store shape into the transpiler IR', () => {
           values: [{ description: 'AtMostOnce' }, { description: 'AtLeastOnce' }],
         },
         { name: 'Mode', derivation: 'enumerated', values: [{ description: 'AUTO' }] },
+        {
+          name: 'State',
+          derivation: 'enumerated',
+          attributes: ['to_string'],
+          values: [{ description: 'Idle' }, { description: 'Running' }],
+        },
       ],
       pous: [],
       configurations: EMPTY_RESOURCE,
@@ -403,6 +409,7 @@ describe('projecting the store shape into the transpiler IR', () => {
       "  {attribute 'qualified_only'}\n  {attribute 'strict'}\n  Qos : (AtMostOnce, AtLeastOnce);\n",
     )
     expect(text).not.toMatch(/attribute[^\n]*\n {2}Mode/)
+    expect(text).toContain("  {attribute 'to_string'}\n  State : (Idle, Running);\n")
   })
 
   it('projects data types into the scalar shapes the schema side uses', () => {
