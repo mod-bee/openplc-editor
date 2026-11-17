@@ -143,11 +143,18 @@ past the call.)
 For reference only; nothing here is written by hand. For a block `RECORDER`:
 
 - `c_blocks.h`: `RECORDER_RECORD_ARGS`, a struct of one pointer per parameter, and
-  `extern "C" strucpp::IEC_BOOL recorder__record(RECORDER_VARS *vars, RECORDER_RECORD_ARGS *args);`
+  `extern "C" strucpp::IEC_BOOL recorder__record(RECORDER_VARS *vars, RECORDER_RECORD_ARGS *args);`.
+  Also `recorder_bind_vars(RECORDER_VARS *vars, Self *self)`, which points `RECORDER_VARS` at an
+  instance's variables. The code for it is compiled once per block, however many methods it has.
 - `c_blocks_code.cpp`: `bool Record() {` becomes that function, with each parameter bound to
   its name on the same line (line numbers in compiler messages do not move).
-- The block's ST: each `METHOD` with an `{external}` body that fills both structs, runs
-  `setup()` if needed and calls the function, assigning the result.
+- The block's ST: each `METHOD` with an `{external}` body that fills `RECORDER_VARS` with
+  `recorder_bind_vars`, fills the args struct, runs `setup()` if needed and calls the function,
+  assigning the result. The block's own body fills `RECORDER_VARS` the same way. A block
+  without methods fills it inline, as before.
+
+`RECORDER_VARS` holds pointers to the instance's variables, not copies: a method body reads and
+writes the instance itself, and no block variable is copied in or back around the call.
 
 ## Libraries and tools
 

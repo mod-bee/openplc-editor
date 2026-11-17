@@ -190,7 +190,7 @@ describe('the generated method glue', () => {
     // The declaration as written, then the glue, then END_METHOD.
     expect(st.indexOf('METHOD PUBLIC Record : BOOL')).toBe(0)
     expect(st).toContain(
-      'ENGINE_VARS vars;\nvars.ENABLE = &ENABLE;\nvars.COUNT = &COUNT;\nvars.TOTAL = &TOTAL;\nENGINE_RECORD_ARGS args;\n' +
+      'ENGINE_VARS vars;\nengine_bind_vars(&vars, this);\nENGINE_RECORD_ARGS args;\n' +
         'args.DATA = &DATA;\nargs.NAME = &NAME;\nargs.LEVELS = &LEVELS[1] - 1;\nargs.COUNTER = &COUNTER;\nargs.SIZE = &SIZE;\n}',
     )
     // setup() first if the block has not run, then the call under the global's lock.
@@ -201,8 +201,66 @@ describe('the generated method glue', () => {
       'G_MODE->with_lock([&](auto* g0) {\nvars.G_MODE = g0;\nRECORD_result = engine__record(&vars, &args);\n});\n}\nEND_METHOD\n',
     )
     expect(st).toContain('engine__reset(&vars, &args);\n});\n}\nEND_METHOD\n')
-    // The block's own body follows the methods.
+    // The block's own body follows the methods, and fills the struct the same way.
     expect(st.indexOf('engine_loop(&vars);')).toBeGreaterThan(st.lastIndexOf('END_METHOD'))
+    expect(st.slice(st.lastIndexOf('END_METHOD'))).toContain(
+      '{external\nENGINE_VARS vars;\nengine_bind_vars(&vars, this);\n}',
+    )
+    // No method repeats the block's own assignments.
+    expect(st).not.toContain('vars.ENABLE = &ENABLE;')
+  })
+
+  it('fills the struct once, in c_blocks.h, for a block with methods', () => {
+    const levels: PLCVariable = {
+      ...pin('LEVELS', 'local', 'INT'),
+      type: {
+        definition: 'array',
+        value: 'ARRAY [2..5] OF INT',
+        data: { baseType: { definition: 'base-type', value: 'INT' }, dimensions: [{ dimension: '2..5' }] },
+      },
+    }
+    const derived = (name: string, cls: PLCVariable['class'], type: string): PLCVariable => ({
+      ...pin(name, cls, type),
+      type: { definition: 'derived', value: type },
+    })
+    const variables = [
+      ...BLOCK_VARIABLES,
+      levels,
+      derived('PEER', 'inOut', 'ENGINE'),
+      derived('Node', 'local', 'NODE'),
+      pin('G_MODE', 'external', 'INT'),
+    ]
+    const header = generateCBlocksHeader([{ name: 'Engine', variables, code: DECLARATIONS + CPP }])
+    expect(header).toContain(
+      'template <class Self> C_BLOCKS_NOINLINE void engine_bind_vars(ENGINE_VARS *vars, Self *self) {\n' +
+        '  c_blocks_bind(vars->ENABLE, self->ENABLE);\n' +
+        '  c_blocks_bind(vars->COUNT, self->COUNT);\n' +
+        '  c_blocks_bind(vars->PEER, self->PEER);\n' +
+        '  c_blocks_bind(vars->TOTAL, self->TOTAL);\n' +
+        '  vars->LEVELS = &self->LEVELS[2] - 2;\n' +
+        '  c_blocks_bind(vars->NODE, self->NODE_);\n' +
+        '}\n',
+    )
+    // After the struct it fills; externals are taken under their lock instead.
+    expect(header.indexOf('engine_bind_vars')).toBeGreaterThan(header.indexOf('} ENGINE_VARS;'))
+    expect(header).not.toContain('self->G_MODE')
+    // The helpers come once, ahead of every block, and decide by type whether
+    // the member already is the pointer (a function block passed in-out).
+    expect(header.split('inline void c_blocks_bind(Field *&field, Member &member) {').length).toBe(2)
+    expect(header).toContain('std::is_convertible<Member &, Field *>::value')
+    expect(header.indexOf('c_blocks_bind(Field')).toBeLessThan(header.indexOf('} ENGINE_VARS;'))
+  })
+
+  it('adds no bind function or helpers for blocks without methods', () => {
+    const header = generateCBlocksHeader([{ name: 'B', variables: BLOCK_VARIABLES, code: CPP }])
+    expect(header).not.toContain('c_blocks_bind')
+    expect(header).not.toContain('b_bind_vars')
+    const mixed = generateCBlocksHeader([
+      { name: 'B', variables: BLOCK_VARIABLES, code: CPP },
+      { name: 'Engine', variables: BLOCK_VARIABLES, code: DECLARATIONS + CPP },
+    ])
+    expect(mixed).toContain('engine_bind_vars')
+    expect(mixed).not.toContain('b_bind_vars')
   })
 
   it('leaves a block without methods exactly as before', () => {
