@@ -1,0 +1,46 @@
+name: Publish From Run
+
+# Publishes the installers a finished "Build and Release" run produced, for a
+# release whose own create-release job did not run because one platform's
+# build failed or never got a runner. The release is created if it does not
+# exist yet; installers already attached are replaced.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'ID of the Build and Release run whose installers to publish'
+        required: true
+      tag:
+        description: 'Release tag (e.g. v4.3.5-modbee.2)'
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the run's installers
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: artifacts
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mapfile -t files < <(find artifacts -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' \) | sort)
+          if [ ${#files[@]} -eq 0 ]; then echo "no installers in run ${{ inputs.run_id }}"; exit 1; fi
+          printf '%s\n' "${files[@]}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "ModBee OpenPLC Editor ${TAG}" --generate-notes "${files[@]}"
+          fi
