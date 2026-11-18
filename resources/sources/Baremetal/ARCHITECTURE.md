@@ -28,7 +28,7 @@ calls `mbtask()` once per scan cycle.
                     └───┬──────────┬───┘
           ┌─────────────▼─┐     ┌──▼──────────────┐
  HANDLERS  │ modbus_registers│   │  modbus_debug   │
-           │ (store + op FCs)│   │ (0x41-0x48 + …) │
+           │ (store + op FCs)│   │ (0x41-0x4F)     │
           └──────┬─────────┘     └─────────────────┘
                  │
        ┌─────────▼───────────────────────────────────────────────┐
@@ -83,7 +83,7 @@ composite gates in `modbus_config.h`:
    Step 2 accepts **two** slave ids on this port: the Modbus server's, and
    `MB_EDITOR_SLAVE` for the editor's own link. A frame that matched only the
    editor's id must carry an editor function code (`mb_pdu_is_editor_fc()`,
-   `0x41`-`0x4D`, and `0x4E` in RTOS mode) or it is dropped in silence — the
+   `0x41`-`0x4D` and `0x4F`, and `0x4E` in RTOS mode) or it is dropped in silence — the
    channel is private, and an exception would tell a bus scanner the address is
    live. When the two ids are equal, which is the default, the server's branch
    matches first and this costs nothing.

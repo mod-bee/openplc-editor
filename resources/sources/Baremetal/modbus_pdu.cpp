@@ -61,6 +61,8 @@ int32_t mb_pdu_request_len(const uint8_t *f, uint16_t n)
         case MB_FC_DEBUG_GET_TASK_STATS:
             return 6;                                   // [id][fc][flags:1][first:1][crc:2]
 #endif
+        case MB_FC_DEBUG_GET_TEXT:
+            return 11;                                  // [id][fc][arr][elem:2][off:2][max:2][crc:2]
         default:
             return -1;                                  // not one of our function codes
     }
@@ -83,6 +85,7 @@ bool mb_pdu_skips_crc(uint8_t fc)
         case MB_FC_DEBUG_GET_DEVICE_ID:
         case MB_FC_DEBUG_WRITE_LICENSE:
         case MB_FC_DEBUG_READ_LICENSE:
+        case MB_FC_DEBUG_GET_TEXT:
             return true;
         default:
             return false;
@@ -95,13 +98,15 @@ bool mb_pdu_skips_crc(uint8_t fc)
 // to the second but not the first.
 bool mb_pdu_is_editor_fc(uint8_t fc)
 {
-    // The whole debug range, 0x41..0x4D. Reboot-to-bootloader (0x4C) and
+    // The whole debug range, 0x41..0x4D, plus 0x4F. Reboot-to-bootloader (0x4C) and
     // lock-state (0x4D) are part of the editor's package like every other code
     // here, so they get the same treatment on both sides of the id split: they
     // must be answerable on the editor's private id, and they must be REFUSED
     // on the Modbus server's public one. Leaving them out of the range did both
     // wrongs at once -- unreachable where they belong, reachable where they do
     // not -- which is why this ends at GET_LOCK_STATE and not at PLC_SET_STATE.
+    // The chunked string read, 0x4F, is the editor's on every build.
+    if (fc == MB_FC_DEBUG_GET_TEXT) return true;
 #if OPENPLC_RTOS
     // RTOS mode adds the task statistics, 0x4E, to the editor's range.
     return fc >= MB_FC_DEBUG_INFO && fc <= MB_FC_DEBUG_GET_TASK_STATS;
@@ -292,6 +297,17 @@ void process_mbpacket()
             // PDU: [FC] -- read-only, so no magic guard. The editor polls this
             // while it waits for the user to clear a programming lock.
             getLockState();
+        break;
+
+        case MB_FC_DEBUG_GET_TEXT:
+        {
+            // PDU: [FC:1][arr:u8][elem:u16][offset:u16][max:u16]
+            uint8_t arr     = mb_frame[2];
+            uint16_t elem   = (uint16_t)mb_frame[3] << 8 | (uint16_t)mb_frame[4];
+            uint16_t offset = (uint16_t)mb_frame[5] << 8 | (uint16_t)mb_frame[6];
+            uint16_t max    = (uint16_t)mb_frame[7] << 8 | (uint16_t)mb_frame[8];
+            debugGetText(arr, elem, offset, max);
+        }
         break;
 
 #if OPENPLC_RTOS

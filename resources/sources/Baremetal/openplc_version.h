@@ -14,7 +14,7 @@ the firmware runtime evolves.
 #define OPENPLC_VERSION_H
 
 #ifndef OPENPLC_RUNTIME_VERSION
-    #define OPENPLC_RUNTIME_VERSION "4.2.7"
+    #define OPENPLC_RUNTIME_VERSION "4.2.8"
 #endif
 
 #endif // OPENPLC_VERSION_H

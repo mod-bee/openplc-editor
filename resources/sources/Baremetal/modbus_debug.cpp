@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Autonomy®
 /*
-modbus_debug.cpp - OpenPLC always-on debugger function codes (0x41-0x4B)
+modbus_debug.cpp - OpenPLC always-on debugger function codes (0x41-0x4F)
 */
 
 #include "modbus_debug.h"
@@ -304,6 +304,45 @@ void debugGetTraceList(uint16_t numIndexes, uint8_t *indexArray)
     mb_frame[8] = (uint8_t)(scan_counter & 0xFF);
     mb_frame[9]  = (uint8_t)(responseSize >> 8);
     mb_frame[10] = (uint8_t)(responseSize & 0xFF);
+}
+
+// FC 0x4F -- DEBUG_GET_TEXT: one chunk of a STRING/WSTRING at any declared
+// length (DEBUG_GET shows at most 126 characters of it).
+// PDU request:  [FC, arr, elem:u16, offset:u16, max:u16]
+// PDU response: [FC, STATUS, tag, flags, cap:u16, len:u16, offset:u16, count:u16,
+//                tick:u32, data...]
+// Every answer carries the full header. `max` is clamped to the frame: 253
+// STRING bytes or 126 WSTRING units on a 272-byte frame, 109 / 54 on 128.
+void debugGetText(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max)
+{
+    const uint16_t room = (uint16_t)(MB_RESPONSE_CAPACITY - MB_DEBUG_TEXT_HEADER);
+    if (max > room) max = room;
+
+    openplc_text_chunk_t info = {};
+    openplc_debug_read_text(arr, elem, offset, max, &mb_frame[MB_DEBUG_TEXT_HEADER], room, &info);
+    if (info.status != OPENPLC_DEBUG_STATUS_OK) info.count = 0;
+
+    // Count bounded by the frame even if the program misreports it.
+    const uint16_t unit = (info.tag == OPENPLC_DEBUG_TAG_WSTRING) ? 2 : 1;
+    if ((uint32_t)info.count * unit > room) info.count = (uint16_t)(room / unit);
+
+    mb_frame[1]  = MB_FC_DEBUG_GET_TEXT;
+    mb_frame[2]  = info.status;
+    mb_frame[3]  = info.tag;
+    mb_frame[4]  = info.flags;
+    mb_frame[5]  = (uint8_t)(info.cap >> 8);
+    mb_frame[6]  = (uint8_t)(info.cap & 0xFF);
+    mb_frame[7]  = (uint8_t)(info.len >> 8);
+    mb_frame[8]  = (uint8_t)(info.len & 0xFF);
+    mb_frame[9]  = (uint8_t)(offset >> 8);
+    mb_frame[10] = (uint8_t)(offset & 0xFF);
+    mb_frame[11] = (uint8_t)(info.count >> 8);
+    mb_frame[12] = (uint8_t)(info.count & 0xFF);
+    mb_frame[13] = (uint8_t)((scan_counter >> 24) & 0xFF);
+    mb_frame[14] = (uint8_t)((scan_counter >> 16) & 0xFF);
+    mb_frame[15] = (uint8_t)((scan_counter >> 8)  & 0xFF);
+    mb_frame[16] = (uint8_t)(scan_counter & 0xFF);
+    mb_frame_len = (uint16_t)(MB_DEBUG_TEXT_HEADER + info.count * unit);
 }
 
 // PDU request:  [FC, endian_check_hi, endian_check_lo]

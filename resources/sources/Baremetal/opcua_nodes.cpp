@@ -136,12 +136,15 @@ UA_StatusCode read_node(UA_Server* server, const UA_NodeId* sessionId, void* ses
     if (row == nullptr || row->tag >= kTagCount)
         return UA_STATUSCODE_BADINTERNALERROR;
 
+    // True when the value was allocated for this read and the server frees it.
+    bool owned = false;
 #if OPENPLC_RTOS
     // RTOS mode: the scan can run while OPC-UA reads, so the value is copied out
     // under the scan lock, into a slot per node of the request: the Read service
     // fills every result before it encodes any of them. Rows are 8-byte aligned:
-    // a scalar goes to open62541 as a typed pointer into its row.
-    alignas(8) static uint8_t s_values[OPCUA_MAX_NODES_PER_READ][(1 + OPENPLC_DEBUG_STRING_CAP * 2 + 1 + 7) & ~7];
+    // a scalar goes to open62541 as a typed pointer into its row. Every scalar
+    // tag is at most 8 bytes; strings take the path below.
+    alignas(8) static uint8_t s_values[OPCUA_MAX_NODES_PER_READ][8];
     static uint8_t s_value_next = 0;
     uint8_t* slot = s_values[s_value_next];
     s_value_next = (uint8_t)((s_value_next + 1) % OPCUA_MAX_NODES_PER_READ);
@@ -149,20 +152,55 @@ UA_StatusCode read_node(UA_Server* server, const UA_NodeId* sessionId, void* ses
     // Between the scans of the task that owns the variable (none for a global,
     // which its own mutex covers), or as it stands if that task is stalled
     // mid-scan, as the debugger reads it.
-    const uint32_t locked = runtime_rtos_lock_workers_for_read(runtime_rtos_owner_mask(row->arr, row->elem));
-    const uint16_t copied = openplc_debug_read(row->arr, row->elem, slot);
-    runtime_rtos_unlock_workers(locked);
-    if (copied == 0)
-        return UA_STATUSCODE_BADNODATA;
-
     const void* payload = slot;
+    const uint32_t locked = runtime_rtos_lock_workers_for_read(runtime_rtos_owner_mask(row->arr, row->elem));
     if (is_string_tag(row->tag))
     {
-        // The debug wire form: one length byte in code units, then the payload.
-        UA_String* hdr = next_string_header();
-        hdr->length = (size_t)slot[0] * (row->tag == OPCUA_TAG_WSTRING ? 2u : 1u);
-        hdr->data   = &slot[1];
-        payload = hdr;
+        // A string at its full declared length, copied under the same lock into a
+        // buffer from the server's arena that the server frees with the value.
+        // A value the arena cannot hold is BadOutOfMemory, never cut short.
+        const unsigned unit = (row->tag == OPCUA_TAG_WSTRING) ? 2u : 1u;
+        UA_StatusCode rc = UA_STATUSCODE_GOOD;
+        UA_String* str = UA_String_new();
+        openplc_text_chunk_t info = {};
+        uint8_t none = 0;
+        uint8_t status = OPENPLC_DEBUG_STATUS_OUT_OF_BOUNDS;
+        if (str == nullptr)
+            rc = UA_STATUSCODE_BADOUTOFMEMORY;
+        else
+            status = openplc_debug_read_text(row->arr, row->elem, 0, 0, &none, 0, &info);
+        if (rc == UA_STATUSCODE_GOOD && status == OPENPLC_DEBUG_STATUS_OK)
+        {
+            uint32_t bytes = (uint32_t)info.len * unit;
+            if (bytes > 0xFFFFu) bytes = 0xFFFFu - (0xFFFFu % unit);   // one call's data_cap
+            if (bytes == 0)
+                str->data = (UA_Byte*)UA_EMPTY_ARRAY_SENTINEL;   // empty, not null
+            else if (UA_ByteString_allocBuffer(str, bytes) != UA_STATUSCODE_GOOD)
+                rc = UA_STATUSCODE_BADOUTOFMEMORY;
+            else
+            {
+                status = openplc_debug_read_text(row->arr, row->elem, 0, 0xFFFF, str->data,
+                                                 (uint16_t)bytes, &info);
+                str->length = (size_t)info.count * unit;
+            }
+        }
+        runtime_rtos_unlock_workers(locked);
+        if (rc == UA_STATUSCODE_GOOD && status != OPENPLC_DEBUG_STATUS_OK)
+            rc = UA_STATUSCODE_BADNODATA;
+        if (rc != UA_STATUSCODE_GOOD)
+        {
+            if (str != nullptr) UA_String_delete(str);
+            return rc;
+        }
+        payload = str;
+        owned = true;
+    }
+    else
+    {
+        const uint16_t copied = openplc_debug_read(row->arr, row->elem, slot);
+        runtime_rtos_unlock_workers(locked);
+        if (copied == 0)
+            return UA_STATUSCODE_BADNODATA;
     }
 #else
     // Address the value in place instead of copying it out. `setScalarCopy`
@@ -201,10 +239,10 @@ UA_StatusCode read_node(UA_Server* server, const UA_NodeId* sessionId, void* ses
 #endif
 
     UA_Variant_setScalar(&value->value, (void*)payload, &UA_TYPES[kTagToUaType[row->tag]]);
-    // Nothing here is owned by the variant: neither the value, nor a string's
-    // header, nor its characters. Without NODELETE the server would free flash
-    // or live PLC storage on cleanup.
-    value->value.storageType = UA_VARIANT_DATA_NODELETE;
+    // Apart from an RTOS-mode string, nothing here is owned by the variant:
+    // neither the value, nor a string's header, nor its characters. Without
+    // NODELETE the server would free flash or live PLC storage on cleanup.
+    value->value.storageType = owned ? UA_VARIANT_DATA : UA_VARIANT_DATA_NODELETE;
     value->hasValue = true;
     if (includeSourceTimeStamp)
     {
@@ -249,10 +287,9 @@ UA_StatusCode write_node(UA_Server* server, const UA_NodeId* sessionId, void* se
     uint8_t status;
     if (is_string_tag(row->tag))
     {
-        // The write path wants strucpp's wire form -- one length byte in CODE
-        // UNITS followed by the payload -- which is not what the client sent, so
-        // this is the one place a copy is unavoidable. Small and on the stack:
-        // the cap is 126 code units, 253 bytes for a WSTRING.
+        // The client's bytes go in as they are, at any declared length: STRING
+        // characters or WSTRING UTF-16LE code units, no copy and no 126 cap. A
+        // value longer than the declared length keeps its leading characters.
         const UA_String* in = static_cast<const UA_String*>(value->value.data);
         const bool wide = (row->tag == OPCUA_TAG_WSTRING);
         // A WSTRING arrives as UTF-16LE bytes, so an odd length is not a short
@@ -260,15 +297,10 @@ UA_StatusCode write_node(UA_Server* server, const UA_NodeId* sessionId, void* se
         if (wide && (in->length % 2) != 0)
             return UA_STATUSCODE_BADTYPEMISMATCH;
 
-        size_t units = wide ? in->length / 2 : in->length;
-        if (units > OPENPLC_DEBUG_STRING_CAP)
-            units = OPENPLC_DEBUG_STRING_CAP;   // truncate rather than refuse
-        const size_t payload = wide ? units * 2 : units;
-
-        uint8_t wire[1 + OPENPLC_DEBUG_STRING_CAP * 2];
-        wire[0] = (uint8_t)units;
-        if (payload > 0 && in->data != nullptr)
-            memcpy(&wire[1], in->data, payload);
+        size_t nbytes = (in->data != nullptr) ? in->length : 0;
+        if (nbytes > 0xFFFFu) nbytes = wide ? 0xFFFEu : 0xFFFFu;   // past any declared length
+        static const uint8_t kEmpty = 0;
+        const uint8_t* bytes = nbytes > 0 ? in->data : &kEmpty;
 #if OPENPLC_RTOS
         // Between two of the owner's scans; released before logging.
         runtime_rtos_write_lock_t held;
@@ -277,11 +309,11 @@ UA_StatusCode write_node(UA_Server* server, const UA_NodeId* sessionId, void* se
             plc_rtos_count_busy();
             return UA_STATUSCODE_BADRESOURCEUNAVAILABLE;
         }
-        status = openplc_debug_write(row->arr, row->elem, wire, (uint16_t)(1 + payload));
+        status = openplc_debug_write_text(row->arr, row->elem, bytes, (uint16_t)nbytes);
         if (status == OPENPLC_DEBUG_STATUS_OK) runtime_rtos_after_write(row->arr, row->elem);
         runtime_rtos_unlock_write(&held);
 #else
-        status = openplc_debug_write(row->arr, row->elem, wire, (uint16_t)(1 + payload));
+        status = openplc_debug_write_text(row->arr, row->elem, bytes, (uint16_t)nbytes);
 #endif
     }
     else

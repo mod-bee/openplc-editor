@@ -349,10 +349,33 @@ uint16_t openplc_debug_size(uint8_t arr, uint16_t elem);
 uint16_t openplc_debug_read(uint8_t arr, uint16_t elem, uint8_t* dest);
 uint8_t  openplc_debug_set(uint8_t arr, uint16_t elem, uint8_t forcing, const uint8_t* bytes, uint16_t len);
 
+// One chunk of a STRING / WSTRING at any declared length: the debugger's FC 0x4F
+// and OPC-UA. Copies up to `max` code units from code unit `offset` into `data`
+// (STRING bytes, WSTRING little-endian units), never more than `data_cap` bytes,
+// and fills `info`. Returns info->status (OPENPLC_DEBUG_STATUS_*). Mirrors
+// strucpp_debug_read_text; RTOS mode takes a global's own lock as
+// openplc_debug_read() does, and the caller holds the owning task's scan lock.
+typedef struct {
+    uint8_t  status;
+    uint8_t  tag;     // OPENPLC_DEBUG_TAG_STRING or OPENPLC_DEBUG_TAG_WSTRING
+    uint8_t  flags;   // bit 0: forced
+    uint16_t cap;     // declared length, code units
+    uint16_t len;     // current length, code units
+    uint16_t count;   // code units copied into data
+} openplc_text_chunk_t;
+uint8_t  openplc_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
+                                 uint8_t* data, uint16_t data_cap, openplc_text_chunk_t* info);
+
 // Write a value WITHOUT forcing it: the plain "set it now, the program may change
 // it next scan" write an OPC-UA or fieldbus write means. openplc_debug_set()
 // forces, and a forced variable is one the PLC program can never move again.
 uint8_t  openplc_debug_write(uint8_t arr, uint16_t elem, const uint8_t* bytes, uint16_t len);
+
+// The same plain write for a STRING / WSTRING at any declared length: `nbytes` of
+// content (STRING bytes, WSTRING little-endian code units), no length prefix and
+// no 126 cap; longer than the declared length keeps the leading characters. A
+// no-op while forced. Returns OPENPLC_DEBUG_STATUS_*.
+uint8_t  openplc_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t* bytes, uint16_t nbytes);
 
 // Address a leaf's value IN PLACE instead of copying it out. Returns a pointer
 // into live PLC storage and writes the value's CURRENT length (not its padded
@@ -373,8 +396,8 @@ uint8_t  openplc_debug_write(uint8_t arr, uint16_t elem, const uint8_t* bytes, u
 // For STRING / WSTRING the pointer addresses the characters themselves, with no
 // length prefix and no padding. *out_len is in BYTES for both, so a WSTRING
 // reports 2 * its code-unit count and the caller can treat the region as opaque
-// bytes without knowing the width. Both are capped at 126 code units, the same
-// DEBUG_STRING_CAP the wire format uses.
+// bytes without knowing the width. Not capped at the wire's 126 code units: the
+// whole value, except that a WSTRING over 32767 units reports its first 32767.
 const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len);
 
 // strucpp::debug::STATUS_* as plain macros, so a caller on this side of the
@@ -402,6 +425,10 @@ const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len);
 #define OPENPLC_DEBUG_STATUS_OK             0x7E
 #define OPENPLC_DEBUG_STATUS_OUT_OF_BOUNDS  0x81
 #define OPENPLC_DEBUG_STATUS_DATA_TOO_LARGE 0x82
+
+// strucpp::debug::TAG_STRING / TAG_WSTRING, for openplc_text_chunk_t.tag.
+#define OPENPLC_DEBUG_TAG_STRING  19
+#define OPENPLC_DEBUG_TAG_WSTRING 20
 
 // ---------------------------------------------------------------------------
 // Process image access, for protocols that address LOCATED variables.
