@@ -47,7 +47,7 @@
  * adapter implements.
  */
 
-import type { LibraryBuildPort } from '../../../middleware/shared/ports/library-build-port'
+import type { LibraryBuildPort, LibraryVerifyTarget } from '../../../middleware/shared/ports/library-build-port'
 import type { CompileLibraryResult } from '../../../middleware/shared/ports/types'
 import {
   LIBRARY_FOLDER_RULE,
@@ -345,8 +345,12 @@ export async function runLibraryBuildPipeline(
   const nativeSource = nativeSources.map((n) => `${n.fileName}\n${n.source}`).join('\n')
   const resourceSource = resources.map((r) => `${r.path}\n${r.content}`).join('\n')
   // The target is part of the key: the same sources verified against a
-  // different toolchain are a different question.
-  const targetSource = `${verifyTarget.mode}\n${verifyTarget.core ?? ''}`
+  // different toolchain are a different question.  So is the board that
+  // stands in for its core, which changes when a board package is installed
+  // or removed: a result from the simulator fallback must not be replayed
+  // once a real board of the core is there.
+  const verifyBoard = verifyTarget.mode === 'off' ? '' : await resolveVerifyBoardName(port, verifyTarget)
+  const targetSource = `${verifyTarget.mode}\n${verifyTarget.core ?? ''}${verifyBoard ? `\n${verifyBoard}` : ''}`
   const verifyInputsMd5 = await port.computeMd5(`${programSt}\n${nativeSource}\n${resourceSource}\n${targetSource}`)
   let verification: CompileLibraryResult['verification']
   let usedCache = false
@@ -485,6 +489,20 @@ export async function runLibraryBuildPipeline(
  * indistinguishable from a fresh build — both return null so the
  * caller falls through to a real verification run.
  */
+/**
+ * The board the port would verify `target` against, or '' when the port does
+ * not say or cannot tell.  Never throws: the name only sharpens the cache key,
+ * and the verification itself reports a board it cannot resolve.
+ */
+async function resolveVerifyBoardName(port: LibraryBuildPort, target: LibraryVerifyTarget): Promise<string> {
+  if (!port.resolveVerifyBoard) return ''
+  try {
+    return await port.resolveVerifyBoard(target)
+  } catch {
+    return ''
+  }
+}
+
 async function readVerificationCache(
   port: LibraryBuildPort,
   projectPath: string,

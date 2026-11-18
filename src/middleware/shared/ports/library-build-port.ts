@@ -219,4 +219,15 @@ export interface LibraryBuildPort {
    * verification entirely in that case.
    */
   verifyCompile(args: VerifyCompileArgs): Promise<LibraryVerificationResult>
+
+  /**
+   * The board `verifyCompile` would compile `target` against right now.
+   *
+   * A target names a core, and which board stands in for it depends on what
+   * is installed: the simulator when no board of that core is, a real board
+   * once one is.  The orchestrator puts this name in the verification cache
+   * key, so installing a board package re-runs a check that only failed for
+   * want of it.  Optional: a port that leaves it out keys on the target alone.
+   */
+  resolveVerifyBoard?(target: LibraryVerifyTarget): Promise<string>
 }
