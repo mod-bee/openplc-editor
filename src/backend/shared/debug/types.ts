@@ -105,6 +105,46 @@ export interface DebugVersionResult {
   error?: string
 }
 
+/** One FC 0x4F request: up to `max` code units of a STRING / WSTRING leaf from `offset`. */
+export interface DebugTextChunkRequest {
+  /** Packed DebugAddr (`(arr << 16) | elem`). */
+  index: number
+  offset: number
+  max: number
+  /** WSTRING: two bytes per code unit. */
+  wide: boolean
+  /** A shorter wait than the medium's own, for a target that may not answer the code. */
+  timeoutMs?: number
+}
+
+/** One FC 0x4F reply. `cap` and `len` are code units; `data` holds `count` units and may run past them. */
+export interface DebugTextChunk {
+  tag: number
+  forced: boolean
+  cap: number
+  len: number
+  offset: number
+  count: number
+  tick: number
+  data: Uint8Array
+}
+
+export type DebugTextChunkResult =
+  | { success: true; chunk: DebugTextChunk }
+  | {
+      success: false
+      error: string
+      /** The target answered 0x4F with this refusal, so it knows the code. */
+      status?: number
+      /** The target answered with a Modbus exception: it does not know the code. */
+      unsupported?: true
+    }
+
+/** A whole STRING / WSTRING value. `unsupported`: the target has no FC 0x4F, so use the 126-unit window. */
+export type DebugTextResult =
+  | { success: true; text: string; len: number; cap: number; forced: boolean; tick: number }
+  | { success: false; error: string; unsupported?: true }
+
 /** FC 0x4e, a board in RTOS mode: see `RtosStatsResult`. */
 export type DebugTaskStatsResult = RtosStatsResult
 
@@ -277,6 +317,10 @@ export interface DeviceChannelTransport {
   /** Per-task timing of a board in RTOS mode (FC 0x4e); `resetWindow` starts a
    *  new window after this read. Baremetal only, as run/stop is. */
   getTaskStats?(resetWindow?: boolean): Promise<DebugTaskStatsResult>
+  /** Firmware version (FC 0x47). Baremetal only: it tells whether the board knows FC 0x4F. */
+  getVersion?(): Promise<DebugVersionResult>
+  /** One chunk of a STRING / WSTRING value (FC 0x4F). Read whole values through `readDebugTextFromChannel`. */
+  getTextChunk?(request: DebugTextChunkRequest): Promise<DebugTextChunkResult>
   /** Read the stored VPP license blob (FC 0x4A). Optional here because not every
    *  medium carries it — but unlike run/stop, every medium that CAN is expected
    *  to: licensing is a property of the device, not of the target family, so the

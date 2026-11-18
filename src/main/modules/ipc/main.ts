@@ -61,11 +61,13 @@ import {
   RETAINED_RETRIEVALS,
 } from '@root/backend/editor/project/materialize-retrieved-project'
 import { isWebUrl } from '@root/backend/editor/utils/is-web-url'
+import { readDebugTextFromChannel } from '@root/backend/shared/debug/debug-text'
 import { faultFromRuntimeV4 } from '@root/backend/shared/debug/health'
 import type {
   DebugAnchorResult,
   DebugDeviceIdResult,
   DebugStatusResult,
+  DebugTextResult,
   DeviceDebugChannel,
   DeviceModbusTransport,
   PlcControlResult,
@@ -114,7 +116,11 @@ import type {
   RuntimeUserRole,
   UpdateUserParams,
 } from '@root/middleware/shared/ports/runtime-port'
-import type { DebugConnectionConfig, PackageInstallProgress, RtosStatsResult } from '@root/middleware/shared/ports/types'
+import type {
+  DebugConnectionConfig,
+  PackageInstallProgress,
+  RtosStatsResult,
+} from '@root/middleware/shared/ports/types'
 import type { VersionControlResult } from '@root/middleware/shared/ports/version-control-port'
 import { capabilitiesFromResponse } from '@root/middleware/shared/utils/build-gate/runtime-capabilities-response'
 import { CreatePouFileProps } from '@root/types/IPC/pou-service'
@@ -1053,6 +1059,7 @@ class MainProcessBridge implements MainIpcModule {
     this.registerHandle('debugger:read-program-st-md5', this.handleReadProgramStMd5)
     this.registerHandle('debugger:get-variables-list', this.handleDebuggerGetVariablesList)
     this.registerHandle('debugger:set-variable', this.handleDebuggerSetVariable)
+    this.registerHandle('debugger:read-text', this.handleDebuggerReadText)
     this.registerHandle('debugger:connect', this.handleDebuggerConnect)
     this.registerHandle('debugger:disconnect', this.handleDebuggerDisconnect)
     this.registerHandle('device:connect', this.handleDeviceConnect)
@@ -3172,6 +3179,27 @@ class MainProcessBridge implements MainIpcModule {
       )
     } catch (error) {
       logger.error('[IPC Handler] Modbus setVariable error: ' + getErrorMessage(error))
+      return { success: false, error: getErrorMessage(error) }
+    }
+  }
+
+  /** A whole STRING / WSTRING value (FC 0x4F); the reading and the fallback live in shared `debug-text`. */
+  handleDebuggerReadText = async (
+    _event: IpcMainInvokeEvent,
+    variableIndex: number,
+    wide: boolean,
+  ): Promise<DebugTextResult> => {
+    try {
+      return await this.withDebugChannel(
+        'read text',
+        async (client) => {
+          const result = await readDebugTextFromChannel(client, variableIndex, wide)
+          if (result.success) this.deviceSession.noteTraffic()
+          return result
+        },
+        (reason): DebugTextResult => ({ success: false, error: reason.error }),
+      )
+    } catch (error) {
       return { success: false, error: getErrorMessage(error) }
     }
   }

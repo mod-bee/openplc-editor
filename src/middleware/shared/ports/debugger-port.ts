@@ -28,7 +28,7 @@
  *   - DebugTransport interface implementations
  */
 
-import type { PlcControlResult } from '../../../backend/shared/debug/types'
+import type { DebugTextResult, PlcControlResult } from '../../../backend/shared/debug/types'
 import type { DebugSetResult, DebugVariableResult, Md5VerifyResult, Unsubscribe } from './types'
 
 export interface DebuggerPort {
@@ -58,6 +58,13 @@ export interface DebuggerPort {
    * @param valueBuffer — Raw value bytes (Uint8Array)
    */
   setVariable(index: number, force: boolean, valueBuffer?: Uint8Array): Promise<DebugSetResult>
+
+  /**
+   * A whole STRING / WSTRING value (FC 0x4F, read in chunks). `unsupported` in the
+   * result: the target predates it, so the 126-unit window is all there is.
+   * Optional: a platform without it keeps the window.
+   */
+  readText?(index: number, wide: boolean): Promise<DebugTextResult>
 
   /**
    * Verify that the running program matches the expected MD5 hash.

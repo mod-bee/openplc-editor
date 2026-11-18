@@ -10,7 +10,7 @@
  * auto-reconnection using stored connection parameters.
  */
 
-import type { PlcControlResult } from '../../../backend/shared/debug/types'
+import type { DebugTextResult, PlcControlResult } from '../../../backend/shared/debug/types'
 import { getErrorMessage } from '../../../frontend/utils/get-error-message'
 import type { DebuggerPort } from '../../shared/ports/debugger-port'
 import type { DebugSetResult, DebugVariableResult, Md5VerifyResult, Unsubscribe } from '../../shared/ports/types'
@@ -56,6 +56,14 @@ export function createEditorDebuggerAdapter(): DebuggerPort {
     async setVariable(index: number, force: boolean, valueBuffer?: Uint8Array): Promise<DebugSetResult> {
       try {
         return await window.bridge.debuggerSetVariable(index, force, valueBuffer)
+      } catch (err) {
+        return { success: false, error: getErrorMessage(err) }
+      }
+    },
+
+    async readText(index: number, wide: boolean): Promise<DebugTextResult> {
+      try {
+        return await window.bridge.debuggerReadText(index, wide)
       } catch (err) {
         return { success: false, error: getErrorMessage(err) }
       }

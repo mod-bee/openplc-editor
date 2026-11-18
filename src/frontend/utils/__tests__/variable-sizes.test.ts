@@ -607,7 +607,6 @@ describe('encodeForceValue', () => {
     expect(() => encodeForceValue('D#2026-01-01', 'DATE')).toThrow(/not supported/)
     expect(() => encodeForceValue('TOD#12:00:00', 'TOD')).toThrow(/not supported/)
     expect(() => encodeForceValue('DT#2026-01-01-12:00:00', 'DT')).toThrow(/not supported/)
-    expect(() => encodeForceValue('"hello"', 'WSTRING')).toThrow(/not supported/)
   })
 
   describe('out-of-range truncation', () => {

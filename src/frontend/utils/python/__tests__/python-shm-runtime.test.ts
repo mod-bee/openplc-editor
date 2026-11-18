@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { pythonShmRuntime } from '../python-shm-runtime'
-import { SHM_STRING_CHARS } from '../shm-type-map'
 
 /**
  * The runtime is the half of the generated `.py` that must NOT vary by project.
@@ -15,7 +14,7 @@ describe('pythonShmRuntime', () => {
   const fixture = readFileSync(join(__dirname, 'fixtures/python-shm-runtime.fixture.py'), 'utf-8')
 
   it('is byte-identical to the checked-in fixture', () => {
-    expect(pythonShmRuntime(SHM_STRING_CHARS)).toBe(fixture)
+    expect(pythonShmRuntime()).toBe(fixture)
   })
 
   it('emits no percent sign, which the loader would read as a format directive', () => {
@@ -25,18 +24,17 @@ describe('pythonShmRuntime', () => {
     // directive: a malformed one is undefined behaviour, and a well-formed one
     // (`%s`) consumes a vararg and segfaults the runtime. This text ships in
     // every block, so the safe number is zero.
-    expect(pythonShmRuntime(SHM_STRING_CHARS)).not.toContain('%')
+    expect(pythonShmRuntime()).not.toContain('%')
   })
 
-  it('carries the transport cap from one place', () => {
-    expect(pythonShmRuntime(SHM_STRING_CHARS)).toContain(`_STR_CHARS = ${SHM_STRING_CHARS}`)
-    // The token must be fully substituted — a leftover marker would be a
-    // syntax error in the deployed block, discovered at runtime.
-    expect(pythonShmRuntime(SHM_STRING_CHARS)).not.toContain('__STR_CHARS__')
+  it('takes each string field capacity from its layout row, not from a fixed cap', () => {
+    // A field carries its whole declared length; the row's size is the only place it is stated.
+    expect(pythonShmRuntime()).not.toContain('_STR_CHARS')
+    expect(pythonShmRuntime()).toContain('def _shm_get(buf, kind, off, size):')
   })
 
   it('contains no project-specific text', () => {
-    const emitted = pythonShmRuntime(SHM_STRING_CHARS)
+    const emitted = pythonShmRuntime()
     // Every name it defines is generic; nothing is per-variable or per-POU.
     expect(emitted).not.toMatch(/_SHM_(IN|OUT)\s*=/)
     expect(emitted).toContain('def _shm_unpack(buf, layout, scope):')

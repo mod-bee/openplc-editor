@@ -10,7 +10,7 @@ import type {
   listConversations,
   renameConversation,
 } from '@root/backend/editor/edge-ai'
-import type { RuntimeFault } from '@root/backend/shared/debug/types'
+import type { DebugTextResult, RuntimeFault } from '@root/backend/shared/debug/types'
 import type { CompileProgramIpcArgs } from '@root/middleware/adapters/editor/compile-program-flow'
 import type { CompileLibraryIpcArgs } from '@root/middleware/adapters/editor/compiler-adapter'
 import type {
@@ -644,6 +644,9 @@ const rendererProcessBridge = {
     valueBuffer?: Uint8Array,
   ): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('debugger:set-variable', variableIndex, force, valueBuffer),
+
+  debuggerReadText: (variableIndex: number, wide: boolean): Promise<DebugTextResult> =>
+    ipcRenderer.invoke('debugger:read-text', variableIndex, wide),
 
   debuggerConnect: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('debugger:connect'),
 

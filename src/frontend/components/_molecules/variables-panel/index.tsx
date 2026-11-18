@@ -5,6 +5,7 @@ import type { DebugTreeNode } from '../../../../middleware/shared/ports/types'
 import ViewIcon from '../../../assets/icons/interface/View'
 import ZapIcon from '../../../assets/icons/interface/Zap'
 import { cn } from '../../../utils/cn'
+import { longDebugText, SHOWN_TEXT_CHARS } from '../../../utils/debug-pin-values'
 import { canForceDebugLeaf, forcedStateOf } from '../../../utils/inout-force'
 import { isForcedValueHigh } from '../../../utils/variable-sizes'
 import { TreeNode } from '../../_atoms/debug-tree-node'
@@ -49,6 +50,12 @@ type VariablePanelProps = {
  * and dismisses on outside click. Replaces Radix Popover which doesn't
  * work reliably without a Trigger element in browser environments.
  */
+/** A string longer than the shown window, cut short with an ellipsis; undefined for any other value. */
+const clippedText = (value: string | undefined, type: string): string | undefined => {
+  const long = value === undefined ? null : longDebugText(value, type)
+  return long ? `"${long.text.slice(0, SHOWN_TEXT_CHARS)}…"` : undefined
+}
+
 const ContextMenu = ({
   position,
   onClose,
@@ -374,7 +381,7 @@ const VariablesPanel = ({
                     fontWeight: isForced ? 600 : undefined,
                   }}
                 >
-                  {variable.value || '0'}
+                  {clippedText(variable.value, variable.type) ?? (variable.value || '0')}
                 </p>
               </div>
             </div>

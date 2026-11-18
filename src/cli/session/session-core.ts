@@ -13,10 +13,12 @@
  */
 
 import type { RuntimeApiClient } from '@root/backend/editor/runtime/runtime-api-client'
+import { readDebugTextFromChannel } from '@root/backend/shared/debug/debug-text'
 import { describeFault, describePlcData, describeRetain } from '@root/backend/shared/debug/health'
 import type { DeviceDebugChannel, PlcControlResult } from '@root/backend/shared/debug/types'
 import { PlcRuntimeState } from '@root/backend/shared/simulator/types'
 import type { TargetEndian } from '@root/frontend/utils/endian'
+import { longTextReadOf } from '@root/frontend/utils/variable-sizes'
 
 import { disconnectAndWait } from '../debug/close-channel'
 import {
@@ -319,18 +321,26 @@ export class SessionCore {
       if (!result.success || !result.data) {
         return { error: result.error ?? 'The target did not answer the variable read' }
       }
-      values.push(
-        ...decodeVariableValues({
-          requested: batch,
-          // `data` is declared `Uint8Array | Buffer` because the Node Modbus
-          // clients return the latter and the shared WebSocket transport the
-          // former. Normalising here keeps the decoder on one type.
-          payload: new Uint8Array(result.data),
-          lastIndex: result.lastIndex,
-          endian: this.options.endian,
-          forced: this.forcedUpper(),
-        }),
-      )
+      const long: Array<{ variable: ResolvedVariable; position: number }> = []
+      const decoded = decodeVariableValues({
+        requested: batch,
+        // `data` is declared `Uint8Array | Buffer` because the Node Modbus
+        // clients return the latter and the shared WebSocket transport the
+        // former. Normalising here keeps the decoder on one type.
+        payload: new Uint8Array(result.data),
+        lastIndex: result.lastIndex,
+        endian: this.options.endian,
+        forced: this.forcedUpper(),
+        onWindowFull: (variable, position) => long.push({ variable, position }),
+      })
+      // A string that filled the window is read whole (FC 0x4F); a target without it keeps the window.
+      for (const { variable, position } of long) {
+        const read = longTextReadOf(variable.type, variable.cap)
+        if (!read) continue
+        const text = await readDebugTextFromChannel(this.options.channel, variable.index, read.wide)
+        if (text.success) decoded[position] = { ...decoded[position], value: text.text }
+      }
+      values.push(...decoded)
     }
     return { values }
   }

@@ -5,7 +5,6 @@ import { pythonShmRuntime } from './python-shm-runtime'
 import { renderLayoutTable } from './shm-layout-table'
 import type { ShmLeaf, ShmWalkContext } from './shm-leaves'
 import { describeShmLayout, pinCrossesInDirection, pythonFunctionBlockInstances } from './shm-leaves'
-import { SHM_STRING_CHARS } from './shm-type-map'
 
 type PythonRuntimeInjectionParams = {
   inputVariables: PLCVariable[]
@@ -227,7 +226,7 @@ plc_pid = %d
 ${renderLayoutTable('_SHM_IN', inLeaves)}
 
 ${renderLayoutTable('_SHM_OUT', outLeaves)}
-${pythonShmRuntime(SHM_STRING_CHARS)}
+${pythonShmRuntime()}
 
 try:
     shm_in = shared_memory.SharedMemory(name='%s_in')

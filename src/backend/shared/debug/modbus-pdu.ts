@@ -41,6 +41,10 @@
  *   set request:   [FC=0x42] [arr: U8] [elem: U16BE] [force: U8] [dataLen: U16BE] [value...]
  *   set response:  [FC=0x42] [status]
  *
+ *   getText request:  [FC=0x4f] [arr: U8] [elem: U16BE] [offset: U16BE] [max: U16BE]
+ *   getText response: [FC=0x4f] [status] [tag] [flags] [cap: U16BE] [len: U16BE] [offset: U16BE]
+ *                     [count: U16BE] [tick: U32BE] [data: count units]   (STRING bytes, WSTRING LE units)
+ *
  * The MD5 response's trailing 2 bytes are an endianness sentinel —
  * the runtime stores the literal value 0xDEAD through a native
  * `uint16_t*`, so the bytes on the wire reveal target byte order:
@@ -66,6 +70,7 @@ import type {
   DebugSetResult,
   DebugStatusResult,
   DebugTaskStatsResult,
+  DebugTextChunkResult,
   DebugTransportResult,
   DebugVersionResult,
   Md5ProbeResult,
@@ -196,6 +201,20 @@ export function buildSetVariableRequest(index: number, force: boolean, valueBuff
   } else {
     writeU8(buf, 7, 0)
   }
+  return buf
+}
+
+/**
+ * FC 0x4F: up to `max` code units of a STRING / WSTRING leaf from code unit
+ * `offset`. The target clamps `max` to its frame. `index` is packed DebugAddr.
+ */
+export function buildGetTextRequest(index: number, offset: number, max: number): Uint8Array {
+  const buf = alloc(8)
+  writeU8(buf, 0, ModbusFunctionCode.DEBUG_GET_TEXT)
+  writeU8(buf, 1, (index >>> 16) & 0xff)
+  writeU16BE(buf, 2, index & 0xffff)
+  writeU16BE(buf, 4, offset)
+  writeU16BE(buf, 6, max)
   return buf
 }
 
@@ -338,6 +357,62 @@ export function parseGetListResponse(data: Uint8Array): DebugTransportResult {
     tick,
     lastIndex,
     data: data.slice(10, 10 + responseSize),
+  }
+}
+
+/** Bytes before the data in a successful FC 0x4F reply. */
+export const DEBUG_TEXT_HEADER_BYTES = 16
+
+/**
+ * Length of an FC 0x4F reply PDU, for a medium with no length field (RTU), or
+ * null until enough has arrived to tell. A refusal or exception is two bytes.
+ */
+export function getTextPduLength(pdu: Uint8Array, wide: boolean): number | null {
+  if (pdu.length < 2) return null
+  if (readU8(pdu, 0) !== (ModbusFunctionCode.DEBUG_GET_TEXT as number)) return 2
+  if (readU8(pdu, 1) !== (ModbusDebugResponse.SUCCESS as number)) return 2
+  if (pdu.length < DEBUG_TEXT_HEADER_BYTES) return null
+  return DEBUG_TEXT_HEADER_BYTES + readU16BE(pdu, 10) * (wide ? 2 : 1)
+}
+
+export function parseGetTextResponse(data: Uint8Array): DebugTextChunkResult {
+  if (data.length < 2) {
+    return { success: false, error: `Invalid response: too short (${data.length} bytes)` }
+  }
+  const fc = readU8(data, 0)
+  const status = readU8(data, 1)
+  if (fc === (ModbusFunctionCode.DEBUG_GET_TEXT as number) + 0x80) {
+    return {
+      success: false,
+      error: `The target does not support FC 0x4F (exception 0x${status.toString(16)})`,
+      unsupported: true,
+    }
+  }
+  if (fc !== (ModbusFunctionCode.DEBUG_GET_TEXT as number)) {
+    return { success: false, error: 'Function code mismatch' }
+  }
+  if (status !== (ModbusDebugResponse.SUCCESS as number)) {
+    if (status === (ModbusDebugResponse.ERROR_OUT_OF_BOUNDS as number)) {
+      return { success: false, error: 'Not a STRING or WSTRING, or out of range', status }
+    }
+    if (status === 0x83) return { success: false, error: 'No program is loaded', status }
+    return { success: false, error: statusError(status), status }
+  }
+  if (data.length < DEBUG_TEXT_HEADER_BYTES) {
+    return { success: false, error: `Incomplete text response (${data.length} bytes, expected at least 16)` }
+  }
+  return {
+    success: true,
+    chunk: {
+      tag: readU8(data, 2),
+      forced: (readU8(data, 3) & 0x01) !== 0,
+      cap: readU16BE(data, 4),
+      len: readU16BE(data, 6),
+      offset: readU16BE(data, 8),
+      count: readU16BE(data, 10),
+      tick: readU32BE(data, 12),
+      data: data.slice(DEBUG_TEXT_HEADER_BYTES),
+    },
   }
 }
 

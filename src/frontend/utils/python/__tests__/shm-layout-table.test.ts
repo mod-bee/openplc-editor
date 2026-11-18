@@ -39,8 +39,8 @@ describe('renderLayoutTable', () => {
       leaf({ field: 'w', path: ['w'], descriptor: SHM_WSTRING }),
     ])
 
-    expect(table).toContain(`(('s',), (None,), 'str', 0, 127, None),`)
-    expect(table).toContain(`(('w',), (None,), 'wstr', 127, 253, None),`)
+    expect(table).toContain(`(('s',), (None,), 'str', 0, 256, None),`)
+    expect(table).toContain(`(('w',), (None,), 'wstr', 256, 510, None),`)
   })
 
   it('writes an index as a number and a member as a quoted name', () => {

@@ -44,6 +44,17 @@ describe('ForceValueDialog', () => {
     expect(onOpenChange).not.toHaveBeenCalled()
   })
 
+  it('says that up to 126 characters can be forced into a string of any declared length (E5)', () => {
+    const { onForce } = renderDialog({ name: 'log.line', type: 'STRING(320)', currentValue: '"ok"' })
+    expect(
+      screen.getByText(/Up to 126 characters can be forced or written into a string of any declared length/),
+    ).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Value'), { target: { value: 'x'.repeat(127) } })
+    fireEvent.click(screen.getByText('Force'))
+    expect(screen.getByRole('alert').textContent).toMatch(/max 126/)
+    expect(onForce).not.toHaveBeenCalled()
+  })
+
   it("picks an enumeration's member by name, starting at the value now", async () => {
     const { onForce } = renderDialog({ type: 'INT', enumValues: ['Off', 'Hand', 'Auto'], currentValue: 'Hand' })
     const select = screen.getByLabelText('Value') as HTMLSelectElement

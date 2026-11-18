@@ -1,4 +1,4 @@
-import { blockPinVariableName, formatDebugValue, isSecretValue, isTrueValue } from '../debug-pin-values'
+import { blockPinVariableName, formatDebugValue, isSecretValue, isTrueValue, longDebugText } from '../debug-pin-values'
 
 describe('blockPinVariableName', () => {
   const fb = { variant: { name: 'UT_MOTOR', type: 'function-block' }, variable: { name: 'motor' } }
@@ -32,6 +32,20 @@ describe('formatDebugValue', () => {
     expect(formatDebugValue('42.5', 'LREAL', 2)).toBe('42.50')
     expect(formatDebugValue('53', 'INT', 3)).toBe('53')
     expect(formatDebugValue('NaN', 'REAL', 3)).toBe('NaN')
+  })
+})
+
+describe('long strings', () => {
+  const long = `"${'a'.repeat(126)}${'b'.repeat(74)}"`
+
+  it('a diagram shows the first 126 characters and an ellipsis', () => {
+    expect(formatDebugValue(long, 'STRING(320)', 2)).toBe(`"${'a'.repeat(126)}…"`)
+    expect(formatDebugValue('"short"', 'STRING(320)', 2)).toBe('"short"')
+  })
+
+  it('reports the whole text and its length', () => {
+    expect(longDebugText(long, 'WSTRING')).toEqual({ text: 'a'.repeat(126) + 'b'.repeat(74), total: 200 })
+    expect(longDebugText(long, 'INT')).toBeNull()
   })
 })
 

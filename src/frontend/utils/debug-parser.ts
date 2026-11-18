@@ -19,6 +19,8 @@ export interface DebugMapLeaf {
   path: string
   type: string
   size: number
+  /** STRING / WSTRING only: the declared length in code units (254 for a plain STRING). Optional for older maps. */
+  cap?: number
   /** An IEC CONSTANT, or a function-block in-out view: never forced or written. */
   readOnly?: true
   /** Retained across a power cycle. */
@@ -128,6 +130,8 @@ export interface DebugLeafInfo {
   type: string
   /** Canonical byte width straight from the compiler (sizeof the leaf). */
   size: number
+  /** STRING / WSTRING: the declared length from the compiler, when the map carries it. */
+  cap?: number
 }
 
 /**
@@ -143,6 +147,7 @@ export function buildLeafInfoMap(map: DebugMap): Map<string, DebugLeafInfo> {
       elem: leaf.elemIdx,
       type: leaf.type,
       size: leaf.size,
+      ...(leaf.cap !== undefined ? { cap: leaf.cap } : {}),
     })
   }
   return out

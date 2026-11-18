@@ -33,9 +33,14 @@
  */
 
 import type { PLCVariable } from '../../../middleware/shared/ports/types'
-import { IEC_BASE_TYPES, type IECWireFormat, lookupBaseType } from '../iec-types-registry'
+import {
+  DEFAULT_STRING_LENGTH,
+  IEC_BASE_TYPES,
+  type IECWireFormat,
+  lookupBaseType,
+  parseStringLength,
+} from '../iec-types-registry'
 import { getArrayBaseTypeValue, isArrayVariable } from '../PLC/array-codegen-helpers'
-import { DEBUG_STRING_CAP } from '../variable-sizes'
 
 /**
  * How one interface field crosses the boundary.
@@ -60,21 +65,12 @@ export interface ShmFieldDescriptor {
    *     so the byte count is twice it.
    */
   kind: 'scalar' | 'string' | 'wstring'
+  /** `string` / `wstring`: the declared length in code units, which the field carries whole. */
+  chars?: number
 }
 
-/**
- * Maximum characters carried across the boundary for STRING and WSTRING.
- *
- * Not a limit this code chooses: it is the transport convention the debugger
- * already speaks (`debug-map.json` reports STRING at 127 bytes and WSTRING at
- * 253, both being one length byte plus 126 characters).  Stated once here and
- * read by every emitter, rather than written as a literal in four places as it
- * was before.
- */
-export const SHM_STRING_CHARS = DEBUG_STRING_CAP
-
-/** Signed 8-bit length prefix, matching the `__strlen_t` the C stub emits. */
-const LEN_PREFIX_BYTES = 1
+/** Unsigned 16-bit length prefix, matching the `__strlen_t` the C stub emits: a declared length reaches 65535. */
+const LEN_PREFIX_BYTES = 2
 
 /**
  * The one fact this file owns: how a wire format is spelled on each side of the
@@ -143,33 +139,34 @@ export const SHM_SCALAR_TYPES: Readonly<Record<string, ShmFieldDescriptor>> = ((
   return table
 })()
 
-/**
- * STRING — one length byte plus a 126-byte UTF-8 body.  127 bytes packed,
- * matching what the debug map reports for the same variable.
- */
-export const SHM_STRING: ShmFieldDescriptor = {
-  cType: 'shm_iec_string_t',
-  pyFormat: `b${SHM_STRING_CHARS}s`,
-  size: LEN_PREFIX_BYTES + SHM_STRING_CHARS,
-  kind: 'string',
-}
+const stringFields = new Map<string, ShmFieldDescriptor>()
 
 /**
- * WSTRING — one length byte plus 126 UTF-16 code units.  253 bytes packed,
- * again matching the debug map.
- *
- * This previously shared STRING's descriptor, which was wrong in both
- * directions: the C stub copied `STR_MAX_LEN` *bytes* out of a `char16_t`
- * buffer (63 characters, not 126) while writing a length counted in
- * characters, and read back by reinterpreting a `char16_t` body as `char*`.
- * A distinct layout is what makes the two sides describable at all.
+ * A STRING (UTF-8 bytes) or WSTRING (UTF-16 code units) of `chars` code units:
+ * a 16-bit length, then the whole declared body, so nothing is cut short. One
+ * descriptor per shape, so equal declarations compare equal.
  */
-export const SHM_WSTRING: ShmFieldDescriptor = {
-  cType: 'shm_iec_wstring_t',
-  pyFormat: `b${SHM_STRING_CHARS * 2}s`,
-  size: LEN_PREFIX_BYTES + SHM_STRING_CHARS * 2,
-  kind: 'wstring',
+export function shmStringField(chars: number, wide: boolean): ShmFieldDescriptor {
+  const key = `${wide ? 'w' : ''}${chars}`
+  const known = stringFields.get(key)
+  if (known) return known
+  const bodyBytes = wide ? chars * 2 : chars
+  const field: ShmFieldDescriptor = {
+    cType: `shm_iec_${wide ? 'wstring' : 'string'}_${chars}_t`,
+    pyFormat: `H${bodyBytes}s`,
+    size: LEN_PREFIX_BYTES + bodyBytes,
+    kind: wide ? 'wstring' : 'string',
+    chars,
+  }
+  stringFields.set(key, field)
+  return field
 }
+
+/** A plain STRING: 254 characters. */
+export const SHM_STRING: ShmFieldDescriptor = shmStringField(DEFAULT_STRING_LENGTH, false)
+
+/** A plain WSTRING: 254 code units. */
+export const SHM_WSTRING: ShmFieldDescriptor = shmStringField(DEFAULT_STRING_LENGTH, true)
 
 /**
  * As-declared base-type name of a variable, or `null` when it has none.
@@ -201,8 +198,10 @@ function baseTypeName(variable: PLCVariable): string | null {
 export function describeShmBaseType(typeName: string): ShmFieldDescriptor | null {
   const metadata = lookupBaseType(typeName)
   if (!metadata) return null
-  if (metadata.wireFormat === 'len8-utf8') return SHM_STRING
-  if (metadata.wireFormat === 'len8-utf16le') return SHM_WSTRING
+  if (metadata.wireFormat === 'len8-utf8' || metadata.wireFormat === 'len8-utf16le') {
+    const chars = parseStringLength(typeName).length ?? DEFAULT_STRING_LENGTH
+    return shmStringField(chars, metadata.wireFormat === 'len8-utf16le')
+  }
   return SHM_SCALAR_TYPES[metadata.name.toLowerCase()] ?? null
 }
 

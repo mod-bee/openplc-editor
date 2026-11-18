@@ -53,11 +53,10 @@ describe('generateSTCode (python)', () => {
     })
 
     expect(result).toContain('(* Type definitions *)')
-    expect(result).toContain('#define STR_MAX_LEN 126')
-    // Stub-local SHM string layout — distinct name avoids colliding with
-    // strucpp::IEC_STRING (= IECStringVar<254>) which is in scope inside
-    // the {external} block.
-    expect(result).toContain('shm_iec_string_t')
+    // A 16-bit length: a declared length reaches 65535. The string types are
+    // emitted per declared length, only for those used.
+    expect(result).toContain('#define STR_LEN_TYPE uint16_t')
+    expect(result).not.toContain('STR_MAX_LEN')
 
     // The old preamble's typedef block (IEC_BOOL/INT/.../IEC_STRING) is
     // gone — strucpp's runtime headers already provide them.
@@ -84,14 +83,14 @@ describe('generateSTCode (python)', () => {
     expect(result).toContain('float result;')
   })
 
-  it('uses shm_iec_string_t (not IEC_STRING) for STRING fields in the SHM struct', () => {
+  it('uses shm_iec_string_254_t (not IEC_STRING) for STRING fields in the SHM struct', () => {
     const result = generateSTCode({
       pouName: 'test',
       allVariables: [makeStringVar('msg', 'input')],
       processedPythonCode: '',
     })
 
-    expect(result).toContain('shm_iec_string_t msg;')
+    expect(result).toContain('shm_iec_string_254_t msg;')
     expect(result).not.toMatch(/^\s*IEC_STRING msg;$/m)
   })
 
@@ -205,10 +204,11 @@ describe('generateSTCode (python)', () => {
     })
 
     expect(result).toContain('auto __s = MSG.get();')
-    // The length is clamped to the transport budget and the body zero-filled
+    // The length is clamped to the declared length and the body zero-filled
     // before the copy, so a short string cannot carry the previous tail.
+    expect(result).toContain('__strlen_t __n = (__strlen_t)(__s.length() < 254 ? __s.length() : 254);')
     expect(result).toContain('data_in.msg.len = __n;')
-    expect(result).toContain('std::memset(data_in.msg.body, 0, STR_MAX_LEN);')
+    expect(result).toContain('std::memset(data_in.msg.body, 0, sizeof(data_in.msg.body));')
     expect(result).toContain('std::memcpy(data_in.msg.body, __s.c_str(), (size_t)__n);')
   })
 
@@ -256,22 +256,22 @@ describe('generateSTCode (python)', () => {
   it('packs the string typedefs themselves, not just the structs using them', () => {
     const result = generateSTCode({
       pouName: 'test',
-      allVariables: [makeWStringVar('wmsg', 'input')],
+      allVariables: [makeStringVar('msg', 'input'), makeWStringVar('wmsg', 'input')],
       processedPythonCode: '',
     })
 
     // Regression: `#pragma pack` applies to the struct being defined, not to a
     // member type already laid out elsewhere. Without its own packed region,
-    // shm_iec_wstring_t's uint16_t body forces a padding byte after `len` and
-    // the field becomes 254 bytes where Python packs 253 — every later field
-    // then decodes from the wrong offset. Only a real compile surfaced this.
+    // a string type's layout is the compiler's, not Python's packed one, and
+    // every later field then decodes from the wrong offset. Only a real compile
+    // surfaced this.
     const preamble = result.slice(0, result.indexOf('shm_data_in_t'))
     const packedRegion = preamble.slice(
       preamble.indexOf('#pragma pack(push, 1)'),
       preamble.indexOf('#pragma pack(pop)'),
     )
-    expect(packedRegion).toContain('shm_iec_string_t')
-    expect(packedRegion).toContain('shm_iec_wstring_t')
+    expect(packedRegion).toContain('shm_iec_string_254_t')
+    expect(packedRegion).toContain('shm_iec_wstring_254_t')
   })
 
   it('reads WSTRING inputs as UTF-16 code units, not bytes', () => {
@@ -282,10 +282,10 @@ describe('generateSTCode (python)', () => {
     })
 
     // WSTRING gets its own struct shape; sharing STRING's meant copying
-    // STR_MAX_LEN *bytes* (half the characters) under a character count.
-    expect(result).toContain('shm_iec_wstring_t wmsg;')
+    // bytes (half the characters) under a character count.
+    expect(result).toContain('shm_iec_wstring_254_t wmsg;')
     expect(result).toContain('std::memcpy(data_in.wmsg.body, __s.c_str(), (size_t)__n * sizeof(uint16_t));')
-    expect(result).toContain('std::memset(data_in.wmsg.body, 0, STR_MAX_LEN * sizeof(uint16_t));')
+    expect(result).toContain('std::memset(data_in.wmsg.body, 0, sizeof(data_in.wmsg.body));')
   })
 
   it('writes WSTRING outputs back through char16_t, not a reinterpreted char*', () => {
@@ -296,7 +296,7 @@ describe('generateSTCode (python)', () => {
     })
 
     expect(result).toContain('reinterpret_cast<const char16_t*>(data_out.wmsg.body)')
-    expect(result).toContain('strucpp::IEC_WSTRING::value_type')
+    expect(result).toContain('WMSG = decltype(WMSG.get())(')
   })
 
   it('emits int64 fields for the duration and calendar types', () => {
@@ -327,40 +327,35 @@ describe('generateSTCode (python)', () => {
     })
 
     expect(result).toContain(
-      'MSG = strucpp::IEC_STRING::value_type(reinterpret_cast<const char*>(data_out.msg.body), data_out.msg.len);',
+      'MSG = decltype(MSG.get())(reinterpret_cast<const char*>(data_out.msg.body), (size_t)(data_out.msg.len < 254 ? data_out.msg.len : 254));',
     )
   })
 
-  it('guards the STRING write-back so a value wider than the transport is not truncated', () => {
-    // The transport carries STR_MAX_LEN characters; an `IECStringVar` holds 254.
-    // An IEC string longer than the transport reaches Python already truncated,
-    // so writing Python's copy back would shorten the IEC variable permanently
-    // — with no user code having touched it. Reachable only since `local`,
-    // `inOut` and `external` began to round-trip.
-    // Every class that writes back gets the guard: an `external` reaches its
-    // global through the lock guard (`__r`) rather than by name, so the check is
-    // asserted on all four rather than on one spelling.
+  it('writes the STRING back whole, at its declared length, for every class that writes back', () => {
+    // The field is as wide as the variable, so Python holds the whole value and
+    // the write-back is faithful. An `external` reaches its global through the
+    // lock guard (`__r`) rather than by name, so all four classes are checked.
     for (const cls of ['output', 'inOut', 'local', 'external'] as const) {
       const result = generateSTCode({
         pouName: 'test',
         allVariables: [makeStringVar('msg', cls)],
         processedPythonCode: '',
       })
-      expect(result).toContain('if (__cur.length() <= STR_MAX_LEN)')
-      expect(result).toMatch(/auto __cur = (MSG|__r)\.get\(\);/)
+      expect(result).toMatch(/(MSG|__r) = decltype\((MSG|__r)\.get\(\)\)\(reinterpret_cast<const char\*>/)
+      expect(result).not.toContain('__cur')
     }
   })
 
-  it('guards the WSTRING write-back the same way', () => {
+  it('writes the WSTRING back the same way, in char16_t units', () => {
     const result = generateSTCode({
       pouName: 'test',
       allVariables: [makeWStringVar('wmsg', 'output')],
       processedPythonCode: '',
     })
 
-    expect(result).toContain('auto __cur = WMSG.get();')
-    expect(result).toContain('if (__cur.length() <= STR_MAX_LEN)')
-    expect(result).toContain('strucpp::IEC_WSTRING::value_type(reinterpret_cast<const char16_t*>(data_out.wmsg.body)')
+    expect(result).toContain(
+      'WMSG = decltype(WMSG.get())(reinterpret_cast<const char16_t*>(data_out.wmsg.body), (size_t)(data_out.wmsg.len < 254 ? data_out.wmsg.len : 254));',
+    )
   })
 
   it('reads / writes the runtime SHM-pointer locals through their IECVars', () => {
@@ -425,7 +420,7 @@ describe('generateSTCode (python)', () => {
       const result = run([userTyped('m', 'input', 'Motor')], [MOTOR])
 
       expect(result).toContain('int16_t m_speed;')
-      expect(result).toContain('shm_iec_string_t m_label;')
+      expect(result).toContain('shm_iec_string_254_t m_label;')
     })
 
     it('copies each member individually, by its name on the strucpp side', () => {

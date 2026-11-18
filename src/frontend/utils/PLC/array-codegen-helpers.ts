@@ -1,5 +1,5 @@
 import type { PLCVariable } from '../../../middleware/shared/ports/types'
-import { IEC_BASE_TYPES, parseStringLength } from '../iec-types-registry'
+import { IEC_BASE_TYPES, isLengthQualifiedType, parseStringLength } from '../iec-types-registry'
 import { parseDimensionRange } from './dimension-range'
 
 /**
@@ -121,12 +121,20 @@ const mapUserTypeToIEC = (typeName: string, userTypeNames?: ReadonlySet<string>)
  * STruC++ emits for the same declaration (`IECStringVar<23>`): `<POU>_VARS`
  * points at the member the function block declares, so a mismatch is an ABI
  * bug, not a compile error.
+ *
+ * Every length from 1 up: STruC++ declares `IECStringVar<n>` for any length it
+ * accepts (IEC 61131-3:2013 6.4.2.2 makes the maximum Implementer specific).
+ * `MAX_STRING_LENGTH` limits what the Variables Table offers, not how a member
+ * STruC++ has already declared is spelled.
  */
 const sizedStringIECType = (baseType: string): string | null => {
-  const { base, length, valid } = parseStringLength(baseType)
-  if (length === undefined || !valid) return null
+  const { base, length } = parseStringLength(baseType)
+  if (length === undefined || length < 1 || !isLengthQualifiedType(base)) return null
   return base === 'WSTRING' ? `IECWStringVar<${length}>` : `IECStringVar<${length}>`
 }
+
+/** Whether a type name is a STRING / WSTRING with a declared length: the elementary string, never a project type. */
+const isSizedStringType = (typeName: string): boolean => sizedStringIECType(typeName) !== null
 
 /**
  * Spell a type the way strucpp spells it as an ARRAY ELEMENT, which is not
@@ -190,7 +198,9 @@ const getVariableIECType = (variable: PLCVariable, userTypeNames?: ReadonlySet<s
   if (variable.type.definition === 'base-type') {
     return mapBaseTypeToIEC(variable.type.value, userTypeNames)
   }
-  return mapUserTypeToIEC(variable.type.value, userTypeNames)
+  // An editor that allowed only 254 kept `STRING(320)` as a user-data-type of
+  // that name. No data type can be named that: it is the elementary string.
+  return sizedStringIECType(variable.type.value) ?? mapUserTypeToIEC(variable.type.value, userTypeNames)
 }
 
 /**
@@ -320,6 +330,7 @@ export {
   getVariableIECType,
   isArrayVariable,
   isDescriptorPinType,
+  isSizedStringType,
   isVariableLengthArray,
   mapArrayElementTypeToIEC,
   mapBaseTypeToIEC,

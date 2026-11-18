@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { encodeForceValue } from '../../../utils/variable-sizes'
+import { encodeForceValue, STRING_FORCE_LIMIT_NOTE } from '../../../utils/variable-sizes'
 import { Label } from '../../_atoms/label'
 import { Modal, ModalContent, ModalTitle } from '../modal'
 
@@ -25,7 +25,7 @@ function typeHint(type: string): string {
   const t = type.toUpperCase()
   if (/^L?TIME$/.test(t)) return 'A duration, e.g. T#5s, T#1m30s or 500ms.'
   if (/^L?REAL$/.test(t)) return 'A number, e.g. 12.5 or -3.'
-  if (/^W?STRING/.test(t)) return 'Text, without quotes.'
+  if (/^W?STRING/.test(t)) return `Text, without quotes. ${STRING_FORCE_LIMIT_NOTE}`
   if (/^(U?(S|D|L)?INT)$/.test(t)) return 'A whole number.'
   if (/^(BYTE|WORD|DWORD|LWORD)$/.test(t)) return 'A whole number, or 16#FF for hex.'
   if (/^(DATE|TOD|DT|TIME_OF_DAY|DATE_AND_TIME)$/.test(t)) return 'As written in ST, e.g. D#2026-10-17.'

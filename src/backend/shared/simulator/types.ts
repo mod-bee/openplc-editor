@@ -20,6 +20,8 @@ export enum ModbusFunctionCode {
   /** Per-task timing of a board in RTOS mode. Read-only; a board built as a
    *  single loop does not answer it. */
   DEBUG_GET_TASK_STATS = 0x4e,
+  /** A STRING / WSTRING value in chunks, any declared length. Older targets do not answer it. */
+  DEBUG_GET_TEXT = 0x4f,
 }
 
 export enum ModbusDebugResponse {

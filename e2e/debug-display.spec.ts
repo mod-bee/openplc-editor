@@ -147,7 +147,11 @@ test('debug values on the diagrams', async () => {
       if (type === 'BOOL') boolValues.set(key, n % 3 === 0 ? 'TRUE' : 'FALSE')
       else if (node.enumValues && node.enumValues.length > 0) nonBoolValues.set(key, node.enumValues[0])
       else if (type === 'REAL' || type === 'LREAL') nonBoolValues.set(key, ((n % 997) / 29.7).toFixed(6))
-      else if (type.startsWith('STRING')) nonBoolValues.set(key, '"wifi-down-under"')
+      else if (/^W?STRING/.test(type)) {
+        // A string declared longer than the 126-character window gets a value that fills it and more.
+        const declared = Number(/\((\d+)\)/.exec(type)?.[1] ?? 254)
+        nonBoolValues.set(key, declared > 126 ? `"${'0123456789'.repeat(28).slice(0, 280)}"` : '"wifi-down-under"')
+      }
       else if (type === 'TIME') nonBoolValues.set(key, 'T#1s500ms')
       else nonBoolValues.set(key, String(n % 200))
     }
@@ -185,6 +189,14 @@ test('debug values on the diagrams', async () => {
       )
       await page.waitForTimeout(1500)
       await page.screenshot({ path: join(SHOTS, 'watch-panel.png') })
+      // A string longer than the window: "126 of n shown", then the whole value on "Show all".
+      const longToggle = page.getByTestId('debug-long-text-toggle').first()
+      if ((await longToggle.count()) > 0) {
+        await expect(longToggle).toHaveText(/126 of 280 shown · Show all/)
+        await longToggle.click()
+        await expect(page.getByTestId('debug-long-text').first()).toHaveText(/^(0123456789){28}$/)
+        await page.screenshot({ path: join(SHOTS, 'watch-panel-show-all.png') })
+      }
     }
     const clicks = (process.env.DEBUG_DISPLAY_CLICKS ?? '').split(';').filter(Boolean)
     for (const [n, step] of clicks.entries()) {

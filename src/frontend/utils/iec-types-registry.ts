@@ -93,10 +93,13 @@ const INDEX: ReadonlyMap<string, IECTypeMetadata> = (() => {
 })()
 
 /**
- * Largest declared length a STRING / WSTRING may carry — the capacity of the
- * unqualified type, so `STRING` and `STRING(254)` are the same declaration.
+ * Largest declared length a STRING / WSTRING may carry, in code units (IEC 61131-3
+ * 6.4.2.2, Table 10 footnote k). STruC++ stores the length in 16 bits.
  */
-export const MAX_STRING_LENGTH = 254
+export const MAX_STRING_LENGTH = 65535
+
+/** Capacity of an unqualified STRING / WSTRING: `STRING` and `STRING(254)` are the same declaration. */
+export const DEFAULT_STRING_LENGTH = 254
 
 /** Only these two carry a declared length. */
 const LENGTH_QUALIFIED = new Set(['STRING', 'WSTRING'])

@@ -62,7 +62,15 @@ export interface DebugResponseWalkOptions<TMeta> {
    */
   typeOf: (index: number, position: number) => ResolvedDebugType<TMeta> | undefined
   /** Called once per successfully decoded position. */
-  emit: (decoded: { index: number; position: number; type: string; value: string; meta: TMeta }) => void
+  emit: (decoded: {
+    index: number
+    position: number
+    type: string
+    value: string
+    meta: TMeta
+    /** A STRING / WSTRING that filled the 126-unit window: the value may be longer. */
+    windowFull?: true
+  }) => void
   /**
    * Called when the codec throws for a position. The walk still advances by the
    * type's size and counts the position consumed: the runtime wrote those bytes
@@ -117,8 +125,8 @@ export function walkDebugResponse<TMeta>(options: DebugResponseWalkOptions<TMeta
     applySwapToVariableBytes(payload, offset, size, type, endian)
 
     try {
-      const { value, bytesRead } = parseValueByTypeName(payload, offset, type)
-      emit({ index, position, type, value, meta })
+      const { value, bytesRead, windowFull } = parseValueByTypeName(payload, offset, type)
+      emit({ index, position, type, value, meta, ...(windowFull ? { windowFull } : {}) })
       offset += bytesRead
     } catch {
       onError?.({ index, position, type, meta })

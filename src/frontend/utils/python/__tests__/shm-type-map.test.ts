@@ -8,7 +8,6 @@ import {
   describeVariableType,
   SHM_SCALAR_TYPES,
   SHM_STRING,
-  SHM_STRING_CHARS,
   SHM_WSTRING,
 } from '../shm-type-map'
 
@@ -65,21 +64,14 @@ describe('SHM type map — the C and Python sides describe the same bytes', () =
     expect(pythonCalcsize(`=${descriptor.pyFormat}`)).toBe(descriptor.size)
   })
 
-  it('STRING is a length byte plus its character budget', () => {
+  it('STRING is a 16-bit length plus its declared length (254 when plain)', () => {
     expect(pythonCalcsize(`=${SHM_STRING.pyFormat}`)).toBe(SHM_STRING.size)
-    expect(SHM_STRING.size).toBe(1 + SHM_STRING_CHARS)
+    expect(SHM_STRING.size).toBe(2 + 254)
   })
 
-  it('WSTRING is a length byte plus two bytes per character', () => {
+  it('WSTRING is a 16-bit length plus two bytes per code unit', () => {
     expect(pythonCalcsize(`=${SHM_WSTRING.pyFormat}`)).toBe(SHM_WSTRING.size)
-    expect(SHM_WSTRING.size).toBe(1 + SHM_STRING_CHARS * 2)
-  })
-
-  it('STRING and WSTRING match the sizes the debug map reports', () => {
-    // strucpp emits these for the same variables; the transport must agree with
-    // what the debugger already speaks.
-    expect(SHM_STRING.size).toBe(127)
-    expect(SHM_WSTRING.size).toBe(253)
+    expect(SHM_WSTRING.size).toBe(2 + 254 * 2)
   })
 
   it('every scalar has a distinct, non-empty C type and format', () => {

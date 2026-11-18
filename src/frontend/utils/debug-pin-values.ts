@@ -5,6 +5,8 @@
  * pin is read under one name everywhere.
  */
 
+import { DEBUG_STRING_CAP } from './variable-sizes'
+
 type PinBlock = {
   variant?: { name: string; type: string }
   variable?: { name?: string }
@@ -38,11 +40,25 @@ export function isTrueValue(value: string | undefined): boolean | undefined {
 
 const REAL_TYPES = new Set(['REAL', 'LREAL'])
 
+/** Characters of a STRING / WSTRING a diagram or the watch shows before it is cut short: the debug window. */
+export const SHOWN_TEXT_CHARS = DEBUG_STRING_CAP
+
+/** A polled STRING / WSTRING value (`"…"`) longer than {@link SHOWN_TEXT_CHARS}: its text and length. */
+export function longDebugText(value: string, type: string | undefined): { text: string; total: number } | null {
+  if (!type || !/^W?STRING\b/i.test(type.trim())) return null
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return null
+  const text = value.slice(1, -1)
+  return text.length > SHOWN_TEXT_CHARS ? { text, total: text.length } : null
+}
+
 /**
  * A value as a diagram shows it: a REAL / LREAL rounded to `decimals` places (trailing zeros kept, so a
- * changing value does not jump in width); anything else as polled.
+ * changing value does not jump in width); a string longer than {@link SHOWN_TEXT_CHARS} cut short with
+ * an ellipsis; anything else as polled.
  */
 export function formatDebugValue(value: string, type: string | undefined, decimals: number): string {
+  const long = longDebugText(value, type)
+  if (long) return `"${long.text.slice(0, SHOWN_TEXT_CHARS)}…"`
   if (!type || !REAL_TYPES.has(type.toUpperCase())) return value
   const number = Number(value)
   return Number.isFinite(number) ? number.toFixed(decimals) : value

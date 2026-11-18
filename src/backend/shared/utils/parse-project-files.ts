@@ -32,6 +32,7 @@ import type {
 import { deviceConfigurationSchema, pinMappingFileSchema } from '../types/PLC/devices'
 import { PLCProjectSchema, PLCRemoteDeviceSchema, PLCServerSchema } from '../types/PLC/open-plc'
 import { getDefaultSchemaValues } from './default-zod-schema-values'
+import { liftSizedStringTypes } from './legacy-sized-strings'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -618,12 +619,12 @@ export function parseProjectFiles(
   return {
     meta,
     projectData: {
-      dataTypes: mergeDataTypes(dataTypesFromFiles, legacyDataTypes, dataTypeFiles),
+      dataTypes: liftSizedStringTypes(mergeDataTypes(dataTypesFromFiles, legacyDataTypes, dataTypeFiles)),
       // Assembled field-by-field: anything not named here is dropped on load regardless of
       // how well the schema validates it.
-      globalVariableLists: (data.globalVariableLists as PLCGlobalVariableList[]) ?? [],
-      pous,
-      configurations: configuration,
+      globalVariableLists: liftSizedStringTypes((data.globalVariableLists as PLCGlobalVariableList[]) ?? []),
+      pous: liftSizedStringTypes(pous),
+      configurations: liftSizedStringTypes(configuration),
       servers: servers.length > 0 ? servers : ((data.servers as PLCServer[]) ?? []),
       remoteDevices: remoteDevices.length > 0 ? remoteDevices : ((data.remoteDevices as PLCRemoteDevice[]) ?? []),
       libraries: (data.libraries as ParsedProjectData['projectData']['libraries']) ?? [],

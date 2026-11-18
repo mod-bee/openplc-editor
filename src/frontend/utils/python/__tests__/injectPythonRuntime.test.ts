@@ -373,24 +373,24 @@ describe('WSTRING crosses as UTF-16, counted in code units', () => {
       outbound: { direction: 'out' },
     })
 
-  it('marks a WSTRING field wstr, at one length byte plus two bytes per code unit', () => {
+  it('marks a WSTRING field wstr, at a 16-bit length plus two bytes per code unit', () => {
     const result = run([makeWStringVar('label', 'input')])
 
-    expect(result).toContain(`(('label',), (None,), 'wstr', 0, 253, None)`)
+    expect(result).toContain(`(('label',), (None,), 'wstr', 0, 510, None)`)
   })
 
-  it('marks a STRING field str, at one length byte plus one byte per character', () => {
+  it('marks a STRING field str, at a 16-bit length plus one byte per character', () => {
     const result = run([makeStringVar('label', 'input')])
 
-    expect(result).toContain(`(('label',), (None,), 'str', 0, 127, None)`)
+    expect(result).toContain(`(('label',), (None,), 'str', 0, 256, None)`)
   })
 
   it('keeps the two apart in the same table, so neither inherits the other width', () => {
     const result = run([makeStringVar('narrow', 'input'), makeWStringVar('wide', 'input')])
 
-    expect(result).toContain(`(('narrow',), (None,), 'str', 0, 127, None)`)
-    // 127 bytes on, not 254: the widths differ and the offsets prove it.
-    expect(result).toContain(`(('wide',), (None,), 'wstr', 127, 253, None)`)
+    expect(result).toContain(`(('narrow',), (None,), 'str', 0, 256, None)`)
+    // 256 bytes on, not 510: the widths differ and the offsets prove it.
+    expect(result).toContain(`(('wide',), (None,), 'wstr', 256, 510, None)`)
   })
 })
 
@@ -500,7 +500,7 @@ describe('injectPythonRuntime', () => {
       inbound: { direction: 'in' },
       outbound: { direction: 'out' },
     })
-    expect(result).toContain(`(('msg',), (None,), 'str', 0, 127, None)`)
+    expect(result).toContain(`(('msg',), (None,), 'str', 0, 256, None)`)
   })
 
   it('generates output pack code for string variables', () => {
@@ -513,7 +513,7 @@ describe('injectPythonRuntime', () => {
       outbound: { direction: 'out' },
     })
 
-    expect(result).toContain(`(('msg',), (None,), 'str', 0, 127, None)`)
+    expect(result).toContain(`(('msg',), (None,), 'str', 0, 256, None)`)
   })
 
   it('seeds scalar outputs from shared memory, not from the declaration', () => {
@@ -565,7 +565,7 @@ describe('injectPythonRuntime', () => {
       outbound: { direction: 'out' },
     })
 
-    expect(result).toContain(`(('msg',), (None,), 'str', 0, 127, None)`)
+    expect(result).toContain(`(('msg',), (None,), 'str', 0, 256, None)`)
     expect(result).not.toContain('msg = ""')
   })
 
@@ -716,7 +716,7 @@ describe('a function block pin that is itself composite', () => {
   })
 
   it('wraps an enumeration pin back into its class', () => {
-    expect(run()).toContain(`(('drv', 'STATE'), ('DRIVE', None), 'i', 129, 4, 'Mode')`)
+    expect(run()).toContain(`(('drv', 'STATE'), ('DRIVE', None), 'i', 258, 4, 'Mode')`)
   })
 
   it('declares the classes reached only through a pin', () => {

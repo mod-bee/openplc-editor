@@ -145,6 +145,7 @@ export function indexDebugMap(store: OpenPLCStore, map: DebugMap): DebugVariable
           elem: leaf.elemIdx,
           type: leaf.type,
           size: leaf.size,
+          ...(leaf.cap !== undefined ? { cap: leaf.cap } : {}),
         },
       )
     }
@@ -254,8 +255,10 @@ export function decodeVariableValues(options: {
   lastIndex: number | undefined
   endian: TargetEndian
   forced: ReadonlySet<string>
+  /** Called for a STRING / WSTRING that filled the 126-unit window, with its position in the result. */
+  onWindowFull?: (variable: ResolvedVariable, position: number) => void
 }): VariableValue[] {
-  const { requested, payload, lastIndex, endian, forced } = options
+  const { requested, payload, lastIndex, endian, forced, onWindowFull } = options
   const byIndex = new Map(requested.map((variable) => [variable.index, variable]))
   const values: VariableValue[] = []
 
@@ -269,7 +272,8 @@ export function decodeVariableValues(options: {
       const variable = byIndex.get(index)
       return variable ? { type: variable.type, meta: variable } : undefined
     },
-    emit: ({ type, value, meta: variable }) => {
+    emit: ({ type, value, meta: variable, windowFull }) => {
+      if (windowFull) onWindowFull?.(variable, values.length)
       const typed = normaliseValue(value, type)
       const member = enumMemberOf(variable, typed)
       values.push({

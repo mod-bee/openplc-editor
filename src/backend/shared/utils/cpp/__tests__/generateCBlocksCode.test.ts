@@ -1,4 +1,5 @@
 import type { PLCVariable } from '../../../../../middleware/shared/ports/types'
+import { parseIecStringToVariables } from '../../../../../frontend/utils/generate-iec-string-to-variables'
 import { generateCBlocksCode } from '../generateCBlocksCode'
 
 const makeScalarVar = (name: string, cls: 'input' | 'output' | 'inOut', baseType: string): PLCVariable => ({
@@ -397,6 +398,24 @@ int Count() { return 0; }
 
     expect(result).not.toContain('using ANY_INT')
     expect(result).not.toContain('strucpp::ANY_INT')
+  })
+
+  it.each([255, 320, 1024])('does not alias a STRING(%i) declaration as if it were a project type', (n) => {
+    // A length above the Variables Table's limit is kept by the declaration
+    // parser as a user-data-type named `STRING(n)`. It is the elementary string
+    // (IEC 61131-3:2013 6.4.2.2), and `using STRING(n) = ...` is not C++.
+    const result = generateCBlocksCode([
+      {
+        name: 'LONGSTR',
+        code: 'void setup() { }\nvoid loop() { }',
+        variables: parseIecStringToVariables(
+          `VAR\n  s : STRING(${n});\n  w : WSTRING(${n});\n  a : ARRAY [0..1] OF STRING(${n});\nEND_VAR`,
+        ),
+      },
+    ])
+
+    expect(result).not.toMatch(/W?STRING\(\d+\)/)
+    expect(result).toContain('#define s (*(vars->S))')
   })
 
   it('still aliases a real project type', () => {

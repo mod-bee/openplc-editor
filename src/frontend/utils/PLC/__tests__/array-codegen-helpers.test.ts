@@ -359,6 +359,27 @@ describe('the two native languages accept the same elementary types', () => {
       }
       expect(getVariableIECType(arrayOfSized)).toBe('IECStringVar<23>')
     })
+
+    // IEC 61131-3:2013 6.4.2.2 leaves the maximum length to the implementer, and
+    // STruC++ declares `IECStringVar<n>` for every length it accepts, with no
+    // upper bound. The spelling here follows it for every length, not only the
+    // ones the Variables Table offers.
+    it.each([251, 254, 255, 320, 1024])('names the template for STRING(%i) and the same WSTRING', (n) => {
+      expect(mapBaseTypeToIEC(`STRING(${n})`)).toBe(`IECStringVar<${n}>`)
+      expect(mapBaseTypeToIEC(`WSTRING(${n})`)).toBe(`IECWStringVar<${n}>`)
+      expect(mapArrayElementTypeToIEC(`STRING(${n})`)).toBe(`IECStringVar<${n}>`)
+    })
+
+    it('names the template for a long string the declaration parser keeps as a data type', () => {
+      // The parser classifies a length above the table's limit as a
+      // user-data-type named after the declaration; the type is still the string.
+      const scalar: PLCVariable = {
+        ...scalarOf('STRING(320)'),
+        type: { definition: 'user-data-type', value: 'STRING(320)' },
+      }
+      expect(getVariableIECType(scalar)).toBe('IECStringVar<320>')
+      expect(generateStructMember(scalar)).toBe('  strucpp::IECStringVar<320> *V;\n')
+    })
   })
 
   it('accepts the long spellings IEC 61131-3 allows for the calendar types', () => {

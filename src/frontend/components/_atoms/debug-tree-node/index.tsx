@@ -1,11 +1,17 @@
-import { ComponentPropsWithoutRef } from 'react'
+import { ComponentPropsWithoutRef, useState } from 'react'
 
 import type { DebugTreeNode } from '../../../../middleware/shared/ports/types'
 import { ArrowIcon } from '../../../assets/icons/interface/Arrow'
 import ViewIcon from '../../../assets/icons/interface/View'
 import { useDebugDisplayOptions } from '../../../hooks/use-debug-display-options'
 import { cn } from '../../../utils/cn'
-import { formatDebugValue, HIDDEN_VALUE, isSecretValue } from '../../../utils/debug-pin-values'
+import {
+  formatDebugValue,
+  HIDDEN_VALUE,
+  isSecretValue,
+  longDebugText,
+  SHOWN_TEXT_CHARS,
+} from '../../../utils/debug-pin-values'
 import { describeInOutLeaf } from '../../../utils/inout-force'
 import { ForcedMarker } from '../forced-marker'
 
@@ -88,6 +94,14 @@ const TreeNode = ({
     if (hideSecrets && isSecretValue(node.compositeKey, node.type)) return HIDDEN_VALUE
     return formatDebugValue(value, node.type, decimals)
   }
+
+  // A string longer than the shown window: how much is shown, and the whole text on request.
+  const [showAll, setShowAll] = useState(false)
+  const polled = node.isComplex ? undefined : getValue?.(node.compositeKey)
+  const longText =
+    polled !== undefined && !(hideSecrets && isSecretValue(node.compositeKey, node.type))
+      ? longDebugText(polled, node.type)
+      : null
 
   return (
     <div {...rest}>
@@ -183,6 +197,31 @@ const TreeNode = ({
         )}
       </div>
 
+      {longText && (
+        // On its own line under the row: a long value already runs past a narrow panel.
+        <div className='flex flex-col items-start gap-1 pb-1' style={{ paddingLeft: `${indentWidth + 24}px` }}>
+          <button
+            type='button'
+            data-testid='debug-long-text-toggle'
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowAll((v) => !v)
+            }}
+            className='whitespace-nowrap text-cp-xs text-brand hover:underline'
+            title={showAll ? 'Hide the whole value' : 'Show the whole value'}
+          >
+            {SHOWN_TEXT_CHARS} of {longText.total} shown · {showAll ? 'Show less' : 'Show all'}
+          </button>
+          {showAll && (
+            <p
+              data-testid='debug-long-text'
+              className='w-full select-text whitespace-pre-wrap break-all rounded bg-neutral-100 p-1 text-neutral-1000 dark:bg-neutral-850 dark:text-white'
+            >
+              {longText.text}
+            </p>
+          )}
+        </div>
+      )}
       {node.isComplex && node.isExpanded && node.children && (
         <div>
           {node.children.map((child) => (

@@ -1,6 +1,8 @@
 import {
   buildGetDeviceIdRequest,
   buildGetStatusRequest,
+  buildGetTextRequest,
+  buildGetVersionRequest,
   buildPlcSetStateRequest,
   buildReadLicenseRequest,
   buildWriteLicenseRequest,
@@ -8,6 +10,8 @@ import {
   isBusyException,
   parseGetDeviceIdResponse,
   parseGetStatusResponse,
+  parseGetTextResponse,
+  parseGetVersionResponse,
   parsePlcSetStateResponse,
   parseReadLicenseResponse,
   parseWriteLicenseResponse,
@@ -20,6 +24,9 @@ import type {
   DebugLicenseWriteResult,
   DebugStatusResult,
   DebugTaskStatsResult,
+  DebugTextChunkRequest,
+  DebugTextChunkResult,
+  DebugVersionResult,
   DeviceModbusTransport,
   Md5ProbeResult,
   PlcControlResult,
@@ -46,6 +53,8 @@ export enum ModbusFunctionCode {
   PLC_SET_STATE = 0x4b,
   /** Per-task timing of a board in RTOS mode. */
   DEBUG_GET_TASK_STATS = 0x4e,
+  /** A STRING / WSTRING value in chunks, any declared length. */
+  DEBUG_GET_TEXT = 0x4f,
 }
 
 export enum ModbusDebugResponse {
@@ -487,6 +496,35 @@ export class ModbusTcpClient implements DeviceModbusTransport {
     request.writeUInt8(0x00, 6) // unit id
     Buffer.from(pdu).copy(request as unknown as Uint8Array, 7)
     return { request, transactionId }
+  }
+
+  /** One PDU round trip; the reply PDU without its MBAP header. */
+  private async sendPdu(pdu: Uint8Array): Promise<Uint8Array> {
+    const { request, transactionId } = this.buildTcpFrame(pdu)
+    const data = await this.sendTcpRequest(request)
+    if (data.length < 9) throw new Error(`Invalid response: too short (${data.length} bytes)`)
+    if (data.readUInt16BE(0) !== transactionId) throw new Error('Transaction ID mismatch')
+    return Uint8Array.prototype.slice.call(data, 7)
+  }
+
+  /** FC 0x47 -- firmware version, which says whether the board knows FC 0x4F. */
+  async getVersion(): Promise<DebugVersionResult> {
+    if (!this.socket) return { success: false, error: 'Not connected to target' }
+    try {
+      return parseGetVersionResponse(await this.sendPdu(buildGetVersionRequest()))
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) }
+    }
+  }
+
+  /** FC 0x4F -- one chunk of a STRING / WSTRING value; see readDebugTextFromChannel. */
+  async getTextChunk(request: DebugTextChunkRequest): Promise<DebugTextChunkResult> {
+    if (!this.socket) return { success: false, error: 'Not connected to target' }
+    try {
+      return parseGetTextResponse(await this.sendPdu(buildGetTextRequest(request.index, request.offset, request.max)))
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) }
+    }
   }
 
   /**

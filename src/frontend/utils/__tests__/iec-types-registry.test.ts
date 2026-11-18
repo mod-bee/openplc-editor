@@ -196,7 +196,7 @@ describe('iec-types-registry', () => {
 
     it('returns undefined for a length it cannot carry', () => {
       expect(lookupBaseType('STRING(0)')).toBeUndefined()
-      expect(lookupBaseType('STRING(999)')).toBeUndefined()
+      expect(lookupBaseType('STRING(65536)')).toBeUndefined()
     })
 
     it('is reflected by isBaseTypeName', () => {

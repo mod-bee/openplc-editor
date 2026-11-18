@@ -27,12 +27,14 @@ import {
   buildGetDeviceIdRequest,
   buildGetListRequest,
   buildGetMd5Request,
+  buildGetTextRequest,
   buildReadLicenseRequest,
   buildSetVariableRequest,
   buildWriteLicenseRequest,
   parseGetAnchorResponse,
   parseGetListResponse,
   parseGetMd5Response,
+  parseGetTextResponse,
   parseReadLicenseResponse,
   parseSetVariableResponse,
   parseWriteLicenseResponse,
@@ -42,6 +44,8 @@ import type {
   DebugLicenseReadResult,
   DebugLicenseWriteResult,
   DebugSetResult,
+  DebugTextChunkRequest,
+  DebugTextChunkResult,
   DebugTransport,
   DebugTransportResult,
   DeviceDebugChannel,
@@ -49,6 +53,8 @@ import type {
 } from './types'
 
 const REQUEST_TIMEOUT_MS = 5000
+/** The runtime's answer, in place of a PDU, to a command it could not process. */
+const RUNTIME_ERROR_REPLY = 'ERROR_PROCESSING'
 const CONNECT_TIMEOUT_MS = 5000
 
 export interface WebSocketDebugTransportOptions {
@@ -195,6 +201,19 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
     )
   }
 
+  /** FC 0x4F, one chunk of a STRING / WSTRING value. A runtime that predates it answers ERROR_PROCESSING. */
+  async getTextChunk(request: DebugTextChunkRequest): Promise<DebugTextChunkResult> {
+    if (!this.socket) return { success: false, error: 'Not connected to target' }
+
+    return this.sendCommand(
+      buildGetTextRequest(request.index, request.offset, request.max),
+      (bytes) => parseGetTextResponse(bytes),
+      'resolve',
+      (error): DebugTextChunkResult => ({ success: false, error }),
+      request.timeoutMs,
+    )
+  }
+
   // License function codes (0x48/0x49/0x4A), byte-identical to the serial/TCP
   // clients: the runtime answers them at the webserver level, but the editor sees
   // ONE transport-agnostic contract, so the licensing flow has a single shape on
@@ -299,8 +318,15 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
       | DebugSetResult
       | DebugAnchorResult
       | DebugLicenseReadResult
-      | DebugLicenseWriteResult,
-  >(pdu: Uint8Array, parse: (bytes: Uint8Array) => T, errorMode: 'resolve', onFailure: (error: string) => T): Promise<T>
+      | DebugLicenseWriteResult
+      | DebugTextChunkResult,
+  >(
+    pdu: Uint8Array,
+    parse: (bytes: Uint8Array) => T,
+    errorMode: 'resolve',
+    onFailure: (error: string) => T,
+    timeoutMs?: number,
+  ): Promise<T>
   private sendCommand<T extends Md5ProbeResult>(
     pdu: Uint8Array,
     parse: (bytes: Uint8Array) => T,
@@ -311,9 +337,10 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
     parse: (bytes: Uint8Array) => T,
     errorMode: 'resolve' | 'reject',
     onFailure?: (error: string) => T,
+    timeoutMs?: number,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const run = () => this.sendCommandNow(pdu, parse, errorMode, onFailure).then(resolve, reject)
+      const run = () => this.sendCommandNow(pdu, parse, errorMode, onFailure, timeoutMs).then(resolve, reject)
       // Chain regardless of the predecessor's fate: a failed command must not
       // wedge the queue (same shape as the Modbus clients' mutex).
       this.sendRequestMutex = this.sendRequestMutex.then(run, run)
@@ -325,6 +352,7 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
     parse: (bytes: Uint8Array) => T,
     errorMode: 'resolve' | 'reject',
     onFailure?: (error: string) => T,
+    timeoutMs = REQUEST_TIMEOUT_MS,
   ): Promise<T> {
     const commandHex = bytesToHexSpaced(pdu)
 
@@ -348,6 +376,14 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
       }
 
       const responseHandler = (response: { success: boolean; data?: string; error?: string }) => {
+        // A runtime that cannot process a command (an unknown function code on an
+        // older runtime) answers this text instead of a PDU: it is this command's failure.
+        if (response.success && response.data?.trim() === RUNTIME_ERROR_REPLY) {
+          clearTimeout(timeoutHandle)
+          this.socket?.off('debug_response', responseHandler)
+          fail(RUNTIME_ERROR_REPLY)
+          return
+        }
         // Correlate DATA frames by echoed function code: a stale reply from a
         // command that already timed out (its handler is gone) must not be
         // consumed as OURS. Error envelopes carry no PDU to correlate on, so
@@ -379,7 +415,7 @@ export class WebSocketDebugTransport implements DebugTransport, DeviceDebugChann
       const timeoutHandle = setTimeout(() => {
         this.socket?.off('debug_response', responseHandler)
         fail('Request timeout')
-      }, REQUEST_TIMEOUT_MS)
+      }, timeoutMs)
 
       this.socket.on('debug_response', responseHandler)
       this.socket.emit('debug_command', { command: commandHex })

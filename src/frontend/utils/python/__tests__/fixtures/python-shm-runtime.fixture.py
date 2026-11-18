@@ -4,42 +4,42 @@
 # The layout tables above are the only project-specific part; this
 # code reads them. Do not edit: it is emitted verbatim by the editor.
 # ===================================================================
-_STR_CHARS = 126
-
 
 def _shm_total(layout):
     """Packed width the layout describes, for the startup size check."""
     return max((off + size for _p, _o, _k, off, size, _e in layout), default=0)
 
 
-def _shm_get(buf, kind, off):
+def _shm_get(buf, kind, off, size):
     """One field out of the segment."""
     if kind == 'str':
-        n = buf[off]
-        n = max(0, min(n, _STR_CHARS))
-        return bytes(buf[off + 1:off + 1 + n]).decode('utf-8', errors='ignore')
+        n = struct.unpack_from('=H', buf, off)[0]
+        n = max(0, min(n, size - 2))
+        return bytes(buf[off + 2:off + 2 + n]).decode('utf-8', errors='ignore')
     if kind == 'wstr':
         # The prefix counts UTF-16 code units, so the byte slice is twice it.
-        n = buf[off]
-        n = max(0, min(n, _STR_CHARS))
-        return bytes(buf[off + 1:off + 1 + n * 2]).decode('utf-16-le', errors='ignore')
+        n = struct.unpack_from('=H', buf, off)[0]
+        n = max(0, min(n, (size - 2) // 2))
+        return bytes(buf[off + 2:off + 2 + n * 2]).decode('utf-16-le', errors='ignore')
     return struct.unpack_from('=' + kind, buf, off)[0]
 
 
-def _shm_put(buf, kind, off, value):
+def _shm_put(buf, kind, off, size, value):
     """One field into the segment."""
     if kind == 'str':
-        body = str(value).encode('utf-8')[:_STR_CHARS]
-        buf[off] = len(body)
-        buf[off + 1:off + 1 + _STR_CHARS] = body.ljust(_STR_CHARS, b'\0')
+        cap = size - 2
+        body = str(value).encode('utf-8')[:cap]
+        struct.pack_into('=H', buf, off, len(body))
+        buf[off + 2:off + 2 + cap] = body.ljust(cap, b'\0')
         return
     if kind == 'wstr':
         # Truncate on a code-unit boundary, never mid-unit. Integer division
         # rather than the modulo operator, deliberately: see the note above.
-        body = str(value).encode('utf-16-le')[:_STR_CHARS * 2]
+        cap = size - 2
+        body = str(value).encode('utf-16-le')[:cap]
         body = body[:(len(body) // 2) * 2]
-        buf[off] = len(body) // 2
-        buf[off + 1:off + 1 + _STR_CHARS * 2] = body.ljust(_STR_CHARS * 2, b'\0')
+        struct.pack_into('=H', buf, off, len(body) // 2)
+        buf[off + 2:off + 2 + cap] = body.ljust(cap, b'\0')
         return
     struct.pack_into('=' + kind, buf, off, value)
 
@@ -67,8 +67,8 @@ def _node_put(holder, key, value):
 
 def _shm_unpack(buf, layout, scope):
     """Read every field and rebuild the containers into 'scope'."""
-    for path, objpath, kind, off, _size, enum in layout:
-        value = _shm_get(buf, kind, off)
+    for path, objpath, kind, off, size, enum in layout:
+        value = _shm_get(buf, kind, off, size)
         if enum is not None and enum in scope:
             value = scope[enum](value)
         holder = scope
@@ -87,10 +87,10 @@ def _shm_unpack(buf, layout, scope):
 
 def _shm_pack(buf, layout, scope):
     """Write every field back out of 'scope'."""
-    for path, _objpath, kind, off, _size, enum in layout:
+    for path, _objpath, kind, off, size, enum in layout:
         value = scope.get(path[0]) if isinstance(scope, dict) else None
         for key in path[1:]:
             value = _node_get(value, key)
         if enum is not None:
             value = int(value)
-        _shm_put(buf, kind, off, value)
+        _shm_put(buf, kind, off, size, value)

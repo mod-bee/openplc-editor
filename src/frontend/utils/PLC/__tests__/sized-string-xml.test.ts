@@ -61,7 +61,7 @@ describe('a declared string length over PLCopen XML', () => {
   // rather than failing the load.
   it.each([
     ['zero', '0'],
-    ['past the implementation maximum', '999'],
+    ['past the implementation maximum', '65536'],
     ['not a number', 'lots'],
   ])('ignores a length that is %s', (_label, raw) => {
     expect(parseTypeXml({ string: { '@length': raw } })).toEqual({

@@ -71,6 +71,7 @@ vi.mock('socket.io-client', () => ({
 }))
 
 // Deliberately AFTER `vi.mock` — see the module docstring.
+import { readDebugTextFromChannel } from '../debug-text'
 import { WebSocketDebugTransport } from '../websocket-debug-transport'
 
 async function connected(): Promise<WebSocketDebugTransport> {
@@ -282,5 +283,34 @@ describe('WebSocketDebugTransport license function codes', () => {
       success: false,
       error: 'Not connected to target',
     })
+  })
+})
+
+// FC 0x4F on runtime v4: an older runtime answers an unknown code with the text
+// ERROR_PROCESSING, which is remembered as "unsupported" for the session.
+describe('WebSocketDebugTransport FC 0x4F', () => {
+  it('reads an ERROR_PROCESSING answer as a failure, at once', async () => {
+    currentResponder = () => ({ success: true, data: 'ERROR_PROCESSING' })
+    const transport = await connected()
+    const result = await transport.getTextChunk({ index: 1, offset: 0, max: 100, wide: false, timeoutMs: 60_000 })
+    expect(result).toEqual({ success: false, error: 'ERROR_PROCESSING' })
+  })
+
+  it('an old runtime falls back to the window, and is asked only once', async () => {
+    const commands: string[] = []
+    currentResponder = (cmd) => {
+      commands.push(cmd)
+      return { success: true, data: 'ERROR_PROCESSING' }
+    }
+    const transport = await connected()
+    expect(await readDebugTextFromChannel(transport, 1, false)).toMatchObject({ success: false, unsupported: true })
+    expect(await readDebugTextFromChannel(transport, 2, false)).toMatchObject({ success: false, unsupported: true })
+    expect(commands).toHaveLength(1)
+  })
+
+  it('a current runtime is read whole', async () => {
+    currentResponder = () => ({ success: true, data: '4F 7E 11 00 01 40 00 03 00 00 00 03 00 00 00 09 41 42 43' })
+    const transport = await connected()
+    expect(await readDebugTextFromChannel(transport, 1, false)).toMatchObject({ success: true, text: 'ABC', cap: 320 })
   })
 })

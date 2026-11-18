@@ -9,6 +9,7 @@ import {
 import {
   isArrayVariable,
   isDescriptorPinType,
+  isSizedStringType,
   multiDimensionalContainerType,
 } from '../../../../frontend/utils/PLC/array-codegen-helpers'
 import { isBaseTypeName } from '../../../../frontend/utils/iec-types-registry'
@@ -233,11 +234,18 @@ const generateUserTypeAliases = (cppPous: CppPouData[], userTypeNames: Iterable<
     // exist.
     if (
       (variable.type.definition === 'user-data-type' || variable.type.definition === 'derived') &&
-      !isDescriptorPinType(variable.type.value)
+      !isDescriptorPinType(variable.type.value) &&
+      // An editor that allowed only 254 kept `STRING(320)` as a user-data-type of
+      // that name. It is the elementary string; `using STRING(320)` is not C++.
+      !isSizedStringType(variable.type.value)
     ) {
       referenced.add(variable.type.value.toUpperCase())
     }
-    if (variable.type.definition === 'array' && variable.type.data?.baseType.definition === 'user-data-type') {
+    if (
+      variable.type.definition === 'array' &&
+      variable.type.data?.baseType.definition === 'user-data-type' &&
+      !isSizedStringType(variable.type.data.baseType.value)
+    ) {
       referenced.add(variable.type.data.baseType.value.toUpperCase())
     }
   }

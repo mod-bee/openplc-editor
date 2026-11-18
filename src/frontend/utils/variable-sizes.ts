@@ -1,19 +1,18 @@
 import type { PLCVariable } from '../../middleware/shared/ports/types'
 import { parseDurationLiteral } from './iec-duration'
-import { type IECTypeMetadata, type IECWireFormat, lookupBaseType } from './iec-types-registry'
+import {
+  DEFAULT_STRING_LENGTH,
+  type IECTypeMetadata,
+  type IECWireFormat,
+  lookupBaseType,
+  parseStringLength,
+} from './iec-types-registry'
 
 /**
- * STRING / WSTRING wire size cap, in characters, and the single place it is
- * written down.
- *
- * Strucpp's `IECStringVar` / `IECWStringVar` default to 254 characters in
- * declarations, but the debug protocol pre-dates that change and still frames
- * length-prefixed payloads at 1 length byte + 126 code units. Every consumer
- * reads it from here — the debugger decoder below, the Python SHM layout
- * (`python/shm-type-map.ts` re-exports it as `SHM_STRING_CHARS`), and the
- * declaration parser's user-facing message — so the transport, the layout built
- * on it, and the limit quoted to the user cannot drift apart. Bump it once when
- * the protocol catches up.
+ * The FC 0x43/0x44 watch window and the FC 0x42 write payload for STRING /
+ * WSTRING, in code units: one length byte + 126 units. A string of any declared
+ * length is polled through this window; a longer value is read whole with
+ * FC 0x4F (`backend/shared/debug/debug-text.ts`). Every consumer reads it from here.
  */
 export const DEBUG_STRING_CAP = 126
 
@@ -191,6 +190,18 @@ function wireSizeFor(meta: IECTypeMetadata): number {
   }
 }
 
+/**
+ * For a STRING / WSTRING that may hold more than the 126-unit debug window,
+ * how to read it whole (FC 0x4F); null for any other type. `cap` is the
+ * compiler's declared length when known, else the length written in the type.
+ */
+export function longTextReadOf(typeName: string, cap?: number): { wide: boolean } | null {
+  const meta = lookupBaseType(typeName)
+  if (!meta || (meta.wireFormat !== 'len8-utf8' && meta.wireFormat !== 'len8-utf16le')) return null
+  const declared = cap !== undefined && cap > 0 ? cap : (parseStringLength(typeName).length ?? DEFAULT_STRING_LENGTH)
+  return declared > DEBUG_STRING_CAP ? { wide: meta.wireFormat === 'len8-utf16le' } : null
+}
+
 export function getVariableSize(variable: PLCVariable): number {
   if (variable.type.definition !== 'base-type') {
     console.warn(`Non-base type variable: ${variable.name}, defaulting to 4 bytes`)
@@ -219,11 +230,20 @@ export function getTypeSizeByName(typeName: string): number {
  * One arm per `IECWireFormat` value — every new format added on the
  * strucpp side must land here too.
  */
-function decodeWireValue(
-  data: Uint8Array,
-  offset: number,
-  meta: IECTypeMetadata,
-): { value: string; bytesRead: number } {
+const windowFullMark = (length: number): { windowFull?: true } =>
+  length >= DEBUG_STRING_CAP ? { windowFull: true } : {}
+
+/**
+ * A decoded wire value. `windowFull`: a STRING / WSTRING that filled the
+ * 126-unit window, so the value may be longer (read it whole with FC 0x4F).
+ */
+export interface DecodedWireValue {
+  value: string
+  bytesRead: number
+  windowFull?: true
+}
+
+function decodeWireValue(data: Uint8Array, offset: number, meta: IECTypeMetadata): DecodedWireValue {
   switch (meta.wireFormat) {
     case 'bool':
       return { value: readUInt8(data, offset) !== 0 ? 'TRUE' : 'FALSE', bytesRead: 1 }
@@ -259,7 +279,7 @@ function decodeWireValue(
       const length = readUInt8(data, offset)
       const stringData = data.slice(offset + 1, offset + 1 + Math.min(length, DEBUG_STRING_CAP))
       const str = new TextDecoder('utf-8').decode(stringData)
-      return { value: `"${str}"`, bytesRead: 1 + DEBUG_STRING_CAP }
+      return { value: `"${str}"`, bytesRead: 1 + DEBUG_STRING_CAP, ...windowFullMark(length) }
     }
     case 'len8-utf16le': {
       // WSTRING uses 16-bit chars; the leading byte is a UTF-16
@@ -271,7 +291,7 @@ function decodeWireValue(
         buf[i] = readUInt16LE(data, offset + 1 + i * 2)
       }
       const str = String.fromCharCode(...buf)
-      return { value: `"${str}"`, bytesRead: 1 + DEBUG_STRING_CAP * 2 }
+      return { value: `"${str}"`, bytesRead: 1 + DEBUG_STRING_CAP * 2, ...windowFullMark(length) }
     }
   }
 }
@@ -295,11 +315,7 @@ export function parseVariableValue(
  * Parse a variable value from binary data using just the type name
  * string. Useful when we don't have a full PLCVariable object.
  */
-export function parseValueByTypeName(
-  data: Uint8Array,
-  offset: number,
-  typeName: string,
-): { value: string; bytesRead: number } {
+export function parseValueByTypeName(data: Uint8Array, offset: number, typeName: string): DecodedWireValue {
   const meta = lookupBaseType(typeName)
   if (!meta) {
     return { value: '???', bytesRead: 4 }
@@ -374,10 +390,15 @@ function stripStringLiteral(input: string): string {
   return quoted ? quoted[1] : input
 }
 
+/** What the debugger can force or write into a STRING / WSTRING (FC 0x42 carries one 126-unit window). */
+export const STRING_FORCE_LIMIT_NOTE = `Up to ${DEBUG_STRING_CAP} characters can be forced or written into a string of any declared length.`
+
+const forceTooLong = (type: string, length: number): string =>
+  `${type} value too long: ${length} characters (max ${DEBUG_STRING_CAP}). ${STRING_FORCE_LIMIT_NOTE}`
+
 /**
- * Encode dispatcher keyed on `wireFormat`. DATE / TOD / DT / WSTRING
- * force is not yet supported — those need calendar-literal parsing
- * (`D#…`, `TOD#…`, `DT#…`) and UTF-16 framing.
+ * Encode dispatcher keyed on `wireFormat`. DATE / TOD / DT force is not yet
+ * supported — those need calendar-literal parsing (`D#…`, `TOD#…`, `DT#…`).
  */
 function encodeByWireFormat(originalInput: string, numericInput: string, meta: IECTypeMetadata): Uint8Array {
   switch (meta.wireFormat) {
@@ -438,9 +459,7 @@ function encodeByWireFormat(originalInput: string, numericInput: string, meta: I
     }
     case 'len8-utf8': {
       const text = stripStringLiteral(originalInput)
-      if (text.length > DEBUG_STRING_CAP) {
-        throw new Error(`STRING value too long: ${text.length} characters (max ${DEBUG_STRING_CAP})`)
-      }
+      if (text.length > DEBUG_STRING_CAP) throw new Error(forceTooLong('STRING', text.length))
       // The full wire window, not `1 + text.length`: `handle_set` compares the
       // received length against `type_ops[tag].size` — the fixed 127-byte
       // window for a STRING — and answers STATUS_DATA_TOO_LARGE below it, so a
@@ -455,10 +474,22 @@ function encodeByWireFormat(originalInput: string, numericInput: string, meta: I
       }
       return buf
     }
+    case 'len8-utf16le': {
+      // UTF-16 code units, little-endian, in the full 253-byte window (see `len8-utf8`).
+      const text = stripStringLiteral(originalInput)
+      if (text.length > DEBUG_STRING_CAP) throw new Error(forceTooLong('WSTRING', text.length))
+      const buf = new Uint8Array(1 + DEBUG_STRING_CAP * 2)
+      buf[0] = text.length
+      for (let i = 0; i < text.length; i++) {
+        const unit = text.charCodeAt(i)
+        buf[1 + i * 2] = unit & 0xff
+        buf[2 + i * 2] = unit >> 8
+      }
+      return buf
+    }
     case 'datetime-ns-i64':
     case 'date-ns-i64':
     case 'tod-ns-i64':
-    case 'len8-utf16le':
       throw new Error(`Forcing ${meta.name} values is not supported yet`)
     default: {
       // Exhaustiveness gate — a new IECWireFormat that forgets a case

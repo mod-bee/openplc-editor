@@ -3,14 +3,18 @@
 import {
   buildGetDeviceIdRequest,
   buildGetStatusRequest,
+  buildGetTextRequest,
   buildPlcSetStateRequest,
   buildReadLicenseRequest,
   buildWriteLicenseRequest,
   DEBUG_BUSY_ERROR,
+  getTextPduLength,
   isBusyException,
   isGetListOverflowException,
   parseGetDeviceIdResponse,
   parseGetStatusResponse,
+  parseGetTextResponse,
+  parseGetVersionResponse,
   parsePlcSetStateResponse,
   parseReadLicenseResponse,
   parseWriteLicenseResponse,
@@ -24,6 +28,9 @@ import type {
   DebugLicenseWriteResult,
   DebugStatusResult,
   DebugTaskStatsResult,
+  DebugTextChunkRequest,
+  DebugTextChunkResult,
+  DebugVersionResult,
   DeviceModbusTransport,
   Md5ProbeResult,
   PlcControlResult,
@@ -81,6 +88,9 @@ class NoReplyError extends Error {
 
 /** The largest reply page: a full frame. */
 const TASK_STATS_MAX_REPLY_BYTES = 272
+
+/** The largest FC 0x4F reply: a full frame. */
+const TEXT_MAX_REPLY_BYTES = 272
 
 const ARDUINO_BOOTLOADER_DELAY_MS = 2500
 const MD5_REQUEST_MAX_RETRIES = 3
@@ -728,6 +738,46 @@ export class ModbusRtuClient implements DeviceModbusTransport {
         return { success: false, error: `Invalid response: too short (${response.length} bytes, need at least 9)` }
       }
       return parseGetStatusResponse(Uint8Array.prototype.slice.call(response, 7))
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) }
+    }
+  }
+
+  /** FC 0x47 -- firmware version, which says whether the board knows FC 0x4F. */
+  async getVersion(): Promise<DebugVersionResult> {
+    try {
+      const request = this.assembleRequest(ModbusFunctionCode.DEBUG_GET_VERSION, Buffer.alloc(0))
+      const response = await this.sendRequest(request)
+      if (response.length < 9) {
+        return { success: false, error: `Invalid response: too short (${response.length} bytes, need at least 9)` }
+      }
+      return parseGetVersionResponse(Uint8Array.prototype.slice.call(response, 7))
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) }
+    }
+  }
+
+  /**
+   * FC 0x4F -- one chunk of a STRING / WSTRING value; see readDebugTextFromChannel.
+   * Size-aware framing: the reply's length follows from its header.
+   */
+  async getTextChunk(request: DebugTextChunkRequest): Promise<DebugTextChunkResult> {
+    const clockOutMs = Math.ceil((TEXT_MAX_REPLY_BYTES * 10 * 1000) / this.baudRate)
+    try {
+      const pdu = buildGetTextRequest(request.index, request.offset, request.max)
+      const frame = this.assembleRequest(ModbusFunctionCode.DEBUG_GET_TEXT, Buffer.from(pdu.subarray(1)))
+      const response = await this.sendRequest(frame, {
+        timeoutMs: request.timeoutMs ?? this.timeout + clockOutMs,
+        // Raw RTU frame: [id][PDU][crc:2]; until the header is in, only "longer than this" is known.
+        expectedTotalLength: (raw) => {
+          const length = getTextPduLength(Uint8Array.prototype.slice.call(raw, 1), request.wide)
+          return length === null ? raw.length + 1 : 1 + length + 2
+        },
+      })
+      if (response.length < 9) {
+        return { success: false, error: `Invalid response: too short (${response.length} bytes, need at least 9)` }
+      }
+      return parseGetTextResponse(Uint8Array.prototype.slice.call(response, 7))
     } catch (error) {
       return { success: false, error: getErrorMessage(error) }
     }

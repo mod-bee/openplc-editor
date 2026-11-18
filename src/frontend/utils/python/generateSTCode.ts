@@ -3,7 +3,6 @@ import type { LibraryFunctionBlockSource } from '../PLC/function-block-pins'
 import { pythonInboundVariables, pythonOutboundVariables } from './block-interface'
 import type { ShmLeaf, ShmWalkContext } from './shm-leaves'
 import { describeShmLayout, describeShmLeaves, pythonFunctionBlockInstances } from './shm-leaves'
-import { SHM_STRING_CHARS } from './shm-type-map'
 
 type STCodeGenerationParams = {
   pouName: string
@@ -46,6 +45,20 @@ const generateOneStruct = (leaves: ShmLeaf[], typeName: string): string => {
   return structs
 }
 
+/** One packed `{ len; body[n] }` type per string shape the leaves use, named by the descriptor's `cType`. */
+const generateStringTypes = (leaves: readonly ShmLeaf[]): string => {
+  const shapes = new Map<string, ShmLeaf['descriptor']>()
+  for (const { descriptor } of leaves) {
+    if (descriptor.kind !== 'scalar') shapes.set(descriptor.cType, descriptor)
+  }
+  let code = ''
+  for (const [cType, descriptor] of shapes) {
+    const body = descriptor.kind === 'wstring' ? 'uint16_t' : 'uint8_t'
+    code += `    typedef struct {\n        __strlen_t len;\n        ${body} body[${descriptor.chars ?? 0}];\n    } ${cType};\n`
+  }
+  return code
+}
+
 const generateCStructs = (inbound: ShmLeaf[], outbound: ShmLeaf[]): string =>
   `${generateOneStruct(inbound, 'shm_data_in_t')}\n${generateOneStruct(outbound, 'shm_data_out_t')}`
 
@@ -69,46 +82,25 @@ const generateLeafCopy = (leaf: ShmLeaf, struct: string, toShm: boolean): string
   if (descriptor.kind === 'string' || descriptor.kind === 'wstring') {
     const wide = descriptor.kind === 'wstring'
     const unit = wide ? ' * sizeof(uint16_t)' : ''
+    // The field holds the whole declared length, so neither direction cuts the value short.
+    const chars = descriptor.chars ?? 0
     if (toShm) {
       // `get()` returns the string by value — bind it once so `c_str()` and
       // `length()` refer to the same temporary. Copy only the characters that
       // exist and zero the rest, so the body is deterministic rather than
       // carrying whatever the wrapper's tail held.
       let code = `        { auto __s = ${access}.get();\n`
-      code += `          __strlen_t __n = (__strlen_t)(__s.length() < STR_MAX_LEN ? __s.length() : STR_MAX_LEN);\n`
+      code += `          __strlen_t __n = (__strlen_t)(__s.length() < ${chars} ? __s.length() : ${chars});\n`
       code += `          ${shm}.len = __n;\n`
-      code += `          std::memset(${shm}.body, 0, STR_MAX_LEN${unit});\n`
+      code += `          std::memset(${shm}.body, 0, sizeof(${shm}.body));\n`
       code += `          std::memcpy(${shm}.body, __s.c_str(), (size_t)__n${unit}); }\n`
       return code
     }
     // Reconstruct from the right unit width: a WSTRING body is char16_t, and
-    // reading it as `char*` would hand IECWString half a string.
-    //
-    // GUARDED, because the transport is narrower than the declared type. A
-    // strucpp `IECStringVar` / `IECWStringVar` holds 254 characters, while the
-    // SHM body carries STR_MAX_LEN (the cap the debug protocol frames at). An
-    // IEC string longer than that reaches Python already truncated, so writing
-    // Python's copy back would shorten the IEC variable permanently — with no
-    // user code having touched it. Now that `local`, `inOut` and `external`
-    // round-trip, that turned a read into a destructive write.
-    //
-    // The current length is what says whether anything was lost: at or under the
-    // cap, Python holds the whole value and the write-back is faithful; over it,
-    // Python holds a prefix and the IEC value is left alone. A string that fits
-    // — the ordinary case — round-trips exactly as before.
-    // The capacity comes from strucpp, not from a literal here.
-    // `IEC_STRING` / `IEC_WSTRING` are the aliases strucpp declares FOR CODEGEN
-    // (`using IEC_STRING = IECStringVar<254>;`), and `::value_type` is the value
-    // type behind the variable — so this names exactly the type the compiler
-    // gave the variable, and tracks it if strucpp ever changes the default. It
-    // used to say `IECString<254>`, which was the right number written in the
-    // wrong place: nothing would have caught it drifting.
-    const alias = wide ? 'IEC_WSTRING' : 'IEC_STRING'
+    // reading it as `char*` would hand IECWString half a string. `decltype(get())`
+    // is the variable's own value type, so its declared length is kept.
     const pointer = wide ? 'const char16_t*' : 'const char*'
-    let code = `        { auto __cur = ${access}.get();\n`
-    code += `          if (__cur.length() <= STR_MAX_LEN)\n`
-    code += `            ${access} = strucpp::${alias}::value_type(reinterpret_cast<${pointer}>(${shm}.body), ${shm}.len); }\n`
-    return code
+    return `        ${access} = decltype(${access}.get())(reinterpret_cast<${pointer}>(${shm}.body), (size_t)(${shm}.len < ${chars} ? ${shm}.len : ${chars}));\n`
   }
 
   if (leaf.enumTypeName) {
@@ -257,6 +249,10 @@ const generateSTCode = (params: STCodeGenerationParams): string => {
     'leaves' in inboundLeaves ? inboundLeaves.leaves : [],
     'leaves' in outboundLeaves ? outboundLeaves.leaves : [],
   )
+  const stringTypes = generateStringTypes([
+    ...('leaves' in inboundLeaves ? inboundLeaves.leaves : []),
+    ...('leaves' in outboundLeaves ? outboundLeaves.leaves : []),
+  ])
   const inputCopyCode = generateInputCopyCode(inputVariables, inbound)
   const outputCopyCode = generateOutputCopyCode(outputVariables, outbound)
   const outputSeedCode = generateOutputSeedCode(outputVariables, outbound)
@@ -307,7 +303,7 @@ ${inputCopyCode}    }`
   // so all of those types are visible — the redefinitions either
   // collided with strucpp's IEC_STRING (which is IECStringVar<254>) or
   // were dead weight. Keep only the SHM-local string layout under a
-  // distinct name (`shm_iec_string_t`) so it can't shadow strucpp's
+  // distinct name (`shm_iec_string_<n>_t`) so it can't shadow strucpp's
   // typedef.
   //
   // Python helper symbols (`getpid`, `pid_t`, `create_shm_name`,
@@ -318,25 +314,15 @@ ${inputCopyCode}    }`
   // MatIEC-era stubs. STruC++ stays Python-unaware.
   const stCode = `(* Type definitions *)
 {external
-    #define STR_LEN_TYPE int8_t
-    #define STR_MAX_LEN ${SHM_STRING_CHARS}
+    #define STR_LEN_TYPE uint16_t
     typedef STR_LEN_TYPE __strlen_t;
     // These MUST be packed in their own right, not merely used inside a packed
     // struct: #pragma pack applies to the struct being defined, never to a
-    // member type that was already laid out. shm_iec_string_t survived without
-    // it only because uint8_t needs no alignment; the wstring uint16_t body
-    // forces a padding byte after the length field, making it 254 bytes where
-    // Python packs 253 - a one-byte shift that corrupts every later field.
+    // member type that was already laid out. Without it the wstring uint16_t
+    // body forces padding the Python side does not pack, a shift that corrupts
+    // every later field. One type per declared length.
     #pragma pack(push, 1)
-    typedef struct {
-        __strlen_t len;
-        uint8_t body[STR_MAX_LEN];
-    } shm_iec_string_t;
-    typedef struct {
-        __strlen_t len;
-        uint16_t body[STR_MAX_LEN];
-    } shm_iec_wstring_t;
-    #pragma pack(pop)
+${stringTypes}    #pragma pack(pop)
 
 ${cStructs}
 }

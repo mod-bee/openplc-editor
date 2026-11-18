@@ -29,6 +29,7 @@ import { useOpenPLCStore, useOpenPLCStoreApi } from '../store'
 import { DEBUG_MEDIUM_PROFILE, debugProfileFor, DEFAULT_DEBUG_MEDIUM } from '../utils/debug-medium-profile'
 import { buildActiveIndexSet } from '../utils/debug-polling-filter'
 import { walkDebugResponse } from '../utils/debug-response-walker'
+import { longTextReadOf } from '../utils/variable-sizes'
 
 /** Floor for the adaptive batch shrink below — a batch of one still makes progress. */
 const MIN_BATCH_SIZE = 2
@@ -221,6 +222,8 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
       } = store.getState().workspace
       const changedBool = new Map<string, string>()
       const changedNonBool = new Map<string, string>()
+      // Strings that filled the 126-unit window, to read whole (FC 0x4F) after the walk.
+      const longTexts: Array<{ index: number; metas: LeafMeta[]; wide: boolean }> = []
 
       // Wire format note: result.lastIndex is the runtime's last_req_idx —
       // a 0-based POSITION INTO THE REQUEST LIST, not a variable index.
@@ -255,7 +258,9 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
           const metas = allLeaves.get(index)
           return metas && metas.length > 0 ? { type: metas[0].type, meta: metas } : undefined
         },
-        emit: ({ type, value, meta: metas }) => {
+        emit: ({ index, type, value, meta: metas, windowFull }) => {
+          const longRead = windowFull ? longTextReadOf(type) : null
+          if (longRead) longTexts.push({ index, metas, wide: longRead.wide })
           // Translate enum integers to member names so every consumer (watch
           // panel, ladder, FBD, hover) reads the same display value.
           // Out-of-range falls back to the raw integer.
@@ -299,6 +304,18 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
         itemsProcessed = result.lastIndex !== undefined ? Math.min(result.lastIndex + 1, batch.length) : batch.length
       } else {
         itemsProcessed = positionsConsumed
+      }
+
+      // The whole value of a string longer than the window; a target without FC 0x4F keeps the window.
+      const readText = debuggerPort.readText?.bind(debuggerPort)
+      for (const long of readText ? longTexts : []) {
+        const text = await readText?.(long.index, long.wide)
+        if (!text?.success) continue
+        const stored = `"${text.text}"`
+        for (const m of long.metas) {
+          if (currentNonBool.get(m.compositeKey) === stored) changedNonBool.delete(m.compositeKey)
+          else changedNonBool.set(m.compositeKey, stored)
+        }
       }
 
       // Only write to store when values actually changed — one commit per poll cycle

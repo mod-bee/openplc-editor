@@ -1,4 +1,5 @@
 import type { PLCVariable } from '../../../../../middleware/shared/ports/types'
+import { parseIecStringToVariables } from '../../../../../frontend/utils/generate-iec-string-to-variables'
 import { generateCBlocksHeader } from '../generateCBlocksHeader'
 
 const makeScalarVar = (name: string, cls: 'input' | 'output' | 'inOut', baseType: string): PLCVariable => ({
@@ -258,6 +259,40 @@ describe('generateCBlocksHeader', () => {
     expect(result).toContain('} EMPTY_VARS;')
     expect(result).toContain('extern "C" void empty_setup(EMPTY_VARS *vars);')
     expect(result).toContain('extern "C" void empty_loop(EMPTY_VARS *vars);')
+  })
+
+  // A block's declaration goes through the same parser the library build uses,
+  // so the field types are the ones a real C/C++ block gets. Each field must be
+  // the type STruC++ declares for the member (`IECStringVar<n>` for any declared
+  // length, IEC 61131-3:2013 6.4.2.2), or `vars.X = &X` does not compile.
+  describe('a declared string length, through the declaration parser', () => {
+    const headerFor = (declarations: string) =>
+      generateCBlocksHeader([{ name: 'Blk', variables: parseIecStringToVariables(declarations) }])
+
+    it('keeps the default and lengths up to 254 as they were', () => {
+      const result = headerFor(
+        'VAR_INPUT\n  sIn : STRING(250);\nEND_VAR\nVAR\n  sDef : STRING;\n  s250 : STRING(250);\n  s254 : STRING(254);\nEND_VAR',
+      )
+      expect(result).toContain('  strucpp::IECStringVar<250> *SIN;')
+      expect(result).toContain('  strucpp::IEC_STRING *SDEF;')
+      expect(result).toContain('  strucpp::IECStringVar<250> *S250;')
+      expect(result).toContain('  strucpp::IECStringVar<254> *S254;')
+    })
+
+    it.each([255, 320, 1024])('names the template for length %i in VAR_INPUT, VAR_OUTPUT and VAR', (n) => {
+      const result = headerFor(
+        `VAR_INPUT\n  sIn : STRING(${n});\n  wIn : WSTRING(${n});\nEND_VAR\n` +
+          `VAR_OUTPUT\n  sOut : STRING(${n});\nEND_VAR\n` +
+          `VAR\n  sVar : STRING(${n});\n  wVar : WSTRING(${n});\n  aVar : ARRAY [0..1] OF STRING(${n});\nEND_VAR`,
+      )
+      expect(result).toContain(`  strucpp::IECStringVar<${n}> *SIN;`)
+      expect(result).toContain(`  strucpp::IECWStringVar<${n}> *WIN;`)
+      expect(result).toContain(`  strucpp::IECStringVar<${n}> *SOUT;`)
+      expect(result).toContain(`  strucpp::IECStringVar<${n}> *SVAR;`)
+      expect(result).toContain(`  strucpp::IECWStringVar<${n}> *WVAR;`)
+      expect(result).toContain(`  strucpp::IECStringVar<${n}> *AVAR;`)
+      expect(result).not.toMatch(/W?STRING\(\d+\)/)
+    })
   })
 
   it('generates pointer members for array variables', () => {
