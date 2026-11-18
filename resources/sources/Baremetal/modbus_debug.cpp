@@ -315,16 +315,16 @@ void debugGetTraceList(uint16_t numIndexes, uint8_t *indexArray)
 // STRING bytes or 126 WSTRING units on a 272-byte frame, 109 / 54 on 128.
 void debugGetText(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max)
 {
-    const uint16_t room = (uint16_t)(MB_RESPONSE_CAPACITY - MB_DEBUG_TEXT_HEADER);
-    if (max > room) max = room;
+    const size_t room = (size_t)(MB_RESPONSE_CAPACITY - MB_DEBUG_TEXT_HEADER);   // bytes
+    if (max > room) max = (uint16_t)room;
 
     openplc_text_chunk_t info = {};
-    openplc_debug_read_text(arr, elem, offset, max, &mb_frame[MB_DEBUG_TEXT_HEADER], room, &info);
+    openplc_debug_read_text(arr, elem, offset, max, &mb_frame[MB_DEBUG_TEXT_HEADER], (uint16_t)room, &info);
     if (info.status != OPENPLC_DEBUG_STATUS_OK) info.count = 0;
 
     // Count bounded by the frame even if the program misreports it.
-    const uint16_t unit = (info.tag == OPENPLC_DEBUG_TAG_WSTRING) ? 2 : 1;
-    if ((uint32_t)info.count * unit > room) info.count = (uint16_t)(room / unit);
+    const size_t unit = (info.tag == OPENPLC_DEBUG_TAG_WSTRING) ? 2 : 1;
+    if ((size_t)info.count * unit > room) info.count = (uint16_t)(room / unit);
 
     mb_frame[1]  = MB_FC_DEBUG_GET_TEXT;
     mb_frame[2]  = info.status;
@@ -342,7 +342,7 @@ void debugGetText(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max)
     mb_frame[14] = (uint8_t)((scan_counter >> 16) & 0xFF);
     mb_frame[15] = (uint8_t)((scan_counter >> 8)  & 0xFF);
     mb_frame[16] = (uint8_t)(scan_counter & 0xFF);
-    mb_frame_len = (uint16_t)(MB_DEBUG_TEXT_HEADER + info.count * unit);
+    mb_frame_len = (uint16_t)(MB_DEBUG_TEXT_HEADER + (size_t)info.count * unit);   // <= the frame
 }
 
 // PDU request:  [FC, endian_check_hi, endian_check_lo]

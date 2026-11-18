@@ -2199,7 +2199,7 @@ extern "C" void runtime_rtos_unlock_write(const runtime_rtos_write_lock_t* held)
 extern "C" void runtime_rtos_after_write(uint8_t arr, uint16_t elem)
 {
     using namespace strucpp;
-    uint16_t len = 0;
+    uint32_t len = 0;
     const void* var = openplc_debug_ptr(arr, elem, &len);
     if (!var) return;
     plc_os_mutex_lock(s_image_lock);
@@ -2723,11 +2723,11 @@ extern "C" uint16_t openplc_debug_read(uint8_t arr, uint16_t elem, uint8_t* dest
 #endif
 }
 
-// strucpp_debug_read_text (interface 1) is the one chunked read of a string at
-// any declared length; FC 0x4F and the bare-metal version that announces it
-// (openplc_version.h) depend on it, so older headers are refused here.
+// strucpp_debug_read_text / _write_text are the full-length string accesses; FC
+// 0x4F, OPC-UA and the bare-metal version that announces them (openplc_version.h)
+// depend on them, so older headers are refused here.
 #ifndef STRUCPP_SHIM_HAS_DEBUG_TEXT
-#error "These STruC++ runtime headers lack strucpp_debug_read_text (STRUCPP_SHIM_HAS_DEBUG_TEXT): update STruC++"
+#error "These STruC++ runtime headers lack strucpp_debug_read_text/_write_text (STRUCPP_SHIM_HAS_DEBUG_TEXT): update STruC++"
 #endif
 
 extern "C" uint8_t openplc_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
@@ -2768,12 +2768,12 @@ extern "C" uint8_t openplc_debug_write(uint8_t arr, uint16_t elem,
 }
 
 extern "C" uint8_t openplc_debug_write_text(uint8_t arr, uint16_t elem,
-                                            const uint8_t* bytes, uint16_t nbytes)
+                                            const uint8_t* data, uint16_t count)
 {
-    return strucpp::debug::handle_write_text(arr, elem, bytes, nbytes);
+    return strucpp_debug_write_text(arr, elem, data, count);
 }
 
-extern "C" const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len)
+extern "C" const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint32_t* out_len)
 {
     return strucpp::debug::handle_ptr(arr, elem, out_len);
 }

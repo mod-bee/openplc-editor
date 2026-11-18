@@ -171,17 +171,26 @@ UA_StatusCode read_node(UA_Server* server, const UA_NodeId* sessionId, void* ses
             status = openplc_debug_read_text(row->arr, row->elem, 0, 0, &none, 0, &info);
         if (rc == UA_STATUSCODE_GOOD && status == OPENPLC_DEBUG_STATUS_OK)
         {
-            uint32_t bytes = (uint32_t)info.len * unit;
-            if (bytes > 0xFFFFu) bytes = 0xFFFFu - (0xFFFFu % unit);   // one call's data_cap
+            const size_t bytes = (size_t)info.len * unit;
             if (bytes == 0)
                 str->data = (UA_Byte*)UA_EMPTY_ARRAY_SENTINEL;   // empty, not null
             else if (UA_ByteString_allocBuffer(str, bytes) != UA_STATUSCODE_GOOD)
                 rc = UA_STATUSCODE_BADOUTOFMEMORY;
             else
             {
-                status = openplc_debug_read_text(row->arr, row->elem, 0, 0xFFFF, str->data,
-                                                 (uint16_t)bytes, &info);
-                str->length = (size_t)info.count * unit;
+                // Chunks of at most one call's data_cap (a uint16 of bytes).
+                const size_t per_call = 0xFFFFu - (0xFFFFu % unit);
+                size_t done = 0;   // code units
+                while (status == OPENPLC_DEBUG_STATUS_OK && done < info.len)
+                {
+                    const size_t left = (size_t)(info.len - done) * unit;
+                    const uint16_t cap = (uint16_t)(left < per_call ? left : per_call);
+                    status = openplc_debug_read_text(row->arr, row->elem, (uint16_t)done, 0xFFFF,
+                                                     str->data + done * unit, cap, &info);
+                    if (info.count == 0) break;
+                    done += info.count;
+                }
+                str->length = done * unit;
             }
         }
         runtime_rtos_unlock_workers(locked);
@@ -207,7 +216,7 @@ UA_StatusCode read_node(UA_Server* server, const UA_NodeId* sessionId, void* ses
     // allocated from the ~19 KB arena on every value of every read; this makes a
     // read allocation-free, which is what lets strings be served at all -- a
     // 253-byte WSTRING would not have fitted the old `uint8_t buf[8]`.
-    uint16_t len = 0;
+    uint32_t len = 0;   // bytes
     const void* src = openplc_debug_ptr(row->arr, row->elem, &len);
     // A null pointer means the coordinates are out of bounds. A ZERO LENGTH does
     // not: an empty STRING is a perfectly good value, and rejecting it here made
@@ -297,10 +306,10 @@ UA_StatusCode write_node(UA_Server* server, const UA_NodeId* sessionId, void* se
         if (wide && (in->length % 2) != 0)
             return UA_STATUSCODE_BADTYPEMISMATCH;
 
-        size_t nbytes = (in->data != nullptr) ? in->length : 0;
-        if (nbytes > 0xFFFFu) nbytes = wide ? 0xFFFEu : 0xFFFFu;   // past any declared length
+        size_t units = (in->data != nullptr) ? (wide ? in->length / 2 : in->length) : 0;
+        if (units > 0xFFFFu) units = 0xFFFFu;   // past any declared length; cut to it anyway
         static const uint8_t kEmpty = 0;
-        const uint8_t* bytes = nbytes > 0 ? in->data : &kEmpty;
+        const uint8_t* data = units > 0 ? in->data : &kEmpty;
 #if OPENPLC_RTOS
         // Between two of the owner's scans; released before logging.
         runtime_rtos_write_lock_t held;
@@ -309,11 +318,11 @@ UA_StatusCode write_node(UA_Server* server, const UA_NodeId* sessionId, void* se
             plc_rtos_count_busy();
             return UA_STATUSCODE_BADRESOURCEUNAVAILABLE;
         }
-        status = openplc_debug_write_text(row->arr, row->elem, bytes, (uint16_t)nbytes);
+        status = openplc_debug_write_text(row->arr, row->elem, data, (uint16_t)units);
         if (status == OPENPLC_DEBUG_STATUS_OK) runtime_rtos_after_write(row->arr, row->elem);
         runtime_rtos_unlock_write(&held);
 #else
-        status = openplc_debug_write_text(row->arr, row->elem, bytes, (uint16_t)nbytes);
+        status = openplc_debug_write_text(row->arr, row->elem, data, (uint16_t)units);
 #endif
     }
     else

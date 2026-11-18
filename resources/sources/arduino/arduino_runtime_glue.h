@@ -371,11 +371,12 @@ uint8_t  openplc_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, ui
 // forces, and a forced variable is one the PLC program can never move again.
 uint8_t  openplc_debug_write(uint8_t arr, uint16_t elem, const uint8_t* bytes, uint16_t len);
 
-// The same plain write for a STRING / WSTRING at any declared length: `nbytes` of
-// content (STRING bytes, WSTRING little-endian code units), no length prefix and
-// no 126 cap; longer than the declared length keeps the leading characters. A
-// no-op while forced. Returns OPENPLC_DEBUG_STATUS_*.
-uint8_t  openplc_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t* bytes, uint16_t nbytes);
+// The same plain write for a STRING / WSTRING at any declared length: `count`
+// code units from `data` (STRING bytes, WSTRING little-endian units), no length
+// prefix and no 126 cap, cut to the declared length. A no-op while forced.
+// Mirrors strucpp_debug_write_text; the caller holds the variable's write lock.
+// Returns OPENPLC_DEBUG_STATUS_*.
+uint8_t  openplc_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t* data, uint16_t count);
 
 // Address a leaf's value IN PLACE instead of copying it out. Returns a pointer
 // into live PLC storage and writes the value's CURRENT length (not its padded
@@ -397,8 +398,8 @@ uint8_t  openplc_debug_write_text(uint8_t arr, uint16_t elem, const uint8_t* byt
 // length prefix and no padding. *out_len is in BYTES for both, so a WSTRING
 // reports 2 * its code-unit count and the caller can treat the region as opaque
 // bytes without knowing the width. Not capped at the wire's 126 code units: the
-// whole value, except that a WSTRING over 32767 units reports its first 32767.
-const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len);
+// whole value (a byte count, so 32 bits: a WSTRING(65535) is 131070 bytes).
+const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint32_t* out_len);
 
 // strucpp::debug::STATUS_* as plain macros, so a caller on this side of the
 // boundary can interpret what openplc_debug_set / _write return without
