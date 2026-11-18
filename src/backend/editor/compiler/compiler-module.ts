@@ -3561,6 +3561,9 @@ class CompilerModule {
         this.runVerificationCompile(p, v as PLCProjectData, target, mainProcessBridge, (message, logLevel) =>
           emit(message, logLevel),
         ),
+      // Warnings are dropped here: the verification itself resolves the
+      // board again and reports a fallback where the user sees it.
+      resolveVerifyBoard: async (target) => (await this.#resolveVerifyBoard(target, () => {})).board,
     })
 
     const result = await runLibraryBuildPipeline(

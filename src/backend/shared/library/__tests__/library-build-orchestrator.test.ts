@@ -153,16 +153,18 @@ function makePort(): PortHarness {
 
 /**
  * The harness MD5 of what the orchestrator actually hashes: `program.st`,
- * each C/C++ block's name and body, each resource, and the verify target.
+ * each C/C++ block's name and body, each resource, the verify target, and the
+ * board the port says stands in for it (when the port names one).
  */
 function verifyInputsMd5(
   nativeSources: Array<{ fileName: string; source: string }> = [],
   resources: Array<{ path: string; content: string }> = [],
   target: { mode: string; core?: string } = { mode: 'arduino' },
+  board = '',
 ): string {
   const cppSource = nativeSources.map((n) => `${n.fileName}\n${n.source}`).join('\n')
   const resourceSource = resources.map((r) => `${r.path}\n${r.content}`).join('\n')
-  const targetSource = `${target.mode}\n${target.core ?? ''}`
+  const targetSource = `${target.mode}\n${target.core ?? ''}${board ? `\n${board}` : ''}`
   const input = `${FAKE_PROGRAM_ST}\n${cppSource}\n${resourceSource}\n${targetSource}`
   return `md5-${input.length}-${input.charCodeAt(0)}`
 }
@@ -1041,6 +1043,73 @@ describe('runLibraryBuildPipeline', () => {
     )
 
     expect(harness.verifyCalls).toHaveLength(1)
+  })
+
+  describe('the board standing in for the core', () => {
+    const esp32Target = { mode: 'arduino' as const, core: 'esp32:esp32' }
+    const run = async (harness: ReturnType<typeof makePort>) => {
+      mockPrepareXml.mockReturnValue({
+        projectData: projectDataEmpty(),
+        knownPous: [],
+        manifest: { name: 'lib', version: '0.1.0', namespace: 'lib', verifyTarget: esp32Target, extra: {} },
+      })
+      const { emit } = captureEvents()
+      await runLibraryBuildPipeline(
+        {
+          projectPath: '/project',
+          projectData: projectDataEmpty(),
+          verifyProjectData: projectDataEmpty(),
+          cleanBuild: false,
+        },
+        harness.port,
+        emit,
+      )
+    }
+
+    it('re-verifies once a board package for the core is installed', async () => {
+      const harness = makePort()
+      // Failed against the simulator fallback, before any esp32 board was installed.
+      harness.files.set(
+        'build/.verify-cache-library.json',
+        JSON.stringify({ md5: verifyInputsMd5([], [], esp32Target, 'OpenPLC Simulator'), success: false }),
+      )
+      harness.port.resolveVerifyBoard = async () => 'ModBee Node UIO'
+
+      await run(harness)
+
+      expect(harness.verifyCalls).toHaveLength(1)
+      expect(JSON.parse(harness.files.get('build/.verify-cache-library.json') ?? '{}').md5).toBe(
+        verifyInputsMd5([], [], esp32Target, 'ModBee Node UIO'),
+      )
+    })
+
+    it('reuses the cache while the same board stands in', async () => {
+      const harness = makePort()
+      harness.files.set(
+        'build/.verify-cache-library.json',
+        JSON.stringify({ md5: verifyInputsMd5([], [], esp32Target, 'ModBee Node UIO'), success: true }),
+      )
+      harness.port.resolveVerifyBoard = async () => 'ModBee Node UIO'
+
+      await run(harness)
+
+      expect(harness.verifyCalls).toHaveLength(0)
+    })
+
+    it('keys on the target alone when the board cannot be resolved', async () => {
+      const harness = makePort()
+      harness.files.set(
+        'build/.verify-cache-library.json',
+        JSON.stringify({ md5: verifyInputsMd5([], [], esp32Target), success: true }),
+      )
+      harness.port.resolveVerifyBoard = async () => {
+        throw new Error('board catalogue unreadable')
+      }
+
+      await run(harness)
+
+      expect(harness.verifyCalls).toHaveLength(0)
+    })
   })
 
   it('treats a thrown verifyCompile as a failed (advisory) verification', async () => {

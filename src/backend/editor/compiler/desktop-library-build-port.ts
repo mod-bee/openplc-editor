@@ -58,6 +58,9 @@ export interface DesktopLibraryBuildPortDeps {
     target: LibraryVerifyTarget
     emit: (message: string, level?: 'info' | 'warning' | 'error') => void
   }): Promise<{ success: boolean; message?: string }>
+
+  /** The board `runVerificationCompile` would use for `target` now. */
+  resolveVerifyBoard(target: LibraryVerifyTarget): Promise<string>
 }
 
 export function createDesktopLibraryBuildPort(deps: DesktopLibraryBuildPortDeps): LibraryBuildPort {
@@ -192,6 +195,10 @@ export function createDesktopLibraryBuildPort(deps: DesktopLibraryBuildPortDeps)
         // through to the orchestrator's emit.
         emit: (message, level) => emit(message, level ?? 'info'),
       })
+    },
+
+    resolveVerifyBoard(target) {
+      return deps.resolveVerifyBoard(target)
     },
   }
 }
