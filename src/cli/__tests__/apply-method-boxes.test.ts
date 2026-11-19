@@ -106,7 +106,12 @@ const SPEC = {
             logic: { contact: { variable: 'stop', variant: 'default' } },
             outputs: [
               {
-                block: { call: 'user/Counter.Increase', instance: 'c', inputs: { nStep: '100' }, outputs: { OUT: 'sum2' } },
+                block: {
+                  call: 'user/Counter.Increase',
+                  instance: 'c',
+                  inputs: { nStep: '100' },
+                  outputs: { OUT: 'sum2' },
+                },
               },
             ],
           },
@@ -237,7 +242,9 @@ describe('method boxes in Ladder and FBD', () => {
     expect(transpiled.errors).toEqual([])
     const st = transpiled.programSt ?? ''
     // The rung gates the call through EN; the result and the output come back through temps.
-    expect(st).toMatch(/_TMP_Increase\d+_OUT := c\.Increase\(EN := go, nStep := nStepIn, .*nTwice => _TMP_Increase\d+_nTwice/)
+    expect(st).toMatch(
+      /_TMP_Increase\d+_OUT := c\.Increase\(EN := go, nStep := nStepIn, .*nTwice => _TMP_Increase\d+_nTwice/,
+    )
     expect(st).toMatch(/_TMP_Increase\d+_OUT := c2\.Increase\(nStep := 5, /)
 
     const result = compile(st, { headerFileName: 'generated.hpp' })

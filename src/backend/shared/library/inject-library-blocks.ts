@@ -48,8 +48,8 @@
  * derive their names from `pou.name`.
  */
 
-import { compareSemver } from '../../../frontend/utils/semver'
 import { parseHybridPouFromString } from '../../../frontend/utils/PLC/pou-text-parser'
+import { compareSemver } from '../../../frontend/utils/semver'
 import type { StlibArchiveDTO } from '../../../middleware/shared/ports/library-port'
 import type { PLCPou, PLCProjectData } from '../../../middleware/shared/ports/types'
 import type { TranspileLibraryType } from '../transpilers/st-transpiler/types'

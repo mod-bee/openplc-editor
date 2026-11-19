@@ -202,7 +202,11 @@ function publicMethodsOf(
 ): { methods?: SystemLibraryMethod[] } {
   const byName = new Map<string, StlibMethodDTO>()
   const seen = new Set<string>()
-  for (let block: LibraryBlockDTO | undefined = fb; block; block = blocksByName.get(block.extends?.toUpperCase() ?? '')) {
+  for (
+    let block: LibraryBlockDTO | undefined = fb;
+    block;
+    block = blocksByName.get(block.extends?.toUpperCase() ?? '')
+  ) {
     if (seen.has(block.name.toUpperCase())) break
     seen.add(block.name.toUpperCase())
     for (const method of block.methods ?? []) {

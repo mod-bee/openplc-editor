@@ -176,7 +176,11 @@ describe('stlibToSystemLibrary — methods', () => {
             inputs: [],
             outputs: [],
             inouts: [],
-            methods: [method('START'), method('STOP', { returnType: { type: 'BOOL' } }), method('HIDDEN', { visibility: 'PRIVATE' })],
+            methods: [
+              method('START'),
+              method('STOP', { returnType: { type: 'BOOL' } }),
+              method('HIDDEN', { visibility: 'PRIVATE' }),
+            ],
           },
           {
             name: 'FB_DERIVED',

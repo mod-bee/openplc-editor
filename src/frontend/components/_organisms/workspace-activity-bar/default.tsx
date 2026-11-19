@@ -777,7 +777,16 @@ export const DefaultWorkspaceActivityBar = ({ zoom }: DefaultWorkspaceActivityBa
         setIsCompiling(false)
       }
     },
-    [compiler, projectData, projectMeta, addLog, isCompiling, executeSave, refusedForVariablesText, requestConsoleFollow],
+    [
+      compiler,
+      projectData,
+      projectMeta,
+      addLog,
+      isCompiling,
+      executeSave,
+      refusedForVariablesText,
+      requestConsoleFollow,
+    ],
   )
 
   // ---------------------------------------------------------------------------

@@ -200,6 +200,5 @@ describe('ProjectLibrariesTab, versions and updates', () => {
     renderWithStore(<ProjectLibrariesTab installed={[row()]} />)
 
     expect(screen.getByText(/2 versions/)).toBeTruthy()
-
   })
 })

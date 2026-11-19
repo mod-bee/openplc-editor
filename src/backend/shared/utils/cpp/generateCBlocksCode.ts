@@ -6,13 +6,13 @@ import {
   findMethodDefinitions,
   splitCppMethods,
 } from '../../../../frontend/utils/cpp/cpp-methods'
+import { isBaseTypeName } from '../../../../frontend/utils/iec-types-registry'
 import {
   isArrayVariable,
   isDescriptorPinType,
   isSizedStringType,
   multiDimensionalContainerType,
 } from '../../../../frontend/utils/PLC/array-codegen-helpers'
-import { isBaseTypeName } from '../../../../frontend/utils/iec-types-registry'
 import type { PLCVariable } from '../../../../middleware/shared/ports/types'
 
 type CppPouData = {

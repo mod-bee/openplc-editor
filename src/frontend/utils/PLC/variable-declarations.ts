@@ -2,7 +2,6 @@ import { parse } from 'strucpp'
 
 import { baseTypeSchema } from '../../../middleware/shared/ports/plc-schemas'
 import type { PLCVariable, VariableAttribute } from '../../../middleware/shared/ports/types'
-import { DEBUG_STRING_CAP } from '../variable-sizes'
 import { parseAttributePragmas } from './attribute-pragmas'
 import { escapeCommentText, unescapeCommentText } from './comment-text'
 

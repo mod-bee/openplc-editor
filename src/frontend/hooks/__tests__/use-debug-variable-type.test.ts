@@ -5,33 +5,36 @@
  */
 import { renderHook } from '@testing-library/react'
 
+import type { DebugTreeNode } from '../../../middleware/shared/ports/types'
+import { createStoreWrapper, createTestStore } from '../../store/testing'
 import { useDebugVariableType } from '../use-debug-value'
 
-type State = { workspace: { debugVariableTree: Map<string, { type: string }> } }
-let state: State
-
-jest.mock('../../store', () => ({
-  useOpenPLCStore: (selector: (s: State) => unknown) => selector(state),
-}))
-
-beforeEach(() => {
-  state = {
-    workspace: {
-      debugVariableTree: new Map([
-        ['Config0:IO.dout[2].q', { type: 'BOOL' }],
-        ['Config0:LINK.sts.wifiIp', { type: 'DWORD' }],
-      ]),
-    },
-  }
+const leaf = (compositeKey: string, type: string): DebugTreeNode => ({
+  name: compositeKey,
+  fullPath: compositeKey,
+  compositeKey,
+  type,
+  isComplex: false,
 })
+
+const renderType = (key: string) => {
+  const store = createTestStore()
+  store.getState().workspaceActions.setDebugVariableTree(
+    new Map([
+      ['Config0:IO.dout[2].q', leaf('Config0:IO.dout[2].q', 'BOOL')],
+      ['Config0:LINK.sts.wifiIp', leaf('Config0:LINK.sts.wifiIp', 'DWORD')],
+    ]),
+  )
+  return renderHook(() => useDebugVariableType(key), { wrapper: createStoreWrapper(store) }).result.current
+}
 
 describe('useDebugVariableType', () => {
   it("gives a member's or an element's type from the debug tree", () => {
-    expect(renderHook(() => useDebugVariableType('Config0:LINK.sts.wifiIp')).result.current).toBe('DWORD')
-    expect(renderHook(() => useDebugVariableType('Config0:IO.dout[2].q')).result.current).toBe('BOOL')
+    expect(renderType('Config0:LINK.sts.wifiIp')).toBe('DWORD')
+    expect(renderType('Config0:IO.dout[2].q')).toBe('BOOL')
   })
 
   it('is undefined for a key the tree does not have, as outside a debug session', () => {
-    expect(renderHook(() => useDebugVariableType('Main:nothing')).result.current).toBeUndefined()
+    expect(renderType('Main:nothing')).toBeUndefined()
   })
 })

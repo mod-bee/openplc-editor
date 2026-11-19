@@ -10,6 +10,8 @@ import { renderHook } from '@testing-library/react'
 import type * as monaco from 'monaco-editor'
 import type { RefObject } from 'react'
 
+import type { PLCPou, PLCVariable } from '../../../middleware/shared/ports/types'
+import { createStoreWrapper, createTestStore } from '../../store/testing'
 import { useStDebugDecorations } from '../use-st-debug-decorations'
 
 let boolValues = new Map<string, string>()
@@ -20,11 +22,35 @@ jest.mock('../use-debug-value', () => ({
   useDebugNonBoolValuesMap: () => nonBoolValues,
 }))
 
-// The POUs the hook reads a VAR_EXTERNAL list from.
-let pous: Array<{ name: string; interface: { variables: Array<{ name: string; class: string }> } }> = []
-jest.mock('../../store', () => ({
-  useOpenPLCStore: (selector: (s: unknown) => unknown) => selector({ project: { data: { pous } } }),
-}))
+// The POUs the hook reads a VAR_EXTERNAL list from, as the project holds them.
+type PouSketch = {
+  name: string
+  interface: { variables: Array<Pick<PLCVariable, 'name' | 'class' | 'flag' | 'initialValue'>> }
+}
+let pous: PouSketch[] = []
+
+const toPou = (pou: PouSketch): PLCPou => ({
+  name: pou.name,
+  pouType: 'program',
+  interface: {
+    variables: pou.interface.variables.map((v) => ({
+      ...v,
+      type: { definition: 'base-type', value: 'INT' },
+      location: '',
+      documentation: '',
+      debug: false,
+    })),
+  },
+  body: { language: 'st', value: '' },
+  documentation: '',
+})
+
+/** A store holding `pous`, injected into the hook. */
+function storeWithPous() {
+  const store = createTestStore()
+  store.setState((state) => ({ project: { ...state.project, data: { ...state.project.data, pous: pous.map(toPou) } } }))
+  return createStoreWrapper(store)
+}
 
 type Badge = { line: number; startCol: number; endCol: number; content: string }
 
@@ -74,15 +100,17 @@ function harness(text: string, uri = 'inmemory://model/1') {
 
 const render = (text: string, overrides: Partial<Parameters<typeof useStDebugDecorations>[0]> = {}, uri?: string) => {
   const h = harness(text, uri)
-  const result = renderHook(() =>
-    useStDebugDecorations({
-      editorRef: h.editorRef,
-      monacoRef: h.monacoRef,
-      prefix: 'Prog:',
-      enabled: true,
-      modelVersion: text,
-      ...overrides,
-    }),
+  const result = renderHook(
+    () =>
+      useStDebugDecorations({
+        editorRef: h.editorRef,
+        monacoRef: h.monacoRef,
+        prefix: 'Prog:',
+        enabled: true,
+        modelVersion: text,
+        ...overrides,
+      }),
+    { wrapper: storeWithPous() },
   )
   return { ...h, ...result, badges: h.collections[0] ?? [] }
 }
@@ -169,7 +197,7 @@ describe('useStDebugDecorations', () => {
         interface: {
           variables: [
             { name: 'IO', class: 'external' },
-            { name: 'LAMP', class: 'local', flag: 'constant', initialValue: '2' } as never,
+            { name: 'LAMP', class: 'local', flag: 'constant', initialValue: '2' },
           ],
         },
       },

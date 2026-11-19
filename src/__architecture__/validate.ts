@@ -418,11 +418,18 @@ const KNOWN_EXCEPTIONS: Record<string, LayerName[]> = {
   // numeric constants in the frontend or hoisting the two enums into
   // ports/types.ts; both were judged worse than one documented import.
   'frontend/hooks/use-device-plc-state.ts': ['backend-shared'],
+  // Runtime v4 status poll — words a runtime fault with `describeFault`, the one
+  // place a fault is described, exactly as the sibling entry above does for a board.
+  'frontend/hooks/use-runtime-polling.ts': ['backend-shared'],
   // Run/stop control port — `PlcControlResult` is the FC 0x4b acknowledgement
   // shape, defined with the protocol types it is built from (`PlcRuntimeState`).
   // Type-only import; hoisting it into ports/types.ts would drag the wire enums
   // along with it, so the contract stays where the protocol is described.
   'middleware/shared/ports/debugger-port.ts': ['backend-shared'],
+  // Device port — type-only: the runtime fault and retain / PLC-data health a
+  // status read reports are defined with the protocol that carries them, for the
+  // same reason as `debugger-port.ts` above.
+  'middleware/shared/ports/device-port.ts': ['backend-shared'],
   // Device connect/debug resolution — interprets the board's declarative `debug`
   // spec (backend/shared/hardware/debug-spec.ts), which is the ONE place that spec
   // is read. The alternative is a second interpreter in the frontend, which is how

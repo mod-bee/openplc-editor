@@ -58,7 +58,9 @@ function writeFixture(): { project: string; userData: string; name: string } {
   const now = new Date().toISOString()
   writeFileSync(
     join(history, 'projects.json'),
-    JSON.stringify([{ name, path: project, projectFilePath: join(project, 'project.json'), createdAt: now, lastOpenedAt: now }]),
+    JSON.stringify([
+      { name, path: project, projectFilePath: join(project, 'project.json'), createdAt: now, lastOpenedAt: now },
+    ]),
   )
   writeFileSync(join(history, 'libraries.json'), '[]')
   const runtime = join(userData, 'User', 'Runtime')
@@ -123,52 +125,54 @@ test('debug values on the diagrams', async () => {
   await page.waitForTimeout(4000)
 
   const debugMap = readDebugMap(project)
-  const leaves = await page.evaluate(({ map, forced }) => {
-    const hook = window.__openplcE2E
-    if (!hook) throw new Error('e2e hook missing: was OPENPLC_E2E passed?')
-    const state = hook.store.getState()
-    const data = state.project.data
-    const { treeMap } = hook.buildDebugVariableTreeMap(
-      data.pous,
-      data.configurations.resource.instances,
-      hook.debugMapToEntries(map as never),
-      data,
-      state.libraries.system,
-    )
-    const indexes = hook.deriveVariableIndexMap(treeMap, map as never)
-    // Values of every kind, as the poller's decoder writes them.
-    const boolValues = new Map<string, string>()
-    const nonBoolValues = new Map<string, string>()
-    let n = 0
-    for (const [key, node] of treeMap) {
-      if (node.isComplex || node.debugIndex === undefined) continue
-      n++
-      const type = node.type.toUpperCase()
-      if (type === 'BOOL') boolValues.set(key, n % 3 === 0 ? 'TRUE' : 'FALSE')
-      else if (node.enumValues && node.enumValues.length > 0) nonBoolValues.set(key, node.enumValues[0])
-      else if (type === 'REAL' || type === 'LREAL') nonBoolValues.set(key, ((n % 997) / 29.7).toFixed(6))
-      else if (/^W?STRING/.test(type)) {
-        // A string declared longer than the 126-character window gets a value that fills it and more.
-        const declared = Number(/\((\d+)\)/.exec(type)?.[1] ?? 254)
-        nonBoolValues.set(key, declared > 126 ? `"${'0123456789'.repeat(28).slice(0, 280)}"` : '"wifi-down-under"')
+  const leaves = await page.evaluate(
+    ({ map, forced }) => {
+      const hook = window.__openplcE2E
+      if (!hook) throw new Error('e2e hook missing: was OPENPLC_E2E passed?')
+      const state = hook.store.getState()
+      const data = state.project.data
+      const { treeMap } = hook.buildDebugVariableTreeMap(
+        data.pous,
+        data.configurations.resource.instances,
+        hook.debugMapToEntries(map as never),
+        data,
+        state.libraries.system,
+      )
+      const indexes = hook.deriveVariableIndexMap(treeMap, map as never)
+      // Values of every kind, as the poller's decoder writes them.
+      const boolValues = new Map<string, string>()
+      const nonBoolValues = new Map<string, string>()
+      let n = 0
+      for (const [key, node] of treeMap) {
+        if (node.isComplex || node.debugIndex === undefined) continue
+        n++
+        const type = node.type.toUpperCase()
+        if (type === 'BOOL') boolValues.set(key, n % 3 === 0 ? 'TRUE' : 'FALSE')
+        else if (node.enumValues && node.enumValues.length > 0) nonBoolValues.set(key, node.enumValues[0])
+        else if (type === 'REAL' || type === 'LREAL') nonBoolValues.set(key, ((n % 997) / 29.7).toFixed(6))
+        else if (/^W?STRING/.test(type)) {
+          // A string declared longer than the 126-character window gets a value that fills it and more.
+          const declared = Number(/\((\d+)\)/.exec(type)?.[1] ?? 254)
+          nonBoolValues.set(key, declared > 126 ? `"${'0123456789'.repeat(28).slice(0, 280)}"` : '"wifi-down-under"')
+        } else if (type === 'TIME') nonBoolValues.set(key, 'T#1s500ms')
+        else nonBoolValues.set(key, String(n % 200))
       }
-      else if (type === 'TIME') nonBoolValues.set(key, 'T#1s500ms')
-      else nonBoolValues.set(key, String(n % 200))
-    }
-    const actions = state.workspaceActions
-    actions.setDebugVariableIndexes(indexes)
-    actions.setDebugVariableTree(treeMap)
-    actions.setDebugValues({ boolValues, nonBoolValues })
-    actions.setDebuggerVisible(true)
-    // Forces as the force menu records them (the PLC is not there to take one).
-    const forcedMap = new Map<string, boolean>()
-    for (const item of forced) {
-      const [key, value] = item.split('=')
-      forcedMap.set(key, value?.toUpperCase() === 'TRUE')
-    }
-    actions.setDebugForcedVariables(forcedMap)
-    return boolValues.size + nonBoolValues.size
-  }, { map: debugMap, forced: (process.env.DEBUG_DISPLAY_FORCED ?? '').split(',').filter(Boolean) })
+      const actions = state.workspaceActions
+      actions.setDebugVariableIndexes(indexes)
+      actions.setDebugVariableTree(treeMap)
+      actions.setDebugValues({ boolValues, nonBoolValues })
+      actions.setDebuggerVisible(true)
+      // Forces as the force menu records them (the PLC is not there to take one).
+      const forcedMap = new Map<string, boolean>()
+      for (const item of forced) {
+        const [key, value] = item.split('=')
+        forcedMap.set(key, value?.toUpperCase() === 'TRUE')
+      }
+      actions.setDebugForcedVariables(forcedMap)
+      return boolValues.size + nonBoolValues.size
+    },
+    { map: debugMap, forced: (process.env.DEBUG_DISPLAY_FORCED ?? '').split(',').filter(Boolean) },
+  )
   expect(leaves).toBeGreaterThan(0)
 
   try {
@@ -214,7 +218,11 @@ test('debug values on the diagrams', async () => {
       await page.waitForTimeout(500)
       await page.screenshot({ path: join(SHOTS, `click-${n + 1}-menu.png`) })
       if (item) {
-        await page.getByText(item, { exact: true }).locator('visible=true').first().click({ timeout: 10000, force: true })
+        await page
+          .getByText(item, { exact: true })
+          .locator('visible=true')
+          .first()
+          .click({ timeout: 10000, force: true })
         await page.waitForTimeout(1000)
         await page.screenshot({ path: join(SHOTS, `click-${n + 1}-after.png`) })
         await page.keyboard.press('Escape')
