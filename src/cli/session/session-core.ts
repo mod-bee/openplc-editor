@@ -23,7 +23,7 @@ import { longTextReadOf } from '@root/frontend/utils/variable-sizes'
 import { disconnectAndWait } from '../debug/close-channel'
 import {
   type DebugVariableIndex,
-  decodeVariableValues,
+  decodeVariableReply,
   encodeValue,
   filterVariables,
   findVariable,
@@ -310,19 +310,25 @@ export class SessionCore {
    *
    * The batch cap is a property of the far end's frame budget, not a tuning
    * knob: overrunning it on RTU produces a request the firmware silently drops.
+   *
+   * A reply can still cover fewer variables than the batch asked for: the
+   * values must also fit the reply frame, and on a bare-metal board (272 bytes,
+   * 127 per STRING) two strings fill it. The target answers with those that fit
+   * and says where it stopped (`lastIndex`); the next request starts there, so
+   * every variable asked for is answered, in order.
    */
   private async readValues(
     variables: readonly ResolvedVariable[],
   ): Promise<{ values: VariableValue[] } | { error: string }> {
     const values: VariableValue[] = []
-    for (let start = 0; start < variables.length; start += this.options.batchSize) {
+    for (let start = 0; start < variables.length; ) {
       const batch = variables.slice(start, start + this.options.batchSize)
       const result = await this.options.channel.getVariablesList(batch.map((variable) => variable.index))
       if (!result.success || !result.data) {
         return { error: result.error ?? 'The target did not answer the variable read' }
       }
       const long: Array<{ variable: ResolvedVariable; position: number }> = []
-      const decoded = decodeVariableValues({
+      const { values: decoded, consumed } = decodeVariableReply({
         requested: batch,
         // `data` is declared `Uint8Array | Buffer` because the Node Modbus
         // clients return the latter and the shared WebSocket transport the
@@ -333,6 +339,10 @@ export class SessionCore {
         forced: this.forcedUpper(),
         onWindowFull: (variable, position) => long.push({ variable, position }),
       })
+      if (consumed === 0) {
+        const first = batch[0]
+        return { error: `The target's reply has no room for "${first.name}" (${first.type})` }
+      }
       // A string that filled the window is read whole (FC 0x4F); a target without it keeps the window.
       for (const { variable, position } of long) {
         const read = longTextReadOf(variable.type, variable.cap)
@@ -341,6 +351,7 @@ export class SessionCore {
         if (text.success) decoded[position] = { ...decoded[position], value: text.text }
       }
       values.push(...decoded)
+      start += consumed
     }
     return { values }
   }

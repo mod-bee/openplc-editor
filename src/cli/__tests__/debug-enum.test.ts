@@ -11,7 +11,7 @@ import { createTestStore } from '@root/frontend/store/testing'
 import { packDebugAddr, parseDebugMap } from '@root/frontend/utils/debug-parser'
 
 import { formatValue } from '../debug/format'
-import { decodeVariableValues, encodeValue, indexDebugMap } from '../debug/variables'
+import { decodeVariableReply, encodeValue, indexDebugMap } from '../debug/variables'
 
 function enumProject() {
   const store = createTestStore()
@@ -93,7 +93,9 @@ describe('an enumeration in the CLI debugger', () => {
 
   it('reads the member next to the number', () => {
     if (!variable) throw new Error('no variable')
-    const [value] = decodeVariableValues({
+    const {
+      values: [value],
+    } = decodeVariableReply({
       requested: [variable],
       payload: new Uint8Array([2, 0]),
       lastIndex: 0,

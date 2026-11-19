@@ -240,16 +240,8 @@ function enumMemberOf(variable: ResolvedVariable, value: unknown): string | unde
   return variable.enumValues[position]
 }
 
-/**
- * Decode a `getVariablesList` reply into typed values.
- *
- * The positional walk is `walkDebugResponse`, shared with the GUI's
- * `useDebugPolling` — `lastIndex` handling, consumed-but-undecodable slots, the
- * short-buffer stop and the endian swap all mean the same thing here as they do
- * in the watch panel, because they are the same code. What is specific to this
- * caller is only the JSON typing of the value.
- */
-export function decodeVariableValues(options: {
+/** What `decodeVariableReply` takes. */
+export interface DecodeVariableOptions {
   requested: readonly ResolvedVariable[]
   payload: Uint8Array
   lastIndex: number | undefined
@@ -257,12 +249,29 @@ export function decodeVariableValues(options: {
   forced: ReadonlySet<string>
   /** Called for a STRING / WSTRING that filled the 126-unit window, with its position in the result. */
   onWindowFull?: (variable: ResolvedVariable, position: number) => void
-}): VariableValue[] {
+}
+
+/**
+ * Decode a `getVariablesList` reply into typed values, and say how many of the
+ * requested variables it covered.
+ *
+ * A reply may cover fewer than were asked for: when the values do not all fit
+ * the target's frame (272 bytes on a bare-metal board, where a STRING takes 127),
+ * the target answers with those that fit and a `lastIndex` saying where it
+ * stopped. `consumed` is that count, so the caller asks again for the rest.
+ *
+ * The positional walk is `walkDebugResponse`, shared with the GUI's
+ * `useDebugPolling` — `lastIndex` handling, consumed-but-undecodable slots, the
+ * short-buffer stop and the endian swap all mean the same thing here as they do
+ * in the watch panel, because they are the same code. What is specific to this
+ * caller is only the JSON typing of the value.
+ */
+export function decodeVariableReply(options: DecodeVariableOptions): { values: VariableValue[]; consumed: number } {
   const { requested, payload, lastIndex, endian, forced, onWindowFull } = options
   const byIndex = new Map(requested.map((variable) => [variable.index, variable]))
   const values: VariableValue[] = []
 
-  walkDebugResponse({
+  const walk = walkDebugResponse({
     requested: requested.map((variable) => variable.index),
     payload,
     lastIndex,
@@ -291,7 +300,7 @@ export function decodeVariableValues(options: {
     },
   })
 
-  return values
+  return { values, consumed: walk.positionsConsumed }
 }
 
 /**
