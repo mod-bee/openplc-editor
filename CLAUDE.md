@@ -401,7 +401,7 @@ enabled server. `DEBUG_BAUD` comes from `screens.serial.baud_rate` and
 
 With one UART for both (no `MBSERIAL_ON_SECONDARY`), the firmware answers two ids on it, routed by
 function code (`handle_serial_port` in `resources/sources/Baremetal/modbus_serial.cpp`): the editor's id
-(`MB_EDITOR_SLAVE`, equal to `DEBUG_SLAVE`) carries only the editor function codes 0x41-0x4D (0x41-0x4E in RTOS mode)
+(`MB_EDITOR_SLAVE`, equal to `DEBUG_SLAVE`) carries only the editor function codes 0x41-0x4D and 0x4F (plus 0x4E in RTOS mode)
 (`mb_pdu_is_editor_fc` in `modbus_pdu.cpp`) and silently drops anything else; the server's id
 (`modbus.slaveid`, from `MBSERIAL_SLAVE`) carries the standard frames the framer recognizes and answers
 an editor function code with an illegal-function exception. A function code the framer does not
@@ -479,7 +479,7 @@ and ship next to the toolchain; refresh them from the commits the new release wa
 
 ### Debugging
 
-- **Protocol:** Custom Modbus PDU: function codes 0x41-0x45 for variable read/write, and 0x46-0x4D for status, version, licensing, run/stop state, bootloader reboot and lock state, plus 0x4E for per-task statistics in RTOS mode (`resources/sources/Baremetal/modbus_types.h`)
+- **Protocol:** Custom Modbus PDU: function codes 0x41-0x45 for variable read/write, and 0x46-0x4D for status, version, licensing, run/stop state, bootloader reboot and lock state, plus 0x4E for per-task statistics in RTOS mode and 0x4F for chunked STRING/WSTRING reads at any declared length (`resources/sources/Baremetal/modbus_types.h`)
 - **Transports:** Modbus TCP, Modbus RTU, WebSocket, or virtual serial (simulator)
 - **Simulator:** AVR8JS emulator (`src/backend/shared/simulator/`) emulates ATmega2560
 - **Flow:** Compile with debug symbols (.dbg file + MD5) -> connect debugger -> poll variables

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2026 Autonomy®
 /*
-modbus_debug.h - OpenPLC always-on debugger function codes (0x41-0x4B)
+modbus_debug.h - OpenPLC always-on debugger function codes (0x41-0x4F)
 
 The debugger PDU handlers, dispatched from process_mbpacket. Kept ungated: the
 dispatch in modbus_pdu references them unconditionally (the always-on debugger is
@@ -39,6 +39,13 @@ void rebootToBootloader(const uint8_t *magic);
 // side-effect free (unlike 0x4C, which raises the unlock prompt on the device),
 // so the editor can poll it while waiting for the user to unlock.
 void getLockState(void);
+
+// FC 0x4F -- one chunk of a STRING/WSTRING at any declared length.
+// PDU request:  [FC][arr:u8][elem:u16][offset:u16][max:u16]
+// PDU response: [FC][status][tag][flags][cap:u16][len:u16][offset:u16][count:u16][tick:u32][data]
+// Header fields big-endian; data is STRING bytes or WSTRING little-endian units.
+// `max` (code units) is clamped to the frame.
+void debugGetText(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max);
 
 #if OPENPLC_RTOS
 // PDU request:  [FC 0x4E][flags:u8][first_task:u8]   flags bit 0 = reset the window

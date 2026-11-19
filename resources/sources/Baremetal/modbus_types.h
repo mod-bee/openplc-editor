@@ -35,6 +35,9 @@ protocol, transport, register and debug layers agree on the same contracts.
 #include "arduino_runtime_glue.h"
 // Bytes the DEBUG_GET response spends before its first value.
 #define MB_DEBUG_GET_HEADER    11
+// Bytes the DEBUG_GET_TEXT (0x4F) response spends before its data:
+// [id][FC][status][tag][flags][cap:2][len:2][offset:2][count:2][tick:4].
+#define MB_DEBUG_TEXT_HEADER   17
 
 // The frame has to hold that header plus the widest value the target can
 // produce, or that value can never be read at all -- it is skipped in silence,
@@ -119,6 +122,7 @@ enum {
 #if OPENPLC_RTOS
     MB_FC_DEBUG_GET_TASK_STATS = 0x4E, // RTOS mode: per-task scan/latency/overrun statistics
 #endif
+    MB_FC_DEBUG_GET_TEXT      = 0x4F, // One chunk of a STRING/WSTRING at any declared length
 };
 
 //Exception Codes

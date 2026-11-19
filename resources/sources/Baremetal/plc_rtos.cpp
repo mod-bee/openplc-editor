@@ -661,6 +661,10 @@ static uint32_t debug_request_mask(uint8_t fc)
         }
         return mask;
     }
+    case MB_FC_DEBUG_GET_TEXT: {   // [id][FC][arr][elem:u16][offset:u16][max:u16]: one chunk
+        if (len < 5) return 0;
+        return runtime_rtos_owner_mask(mb_frame[2], (uint16_t)((mb_frame[3] << 8) | mb_frame[4]));
+    }
     default:
         return 0;
     }
@@ -710,7 +714,8 @@ void plc_rtos_run_pdu(uint8_t fc, plc_rtos_hook_t pdu_body)
     // Reads: between the owners' scans when that comes quickly, and as they
     // stand for an owner stalled mid-scan (see runtime_rtos_lock_workers_for_read).
     case MB_FC_DEBUG_GET:
-    case MB_FC_DEBUG_GET_LIST: {
+    case MB_FC_DEBUG_GET_LIST:
+    case MB_FC_DEBUG_GET_TEXT: {
         const uint32_t locked = runtime_rtos_lock_workers_for_read(debug_request_mask(fc));
         pdu_body();
         runtime_rtos_unlock_workers(locked);

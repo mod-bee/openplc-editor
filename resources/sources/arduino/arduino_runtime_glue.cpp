@@ -2199,7 +2199,7 @@ extern "C" void runtime_rtos_unlock_write(const runtime_rtos_write_lock_t* held)
 extern "C" void runtime_rtos_after_write(uint8_t arr, uint16_t elem)
 {
     using namespace strucpp;
-    uint16_t len = 0;
+    uint32_t len = 0;
     const void* var = openplc_debug_ptr(arr, elem, &len);
     if (!var) return;
     plc_os_mutex_lock(s_image_lock);
@@ -2723,6 +2723,38 @@ extern "C" uint16_t openplc_debug_read(uint8_t arr, uint16_t elem, uint8_t* dest
 #endif
 }
 
+// strucpp_debug_read_text / _write_text are the full-length string accesses; FC
+// 0x4F, OPC-UA and the bare-metal version that announces them (openplc_version.h)
+// depend on them, so older headers are refused here.
+#ifndef STRUCPP_SHIM_HAS_DEBUG_TEXT
+#error "These STruC++ runtime headers lack strucpp_debug_read_text/_write_text (STRUCPP_SHIM_HAS_DEBUG_TEXT): update STruC++"
+#endif
+
+extern "C" uint8_t openplc_debug_read_text(uint8_t arr, uint16_t elem, uint16_t offset, uint16_t max,
+                                           uint8_t* data, uint16_t data_cap, openplc_text_chunk_t* info)
+{
+    strucpp_text_chunk chunk;
+    memset(&chunk, 0, sizeof chunk);
+#if OPENPLC_RTOS && defined(STRUCPP_THREADED)
+    // A global under its own lock, per chunk, as openplc_debug_read() reads it.
+    const int32_t g = leaf_global(arr, elem);
+    const bool held = global_lock_for(g, OPENPLC_RTOS_COMMS_GRACE_US);
+    const uint8_t status = strucpp_debug_read_text(arr, elem, offset, max, data, data_cap, &chunk);
+    if (held) global_unlock(g);
+#else
+    const uint8_t status = strucpp_debug_read_text(arr, elem, offset, max, data, data_cap, &chunk);
+#endif
+    if (info) {
+        info->status = chunk.status;
+        info->tag    = chunk.tag;
+        info->flags  = chunk.flags;
+        info->cap    = chunk.cap;
+        info->len    = chunk.len;
+        info->count  = chunk.count;
+    }
+    return status;
+}
+
 extern "C" uint8_t openplc_debug_set(uint8_t arr, uint16_t elem, uint8_t forcing,
                                      const uint8_t* bytes, uint16_t len)
 {
@@ -2735,7 +2767,13 @@ extern "C" uint8_t openplc_debug_write(uint8_t arr, uint16_t elem,
     return strucpp::debug::handle_write(arr, elem, bytes, len);
 }
 
-extern "C" const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint16_t* out_len)
+extern "C" uint8_t openplc_debug_write_text(uint8_t arr, uint16_t elem,
+                                            const uint8_t* data, uint16_t count)
+{
+    return strucpp_debug_write_text(arr, elem, data, count);
+}
+
+extern "C" const void* openplc_debug_ptr(uint8_t arr, uint16_t elem, uint32_t* out_len)
 {
     return strucpp::debug::handle_ptr(arr, elem, out_len);
 }
@@ -2763,6 +2801,11 @@ static_assert(OPENPLC_DEBUG_STRING_WIRE == strucpp::debug::DEBUG_STRING_WIDTH,
 // where the duplication is held honest.
 static_assert(OPENPLC_DEBUG_STRING_CAP == strucpp::debug::DEBUG_STRING_CAP,
               "OPENPLC_DEBUG_STRING_CAP disagrees with strucpp's DEBUG_STRING_CAP");
+
+static_assert(OPENPLC_DEBUG_TAG_STRING == strucpp::debug::TAG_STRING,
+              "OPENPLC_DEBUG_TAG_STRING disagrees with strucpp's TypeTag");
+static_assert(OPENPLC_DEBUG_TAG_WSTRING == strucpp::debug::TAG_WSTRING,
+              "OPENPLC_DEBUG_TAG_WSTRING disagrees with strucpp's TypeTag");
 
 static_assert(OPCUA_TAG_STRING == strucpp::debug::TAG_STRING,
               "OPCUA_TAG_STRING in opcua_types.h disagrees with strucpp's TypeTag");
