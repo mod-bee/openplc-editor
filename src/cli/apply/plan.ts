@@ -88,6 +88,12 @@ export async function applySpec(
   applyGlobalVariableLists(store, typed, changes, errors)
   applyPous(store, typed, changes, errors)
   applyVariables(store, typed, changes, errors)
+  if (options.prune) {
+    // Each POU's interface is final before its body is checked or placed: a C++ method parameter may take the name
+    // of a pin this spec renames, and a graphical body resolves a block's pins as the spec declares them.
+    prunePouVariables(store, spec, changes)
+    orderPouVariables(store, spec)
+  }
   // Bodies LAST, after every POU has its variables. A graphical body placing a
   // `user/<pou>` block resolves that block's pins from the POU's own variable
   // list, so a body applied in the same pass that created the POU sees an
@@ -99,8 +105,8 @@ export async function applySpec(
   applyServers(store, spec, changes, errors)
   await applyRemoteDevices(store, spec, options.projectPath, changes, errors)
   if (options.prune) {
-    // Variables are compared with the POUs just applied, so they go last.
-    pruneVariables(store, spec, changes, errors)
+    // Globals are compared with the ones just applied, so they go last.
+    pruneGlobalVariables(store, spec, changes, errors)
     pruneProtocols(store, spec, changes)
     // With pruning the spec is the whole list, so the resource's tables show it in the spec's order - for the
     // program instances that is also the order they run in, within their task.
@@ -1093,7 +1099,7 @@ function prune(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[]): 
 }
 
 /**
- * Drop variables the spec stopped declaring.
+ * Drop POU variables the spec stopped declaring.
  *
  * Without this a `describe` -> edit -> `apply` round trip can only ever add:
  * a variable removed from the document stays in the project, and a renamed one
@@ -1102,7 +1108,7 @@ function prune(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[]): 
  * Same rule as everything else here — an absent key prunes nothing, so a POU
  * with no `variables` section keeps the ones it has.
  */
-function pruneVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[], errors: string[]): void {
+function prunePouVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[]): void {
   for (const pou of spec.pous ?? []) {
     if (!pou.variables) continue
     const wanted = new Set(pou.variables.map((variable) => variable.name.toLowerCase()))
@@ -1115,7 +1121,35 @@ function pruneVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedCh
       changes.push({ kind: 'variable', action: 'delete', name: `${pou.name}.${variable.name}` })
     }
   }
+}
 
+/**
+ * Puts each POU's variables in the spec's order. Applying updates a variable in place and appends a new one, so a
+ * renamed pin or local (the old name pruned, the new one added) moved to the end of its section.
+ */
+function orderPouVariables(store: OpenPLCStore, spec: ApplySpec): void {
+  for (const pou of spec.pous ?? []) {
+    let target = 0
+    for (const wanted of pou.variables ?? []) {
+      const variables =
+        store.getState().project.data.pous.find((entry) => entry.name === pou.name)?.interface?.variables ?? []
+      const current = variables.findIndex((entry) => entry.name.toUpperCase() === wanted.name.toUpperCase())
+      if (current < 0) continue
+      if (current !== target) {
+        store.getState().projectActions.rearrangeVariables({
+          scope: 'local',
+          associatedPou: pou.name,
+          rowId: current,
+          newIndex: target,
+        })
+      }
+      target += 1
+    }
+  }
+}
+
+/** Drop global variables and Global Variable List members the spec stopped declaring. */
+function pruneGlobalVariables(store: OpenPLCStore, spec: ApplySpec, changes: PlannedChange[], errors: string[]): void {
   if (spec.globalVariables) {
     const wanted = new Set(spec.globalVariables.map((variable) => variable.name.toLowerCase()))
     const globals = store.getState().project.data.configurations.resource.globalVariables ?? []
