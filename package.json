@@ -1,7 +1,7 @@
 {
   "name": "open-plc-editor",
   "description": "OpenPLC Editor - IDE capable of creating programs for the OpenPLC Runtime",
-  "version": "4.3.5-modbee.5",
+  "version": "4.3.5-modbee.6",
   "license": "GPL-3.0-only",
   "author": {
     "name": "Autonomy Logic"
