@@ -365,12 +365,12 @@ export const DEBUG_TEXT_HEADER_BYTES = 16
 
 /**
  * Length of an FC 0x4F reply PDU, for a medium with no length field (RTU), or
- * null until enough has arrived to tell. A refusal or exception is two bytes.
+ * null until enough has arrived to tell. Every 0x4F reply, a refusal included,
+ * carries the full header; anything else (a Modbus exception) is two bytes.
  */
 export function getTextPduLength(pdu: Uint8Array, wide: boolean): number | null {
-  if (pdu.length < 2) return null
+  if (pdu.length < 1) return null
   if (readU8(pdu, 0) !== (ModbusFunctionCode.DEBUG_GET_TEXT as number)) return 2
-  if (readU8(pdu, 1) !== (ModbusDebugResponse.SUCCESS as number)) return 2
   if (pdu.length < DEBUG_TEXT_HEADER_BYTES) return null
   return DEBUG_TEXT_HEADER_BYTES + readU16BE(pdu, 10) * (wide ? 2 : 1)
 }

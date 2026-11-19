@@ -42,6 +42,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
     debugVariableIndexes: new Map(),
     debugBoolValues: new Map(),
     debugNonBoolValues: new Map(),
+    debugTextLengths: new Map(),
     debugForcedVariables: new Map(),
     debugTick: 0,
     debugVariableTree: new Map(),
@@ -165,6 +166,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           workspace.debugVariableIndexes = new Map()
           workspace.debugBoolValues = new Map()
           workspace.debugNonBoolValues = new Map()
+          workspace.debugTextLengths = new Map()
           workspace.debugForcedVariables = new Map()
           workspace.debugTick = 0
           workspace.debugVariableTree = new Map()
@@ -289,7 +291,11 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
         }),
       )
     },
-    setDebugValues: (values: { boolValues?: Map<string, string>; nonBoolValues?: Map<string, string> }) => {
+    setDebugValues: (values: {
+      boolValues?: Map<string, string>
+      nonBoolValues?: Map<string, string>
+      textLengths?: Map<string, number | null>
+    }) => {
       setState(
         produce(({ workspace }: WorkspaceSlice) => {
           for (const [key, val] of values.boolValues ?? []) {
@@ -297,6 +303,10 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           }
           for (const [key, val] of values.nonBoolValues ?? []) {
             workspace.debugNonBoolValues.set(key, val)
+          }
+          for (const [key, len] of values.textLengths ?? []) {
+            if (len === null) workspace.debugTextLengths.delete(key)
+            else workspace.debugTextLengths.set(key, len)
           }
         }),
       )
@@ -430,6 +440,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           workspace.debugVariableIndexes = new Map()
           workspace.debugBoolValues = new Map()
           workspace.debugNonBoolValues = new Map()
+          workspace.debugTextLengths = new Map()
           workspace.debugForcedVariables = new Map()
           workspace.debugTick = 0
           workspace.debugVariableTree = new Map()
@@ -459,6 +470,7 @@ const createWorkspaceSlice: StateCreator<WorkspaceSlice, [], [], WorkspaceSlice>
           workspace.debugVariableIndexes.delete(compositeKey)
           workspace.debugBoolValues.delete(compositeKey)
           workspace.debugNonBoolValues.delete(compositeKey)
+          workspace.debugTextLengths.delete(compositeKey)
           workspace.debugForcedVariables.delete(compositeKey)
           workspace.debugVariableTree.delete(compositeKey)
           workspace.debugExpandedNodes.delete(compositeKey)

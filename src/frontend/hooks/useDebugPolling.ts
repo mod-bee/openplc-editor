@@ -224,6 +224,8 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
       const changedNonBool = new Map<string, string>()
       // Strings that filled the 126-unit window, to read whole (FC 0x4F) after the walk.
       const longTexts: Array<{ index: number; metas: LeafMeta[]; wide: boolean }> = []
+      const currentLengths = store.getState().workspace.debugTextLengths
+      const textLengths = new Map<string, number | null>()
 
       // Wire format note: result.lastIndex is the runtime's last_req_idx —
       // a 0-based POSITION INTO THE REQUEST LIST, not a variable index.
@@ -261,6 +263,8 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
         emit: ({ index, type, value, meta: metas, windowFull }) => {
           const longRead = windowFull ? longTextReadOf(type) : null
           if (longRead) longTexts.push({ index, metas, wide: longRead.wide })
+          // A string not read whole this time keeps no runtime length.
+          else for (const m of metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
           // Translate enum integers to member names so every consumer (watch
           // panel, ladder, FBD, hover) reads the same display value.
           // Out-of-range falls back to the raw integer.
@@ -310,17 +314,21 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
       const readText = debuggerPort.readText?.bind(debuggerPort)
       for (const long of readText ? longTexts : []) {
         const text = await readText?.(long.index, long.wide)
-        if (!text?.success) continue
+        if (!text?.success) {
+          for (const m of long.metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
+          continue
+        }
         const stored = `"${text.text}"`
         for (const m of long.metas) {
+          if (currentLengths.get(m.compositeKey) !== text.len) textLengths.set(m.compositeKey, text.len)
           if (currentNonBool.get(m.compositeKey) === stored) changedNonBool.delete(m.compositeKey)
           else changedNonBool.set(m.compositeKey, stored)
         }
       }
 
       // Only write to store when values actually changed — one commit per poll cycle
-      if (changedBool.size > 0 || changedNonBool.size > 0) {
-        workspaceActions.setDebugValues({ boolValues: changedBool, nonBoolValues: changedNonBool })
+      if (changedBool.size > 0 || changedNonBool.size > 0 || textLengths.size > 0) {
+        workspaceActions.setDebugValues({ boolValues: changedBool, nonBoolValues: changedNonBool, textLengths })
       }
     }
 

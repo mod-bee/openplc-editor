@@ -4,6 +4,7 @@ import type { DebugTreeNode } from '../../../../middleware/shared/ports/types'
 import { ArrowIcon } from '../../../assets/icons/interface/Arrow'
 import ViewIcon from '../../../assets/icons/interface/View'
 import { useDebugDisplayOptions } from '../../../hooks/use-debug-display-options'
+import { useOpenPLCStore } from '../../../store'
 import { cn } from '../../../utils/cn'
 import {
   formatDebugValue,
@@ -98,9 +99,11 @@ const TreeNode = ({
   // A string longer than the shown window: how much is shown, and the whole text on request.
   const [showAll, setShowAll] = useState(false)
   const polled = node.isComplex ? undefined : getValue?.(node.compositeKey)
+  // The runtime's own length, in its units (bytes / UTF-16 units), for a value read whole.
+  const runtimeLength = useOpenPLCStore((state) => state.workspace.debugTextLengths.get(node.compositeKey))
   const longText =
     polled !== undefined && !(hideSecrets && isSecretValue(node.compositeKey, node.type))
-      ? longDebugText(polled, node.type)
+      ? longDebugText(polled, node.type, runtimeLength)
       : null
 
   return (

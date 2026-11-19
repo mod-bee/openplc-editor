@@ -1,4 +1,12 @@
-import { blockPinVariableName, formatDebugValue, isSecretValue, isTrueValue, longDebugText } from '../debug-pin-values'
+import {
+  blockPinVariableName,
+  formatDebugValue,
+  isSecretValue,
+  isTrueValue,
+  longDebugText,
+  textHead,
+  textUnits,
+} from '../debug-pin-values'
 
 describe('blockPinVariableName', () => {
   const fb = { variant: { name: 'UT_MOTOR', type: 'function-block' }, variable: { name: 'motor' } }
@@ -43,9 +51,24 @@ describe('long strings', () => {
     expect(formatDebugValue('"short"', 'STRING(320)', 2)).toBe('"short"')
   })
 
-  it('reports the whole text and its length', () => {
-    expect(longDebugText(long, 'WSTRING')).toEqual({ text: 'a'.repeat(126) + 'b'.repeat(74), total: 200 })
+  it('reports the whole text, the shown start and its length', () => {
+    expect(longDebugText(long, 'WSTRING')).toEqual({
+      text: 'a'.repeat(126) + 'b'.repeat(74),
+      head: 'a'.repeat(126),
+      total: 200,
+    })
     expect(longDebugText(long, 'INT')).toBeNull()
+  })
+
+  it('takes the length the runtime reported, in its units', () => {
+    expect(longDebugText(long, 'STRING(320)', 250)?.total).toBe(250)
+  })
+
+  it('counts a STRING in UTF-8 bytes and a WSTRING in UTF-16 units', () => {
+    expect(textUnits('é€😀', false)).toBe(2 + 3 + 4)
+    expect(textUnits('é€😀', true)).toBe(4)
+    expect(textHead('aé€', false, 3)).toBe('aé')
+    expect(formatDebugValue(`"${'é'.repeat(100)}"`, 'STRING', 2)).toBe(`"${'é'.repeat(63)}…"`)
   })
 })
 

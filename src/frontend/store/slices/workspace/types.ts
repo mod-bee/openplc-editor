@@ -92,6 +92,8 @@ export type WorkspaceState = {
     debugVariableIndexes: Map<string, number>
     debugBoolValues: Map<string, string>
     debugNonBoolValues: Map<string, string>
+    /** A STRING / WSTRING read whole (FC 0x4F): its length in the runtime's units (bytes / UTF-16 units). */
+    debugTextLengths: Map<string, number>
     debugForcedVariables: Map<string, boolean>
     debugTick: number
     debugVariableTree: Map<string, DebugTreeNode>
@@ -218,7 +220,12 @@ export type WorkspaceActions = {
   setDebugCContent: (content: string | null) => void
   setDebugVariableIndexes: (indexes: Map<string, number>) => void
   /** Merges polled values into both maps in a single store commit per poll cycle. */
-  setDebugValues: (values: { boolValues?: Map<string, string>; nonBoolValues?: Map<string, string> }) => void
+  /** `textLengths`: a whole-read string's runtime length by key; `null` drops one no longer read whole. */
+  setDebugValues: (values: {
+    boolValues?: Map<string, string>
+    nonBoolValues?: Map<string, string>
+    textLengths?: Map<string, number | null>
+  }) => void
   setDebugForcedVariables: (forced: Map<string, boolean>) => void
   setDebugTick: (tick: number) => void
   setDebugVariableTree: (tree: Map<string, DebugTreeNode>) => void

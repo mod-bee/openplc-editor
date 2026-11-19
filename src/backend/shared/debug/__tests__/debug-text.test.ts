@@ -87,9 +87,17 @@ describe('FC 0x4F DEBUG_GET_TEXT', () => {
       })
     })
 
-    it('reports a status refusal with its status', () => {
-      const parsed = parseGetTextResponse(new Uint8Array([0x4f, 0x81]))
+    it('reports a status refusal with its status, sent with the full header (both runtimes)', () => {
+      const parsed = parseGetTextResponse(reply({ status: 0x81, cap: 0, len: 0, offset: 0, units: [] }))
       expect(parsed).toMatchObject({ success: false, status: 0x81 })
+      expect(parseGetTextResponse(reply({ status: 0x83, cap: 0, len: 0, offset: 0, units: [] }))).toMatchObject({
+        success: false,
+        status: 0x83,
+      })
+    })
+
+    it('reports a status refusal with its status, sent short', () => {
+      expect(parseGetTextResponse(new Uint8Array([0x4f, 0x81]))).toMatchObject({ success: false, status: 0x81 })
     })
 
     it('reads a Modbus exception as a target that does not know the code', () => {
@@ -100,7 +108,11 @@ describe('FC 0x4F DEBUG_GET_TEXT', () => {
       const pdu = reply({ cap: 320, len: 300, offset: 0, units: [1, 2, 3], wide: true })
       expect(getTextPduLength(pdu.subarray(0, 10), true)).toBeNull()
       expect(getTextPduLength(pdu, true)).toBe(16 + 6)
-      expect(getTextPduLength(new Uint8Array([0x4f, 0x83]), false)).toBe(2)
+      // A refusal carries the full header with count 0, so it is framed like any reply.
+      const refusal = reply({ status: 0x83, cap: 0, len: 0, offset: 0, units: [] })
+      expect(getTextPduLength(refusal.subarray(0, 2), false)).toBeNull()
+      expect(getTextPduLength(refusal, false)).toBe(16)
+      // A plain Modbus exception from a transport layer is two bytes.
       expect(getTextPduLength(new Uint8Array([0xcf, 0x01]), false)).toBe(2)
     })
   })

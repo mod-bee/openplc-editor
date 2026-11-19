@@ -43,12 +43,47 @@ const REAL_TYPES = new Set(['REAL', 'LREAL'])
 /** Characters of a STRING / WSTRING a diagram or the watch shows before it is cut short: the debug window. */
 export const SHOWN_TEXT_CHARS = DEBUG_STRING_CAP
 
-/** A polled STRING / WSTRING value (`"…"`) longer than {@link SHOWN_TEXT_CHARS}: its text and length. */
-export function longDebugText(value: string, type: string | undefined): { text: string; total: number } | null {
+/** UTF-8 bytes of one code point. */
+const utf8Bytes = (codePoint: number): number =>
+  codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4
+
+/** Length of `text` in the runtime's units: UTF-8 bytes for a STRING, UTF-16 code units for a WSTRING. */
+export function textUnits(text: string, wide: boolean): number {
+  if (wide) return text.length
+  let bytes = 0
+  for (const ch of text) bytes += utf8Bytes(ch.codePointAt(0) ?? 0)
+  return bytes
+}
+
+/** The longest start of `text` within `units` runtime units, as the 126-unit window holds it. */
+export function textHead(text: string, wide: boolean, units: number): string {
+  if (wide) return text.slice(0, units)
+  let bytes = 0
+  let end = 0
+  for (const ch of text) {
+    bytes += utf8Bytes(ch.codePointAt(0) ?? 0)
+    if (bytes > units) break
+    end += ch.length
+  }
+  return text.slice(0, end)
+}
+
+/**
+ * A polled STRING / WSTRING value (`"…"`) longer than {@link SHOWN_TEXT_CHARS} runtime units: its text,
+ * the start that is shown, and its length. `runtimeLength` is the length the runtime reported (FC 0x4F),
+ * in its units; without it the length is counted from the text.
+ */
+export function longDebugText(
+  value: string,
+  type: string | undefined,
+  runtimeLength?: number,
+): { text: string; head: string; total: number } | null {
   if (!type || !/^W?STRING\b/i.test(type.trim())) return null
   if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return null
+  const wide = /^WSTRING/i.test(type.trim())
   const text = value.slice(1, -1)
-  return text.length > SHOWN_TEXT_CHARS ? { text, total: text.length } : null
+  const total = runtimeLength ?? textUnits(text, wide)
+  return total > SHOWN_TEXT_CHARS ? { text, head: textHead(text, wide, SHOWN_TEXT_CHARS), total } : null
 }
 
 /**
@@ -58,7 +93,7 @@ export function longDebugText(value: string, type: string | undefined): { text: 
  */
 export function formatDebugValue(value: string, type: string | undefined, decimals: number): string {
   const long = longDebugText(value, type)
-  if (long) return `"${long.text.slice(0, SHOWN_TEXT_CHARS)}…"`
+  if (long) return `"${long.head}…"`
   if (!type || !REAL_TYPES.has(type.toUpperCase())) return value
   const number = Number(value)
   return Number.isFinite(number) ? number.toFixed(decimals) : value
