@@ -1,4 +1,4 @@
-import { walkDebugResponse } from '../debug-response-walker'
+import { debugPollProgress, walkDebugResponse } from '../debug-response-walker'
 
 type Decoded = { index: number; position: number; type: string; value: string; meta: string }
 
@@ -143,5 +143,36 @@ describe('walkDebugResponse', () => {
     const out = walk({ requested: [], payload: [1, 2, 3], types: {} })
     expect(out).toMatchObject({ positionsConsumed: 0, reachedEnd: true })
     expect(out.decoded).toEqual([])
+  })
+})
+
+describe('debugPollProgress', () => {
+  it('moves past what the reply answered, and asks again for the rest', () => {
+    // 272-byte frame: a UINT and one STRING fit, the next STRING does not.
+    const out = walk({
+      requested: [1, 2, 3],
+      payload: new Array(2 + 127).fill(0),
+      lastIndex: 1,
+      types: { 1: 'UINT', 2: 'STRING', 3: 'STRING' },
+    })
+    expect(debugPollProgress(out, 1, 3)).toEqual({ consumed: 2 })
+  })
+
+  it('counts positions the runtime skipped when the walk covered the batch', () => {
+    const out = walk({ requested: [1, 2], payload: [7], lastIndex: 1, types: { 1: 'BOOL', 2: undefined } })
+    expect(debugPollProgress(out, 1, 2)).toEqual({ consumed: 2 })
+  })
+
+  it('skips a value that never fits the frame and marks it unreadable, so the poll goes on', () => {
+    // 128-byte frame (small AVR): a STRING (127) never fits. The reply is empty
+    // with lastIndex 0; without this the poll asked for it again forever and
+    // every variable after it stopped updating.
+    const out = walk({ requested: [5, 6], payload: [], lastIndex: 0, types: { 5: 'STRING', 6: 'BOOL' } })
+    expect(debugPollProgress(out, 0, 2)).toEqual({ consumed: 1, unreadable: 0 })
+  })
+
+  it('treats a reply with no data at all the same way', () => {
+    const out = walk({ requested: [5], payload: [], types: { 5: 'STRING' } })
+    expect(debugPollProgress(out, undefined, 1)).toEqual({ consumed: 1, unreadable: 0 })
   })
 })

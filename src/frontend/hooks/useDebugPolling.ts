@@ -28,7 +28,7 @@ import { useCapabilities, useDebugger } from '../../middleware/shared/providers'
 import { useOpenPLCStore, useOpenPLCStoreApi } from '../store'
 import { DEBUG_MEDIUM_PROFILE, debugProfileFor, DEFAULT_DEBUG_MEDIUM } from '../utils/debug-medium-profile'
 import { buildActiveIndexSet } from '../utils/debug-polling-filter'
-import { walkDebugResponse } from '../utils/debug-response-walker'
+import { DEBUG_VALUE_TOO_LARGE, debugPollProgress, walkDebugResponse } from '../utils/debug-response-walker'
 import { longTextReadOf } from '../utils/variable-sizes'
 
 /** Floor for the adaptive batch shrink below — a batch of one still makes progress. */
@@ -211,125 +211,128 @@ export function useDebugPolling({ debugTreesRef }: UseDebugPollingOptions): void
     }
 
     // Parse response buffer → variable values
-    let itemsProcessed = 0
 
-    if (result.data && result.data.length > 0) {
-      const responseBuffer = new Uint8Array(result.data)
-      const {
-        debugBoolValues: currentBool,
-        debugNonBoolValues: currentNonBool,
-        debugTargetEndian,
-      } = store.getState().workspace
-      const changedBool = new Map<string, string>()
-      const changedNonBool = new Map<string, string>()
-      // Strings that filled the 126-unit window, to read whole (FC 0x4F) after the walk.
-      const longTexts: Array<{ index: number; metas: LeafMeta[]; wide: boolean }> = []
-      const currentLengths = store.getState().workspace.debugTextLengths
-      const textLengths = new Map<string, number | null>()
+    // Walked even when empty: a reply with no data still says how far the poll moves.
+    const responseBuffer = new Uint8Array(result.data ?? [])
+    const {
+      debugBoolValues: currentBool,
+      debugNonBoolValues: currentNonBool,
+      debugTargetEndian,
+    } = store.getState().workspace
+    const changedBool = new Map<string, string>()
+    const changedNonBool = new Map<string, string>()
+    // Strings that filled the 126-unit window, to read whole (FC 0x4F) after the walk.
+    const longTexts: Array<{ index: number; metas: LeafMeta[]; wide: boolean }> = []
+    const currentLengths = store.getState().workspace.debugTextLengths
+    const textLengths = new Map<string, number | null>()
 
-      // Wire format note: result.lastIndex is the runtime's last_req_idx —
-      // a 0-based POSITION INTO THE REQUEST LIST, not a variable index.
-      // Iterate by position so the comparison and the offset advancement
-      // both interpret it correctly. Without this, batches with high
-      // variable IDs trip `index >= lastIndex` on the first entry and
-      // collapse the throughput to one variable per poll, which makes
-      // related variables visibly desync as the round-robin sweeps.
-      //
-      // `reachedEnd` records whether the walk covered the full batch
-      // before exiting.  The early-exit paths below (bounds check, lastIndex
-      // cap) leave `pos` pointing at the FIRST unprocessed slot, so we
-      // capture that to advance the round-robin offset by exactly the
-      // positions the editor actually consumed.  See the offset-advancement
-      // block below this loop for why naive use of `lastIndex+1` strands
-      // the tail of the active set.
-      // The positional walk itself lives in `utils/debug-response-walker`, shared
-      // with the headless CLI's debug session: `lastIndex` handling, the
-      // consumed-but-undecodable slot, the short-buffer stop and the endian swap
-      // are all silent-corruption bugs when they differ between callers. What
-      // stays here is what is genuinely this caller's: enum member names and the
-      // fan-out to every composite key sharing an address.
-      const walk = walkDebugResponse({
-        requested: batch,
-        payload: responseBuffer,
-        lastIndex: result.lastIndex,
-        endian: debugTargetEndian,
-        // Resolved ONCE per position, and carried to `emit`/`onError` by the
-        // walk. The leaves at one index are the same underlying variable and
-        // address, so they share type and size.
-        typeOf: (index) => {
-          const metas = allLeaves.get(index)
-          return metas && metas.length > 0 ? { type: metas[0].type, meta: metas } : undefined
-        },
-        emit: ({ index, type, value, meta: metas, windowFull }) => {
-          const longRead = windowFull ? longTextReadOf(type) : null
-          if (longRead) longTexts.push({ index, metas, wide: longRead.wide })
-          // A string not read whole this time keeps no runtime length.
-          else for (const m of metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
-          // Translate enum integers to member names so every consumer (watch
-          // panel, ladder, FBD, hover) reads the same display value.
-          // Out-of-range falls back to the raw integer.
-          const { enumValues, enumCodes } = metas[0]
-          const position = enumCodes !== undefined ? enumCodes.indexOf(Number(value)) : Number(value)
-          const stored = enumValues !== undefined ? (enumValues[position] ?? value) : value
-          const changed = type === 'BOOL' ? changedBool : changedNonBool
-          const current = type === 'BOOL' ? currentBool : currentNonBool
-          for (const m of metas) {
-            if (current.get(m.compositeKey) !== stored) changed.set(m.compositeKey, stored)
-          }
-        },
-        onError: ({ type, meta: metas }) => {
-          const changed = type === 'BOOL' ? changedBool : changedNonBool
-          for (const m of metas) changed.set(m.compositeKey, 'ERR')
-        },
-      })
-      const positionsConsumed = walk.positionsConsumed
-      const reachedEnd = walk.reachedEnd
-
-      // Advance round-robin offset by what we actually consumed.
-      //
-      // Why not `lastIndex + 1`: the runtime reports how many positions
-      // IT touched, but if the response buffer truncated before we read
-      // them all (or if we broke out for any other reason) the editor's
-      // consumption is smaller.  Using `lastIndex+1` then strands every
-      // position past the truncation point — the offset wraps past the
-      // tail of `activeIndexes` and the next poll restarts at 0, never
-      // covering the dropped positions.  This was the root cause of
-      // "forced REAL at the tail of the active set reads as `-`": batch
-      // size 60 against an active set of 20 sent every poll as one shot,
-      // the response truncated short of position 19 (pid_tr), the offset
-      // advanced past 19 anyway, and pid_tr was unreachable for the life
-      // of the session.
-      //
-      // When the loop walked the full batch with no break, fall through
-      // to runtime's lastIndex+1 so positions the runtime skipped
-      // (var_size == 0, e.g. STRING stubs) still advance us.  Otherwise
-      // honor positionsConsumed so unread positions get retried.
-      if (reachedEnd) {
-        itemsProcessed = result.lastIndex !== undefined ? Math.min(result.lastIndex + 1, batch.length) : batch.length
-      } else {
-        itemsProcessed = positionsConsumed
-      }
-
-      // The whole value of a string longer than the window; a target without FC 0x4F keeps the window.
-      const readText = debuggerPort.readText?.bind(debuggerPort)
-      for (const long of readText ? longTexts : []) {
-        const text = await readText?.(long.index, long.wide)
-        if (!text?.success) {
-          for (const m of long.metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
-          continue
+    // Wire format note: result.lastIndex is the runtime's last_req_idx —
+    // a 0-based POSITION INTO THE REQUEST LIST, not a variable index.
+    // Iterate by position so the comparison and the offset advancement
+    // both interpret it correctly. Without this, batches with high
+    // variable IDs trip `index >= lastIndex` on the first entry and
+    // collapse the throughput to one variable per poll, which makes
+    // related variables visibly desync as the round-robin sweeps.
+    //
+    // `reachedEnd` records whether the walk covered the full batch
+    // before exiting.  The early-exit paths below (bounds check, lastIndex
+    // cap) leave `pos` pointing at the FIRST unprocessed slot, so we
+    // capture that to advance the round-robin offset by exactly the
+    // positions the editor actually consumed.  See the offset-advancement
+    // block below this loop for why naive use of `lastIndex+1` strands
+    // the tail of the active set.
+    // The positional walk itself lives in `utils/debug-response-walker`, shared
+    // with the headless CLI's debug session: `lastIndex` handling, the
+    // consumed-but-undecodable slot, the short-buffer stop and the endian swap
+    // are all silent-corruption bugs when they differ between callers. What
+    // stays here is what is genuinely this caller's: enum member names and the
+    // fan-out to every composite key sharing an address.
+    const walk = walkDebugResponse({
+      requested: batch,
+      payload: responseBuffer,
+      lastIndex: result.lastIndex,
+      endian: debugTargetEndian,
+      // Resolved ONCE per position, and carried to `emit`/`onError` by the
+      // walk. The leaves at one index are the same underlying variable and
+      // address, so they share type and size.
+      typeOf: (index) => {
+        const metas = allLeaves.get(index)
+        return metas && metas.length > 0 ? { type: metas[0].type, meta: metas } : undefined
+      },
+      emit: ({ index, type, value, meta: metas, windowFull }) => {
+        const longRead = windowFull ? longTextReadOf(type) : null
+        if (longRead) longTexts.push({ index, metas, wide: longRead.wide })
+        // A string not read whole this time keeps no runtime length.
+        else for (const m of metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
+        // Translate enum integers to member names so every consumer (watch
+        // panel, ladder, FBD, hover) reads the same display value.
+        // Out-of-range falls back to the raw integer.
+        const { enumValues, enumCodes } = metas[0]
+        const position = enumCodes !== undefined ? enumCodes.indexOf(Number(value)) : Number(value)
+        const stored = enumValues !== undefined ? (enumValues[position] ?? value) : value
+        const changed = type === 'BOOL' ? changedBool : changedNonBool
+        const current = type === 'BOOL' ? currentBool : currentNonBool
+        for (const m of metas) {
+          if (current.get(m.compositeKey) !== stored) changed.set(m.compositeKey, stored)
         }
-        const stored = `"${text.text}"`
-        for (const m of long.metas) {
-          if (currentLengths.get(m.compositeKey) !== text.len) textLengths.set(m.compositeKey, text.len)
-          if (currentNonBool.get(m.compositeKey) === stored) changedNonBool.delete(m.compositeKey)
-          else changedNonBool.set(m.compositeKey, stored)
-        }
+      },
+      onError: ({ type, meta: metas }) => {
+        const changed = type === 'BOOL' ? changedBool : changedNonBool
+        for (const m of metas) changed.set(m.compositeKey, 'ERR')
+      },
+    })
+    // Advance round-robin offset by what we actually consumed.
+    //
+    // Why not `lastIndex + 1`: the runtime reports how many positions
+    // IT touched, but if the response buffer truncated before we read
+    // them all (or if we broke out for any other reason) the editor's
+    // consumption is smaller.  Using `lastIndex+1` then strands every
+    // position past the truncation point — the offset wraps past the
+    // tail of `activeIndexes` and the next poll restarts at 0, never
+    // covering the dropped positions.  This was the root cause of
+    // "forced REAL at the tail of the active set reads as `-`": batch
+    // size 60 against an active set of 20 sent every poll as one shot,
+    // the response truncated short of position 19 (pid_tr), the offset
+    // advanced past 19 anyway, and pid_tr was unreachable for the life
+    // of the session.
+    //
+    // When the loop walked the full batch with no break, fall through
+    // to runtime's lastIndex+1 so positions the runtime skipped
+    // (var_size == 0, e.g. STRING stubs) still advance us.  Otherwise
+    // honor positionsConsumed so unread positions get retried.
+    //
+    // A value with no room even in an empty frame is passed over and shown
+    // unreadable; asking for it again forever stalled every variable after it.
+    const progress = debugPollProgress(walk, result.lastIndex, batch.length)
+    const itemsProcessed = progress.consumed
+    if (progress.unreadable !== undefined) {
+      const metas = allLeaves.get(batch[progress.unreadable]) ?? []
+      for (const m of metas) {
+        const changed = m.type === 'BOOL' ? changedBool : changedNonBool
+        const current = m.type === 'BOOL' ? currentBool : currentNonBool
+        if (current.get(m.compositeKey) !== DEBUG_VALUE_TOO_LARGE) changed.set(m.compositeKey, DEBUG_VALUE_TOO_LARGE)
       }
+    }
 
-      // Only write to store when values actually changed — one commit per poll cycle
-      if (changedBool.size > 0 || changedNonBool.size > 0 || textLengths.size > 0) {
-        workspaceActions.setDebugValues({ boolValues: changedBool, nonBoolValues: changedNonBool, textLengths })
+    // The whole value of a string longer than the window; a target without FC 0x4F keeps the window.
+    const readText = debuggerPort.readText?.bind(debuggerPort)
+    for (const long of readText ? longTexts : []) {
+      const text = await readText?.(long.index, long.wide)
+      if (!text?.success) {
+        for (const m of long.metas) if (currentLengths.has(m.compositeKey)) textLengths.set(m.compositeKey, null)
+        continue
       }
+      const stored = `"${text.text}"`
+      for (const m of long.metas) {
+        if (currentLengths.get(m.compositeKey) !== text.len) textLengths.set(m.compositeKey, text.len)
+        if (currentNonBool.get(m.compositeKey) === stored) changedNonBool.delete(m.compositeKey)
+        else changedNonBool.set(m.compositeKey, stored)
+      }
+    }
+
+    // Only write to store when values actually changed — one commit per poll cycle
+    if (changedBool.size > 0 || changedNonBool.size > 0 || textLengths.size > 0) {
+      workspaceActions.setDebugValues({ boolValues: changedBool, nonBoolValues: changedNonBool, textLengths })
     }
 
     // Advance offset for next poll cycle (wraps around)

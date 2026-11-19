@@ -137,3 +137,42 @@ export function walkDebugResponse<TMeta>(options: DebugResponseWalkOptions<TMeta
 
   return { positionsConsumed, reachedEnd }
 }
+
+/** How far one reply moves a round-robin poll through its batch. */
+export interface DebugPollProgress {
+  /** Positions of the batch the reply settled; the next poll starts after them. */
+  consumed: number
+  /**
+   * A position whose value can never be read: the reply had no room for it in an
+   * otherwise empty frame (a STRING is 127 bytes; a small AVR's frame holds 115).
+   * It is passed over, so the poll reaches the variables after it.
+   */
+  unreadable?: number
+}
+
+/** What the watch shows for a value that can never be read. */
+export const DEBUG_VALUE_TOO_LARGE = 'ERR: too large for the debug reply'
+
+/**
+ * The positions one reply settled, from its walk.
+ *
+ * When the walk covered the whole batch, the runtime's `lastIndex + 1` counts:
+ * positions the runtime skipped (size 0) still advance the poll. Otherwise only
+ * what the walk consumed does, so positions the reply had no room for are asked
+ * for again next time. A reply that settled nothing had no room for the first
+ * position even in an empty frame, so asking again can never succeed: it is
+ * passed over as `unreadable`.
+ */
+export function debugPollProgress(
+  walk: DebugResponseWalkResult,
+  lastIndex: number | undefined,
+  batchLength: number,
+): DebugPollProgress {
+  const consumed = walk.reachedEnd
+    ? lastIndex !== undefined
+      ? Math.min(lastIndex + 1, batchLength)
+      : batchLength
+    : walk.positionsConsumed
+  if (consumed === 0 && batchLength > 0) return { consumed: 1, unreadable: 0 }
+  return { consumed }
+}
